@@ -24,11 +24,18 @@ setups = detectar_setups(ohlc, resultado)  # setup insignia OB+FVG (metodologia-
 y liquidez sin opinar sobre estrategia. `detectar_setups()` es la primera regla
 concreta encima de esa detección — el setup "cacería de liquidez + MSB + FVG".
 
+## API (Vercel)
+
+`POST /api/analizar` — body `{"ohlc": [{"open","high","low","close","volume"}, ...], "swing_length"?, "ventana_fvg"?}`,
+responde `{"setups": [...]}`. Es un endpoint mínimo (sin auth, sin rate limit) para
+probar el motor desde afuera; no reemplaza la conectividad real (MT5/dukascopy).
+
 ## Self-checks
 
 ```
 .venv\Scripts\python.exe -m motor_smc.motor
 .venv\Scripts\python.exe -m motor_smc.setup_ob_fvg
+.venv\Scripts\python.exe -m api.analizar
 ```
 
 ## Pendiente (no incluido en este paso)

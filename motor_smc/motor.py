@@ -7,7 +7,7 @@ librería abierta `smartmoneyconcepts` sobre datos OHLC ya cargados (MT5, dukasc
 import pandas as pd
 from smartmoneyconcepts import smc
 
-COLUMNAS_REQUERIDAS = {"open", "high", "low", "close"}
+COLUMNAS_REQUERIDAS = {"open", "high", "low", "close", "volume"}  # smc.ob() exige volume
 
 
 def analizar(ohlc: pd.DataFrame, swing_length: int = 50) -> dict[str, pd.DataFrame]:
