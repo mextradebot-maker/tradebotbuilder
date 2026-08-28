@@ -61,6 +61,25 @@ cuenta = info_cuenta()
 desconectar()
 ```
 
+## Filtro de calendario económico
+
+`conectividad.calendario` — feed gratuito de ForexFactory (`nfs.faireconomy.media`,
+sin costo, sin API key). Dato estructurado y determinista, por eso puede ser
+un Filtro del motor (a diferencia de un resumen de noticias por IA — ver
+Sección 10 del mapa técnico: eso, si se construye, es contenido aparte, nunca
+señal de entrada). Cachea en disco y solo refresca 1 vez al día (el proveedor
+permite hasta 2 descargas/5min, muy por debajo); si el feed deja de responder
+tolera hasta 48h de cache viejo y después se desactiva explícitamente
+(`CalendarioNoDisponibleError`) en vez de operar con datos viejos sin avisar.
+
+```python
+from datetime import datetime, timezone
+from conectividad.calendario import hay_evento_alto_impacto_cerca
+
+if hay_evento_alto_impacto_cerca(datetime.now(timezone.utc), ventana_minutos=30, moneda="USD"):
+    pass  # no abrir posiciones nuevas
+```
+
 ## API (Vercel)
 
 `POST /api/analizar` — body `{"ohlc": [{"open","high","low","close","volume"}, ...], "swing_length"?, "ventana_fvg"?}`,
@@ -75,11 +94,11 @@ probar el motor desde afuera; no reemplaza la conectividad real (MT5/dukascopy).
 .venv\Scripts\python.exe -m api.analizar
 .venv\Scripts\python.exe -m conectividad.historico
 .venv\Scripts\python.exe -m conectividad.xm
+.venv\Scripts\python.exe -m conectividad.calendario
 ```
 
 ## Pendiente
 
 - Envío de órdenes vía XM (el conector de arriba es solo lectura por ahora).
-- Filtro de calendario económico (`nfs.faireconomy.media`).
 - Backtesting formal (Backtrader/VectorBT) con disciplina out-of-sample.
 - Más setups de la metodología (§7) además del insignia OB+FVG.

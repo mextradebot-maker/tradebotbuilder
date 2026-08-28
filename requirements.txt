@@ -3,4 +3,5 @@ pandas
 numpy
 dukascopy-python
 python-dotenv
+requests
 MetaTrader5; sys_platform == 'win32'

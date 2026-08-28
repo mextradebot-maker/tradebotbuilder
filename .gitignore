@@ -2,3 +2,4 @@
 __pycache__/
 *.pyc
 .env
+conectividad/.cache_calendario.json
