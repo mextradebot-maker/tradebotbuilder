@@ -1,26 +1,25 @@
 """Identificación de tendencia actual — decide si el sesgo de un símbolo es compra o venta.
 
-Para temporalidad Swing es una regla de negocio fija (decisión de Ricardo, documentada en
-docs/manual-tecnico-interno.md): siempre venta, independiente de la estructura técnica.
-Para Scalping/Intraday se deriva del último evento BOS/CHoCH detectado por el motor —
-mismo signo que ya usan los setups (1 = alcista/compra, -1 = bajista/venta).
+Se deriva del último evento BOS/CHoCH detectado por el motor — mismo signo que ya usan
+los setups (1 = alcista/compra, -1 = bajista/venta) — igual para las 3 temporalidades.
+
+Regla de negocio (decisión de Ricardo, documentada en docs/manual-tecnico-interno.md):
+a largo plazo (swing, meses) los activos tienden a subir, así que swing solo se ofrece
+del lado de compra — pero esa restricción NO se hardcodea aquí (sería mentir sobre la
+tendencia real). Este módulo siempre reporta la dirección real detectada; el filtro
+"swing solo si es alcista" vive en la capa que orquesta la entrega (T-04 en n8n), que
+decide si ofrece o rechaza el símbolo según tipo + dirección real.
 """
 
 import pandas as pd
 
 from .motor import analizar
 
-TEMPORALIDADES_VENTA_FIJA = {"Swing"}
 
-
-def obtener_tendencia(ohlc: pd.DataFrame, tipo: str, swing_length: int = 50) -> dict:
-    if tipo in TEMPORALIDADES_VENTA_FIJA:
-        return {
-            "direccion": "venta",
-            "fuente": "regla_negocio",
-            "razon": "En temporalidad swing operamos siempre del lado de venta, por decisión de estrategia.",
-        }
-
+def obtener_tendencia(ohlc: pd.DataFrame, swing_length: int = 50) -> dict:
+    """La dirección real detectada es la misma sin importar la temporalidad elegida
+    por el usuario — la restricción "swing solo si es alcista" no vive aquí, ver
+    docstring del módulo."""
     estructura = analizar(ohlc, swing_length=swing_length)["estructura"]
     señales = estructura[estructura["BOS"].notna() | estructura["CHOCH"].notna()]
     if señales.empty:
@@ -62,18 +61,11 @@ def demo() -> None:
         index=idx,
     )
 
-    swing = obtener_tendencia(ohlc, "Swing", swing_length=8)
-    assert swing == {
-        "direccion": "venta",
-        "fuente": "regla_negocio",
-        "razon": "En temporalidad swing operamos siempre del lado de venta, por decisión de estrategia.",
-    }
+    r = obtener_tendencia(ohlc, swing_length=8)
+    assert r["direccion"] in {"compra", "venta"}
+    assert r["fuente"] == "estructura_mercado"
 
-    intraday = obtener_tendencia(ohlc, "Intraday", swing_length=8)
-    assert intraday["direccion"] in {"compra", "venta"}
-    assert intraday["fuente"] == "estructura_mercado"
-
-    print("motor_smc.tendencia.demo() OK —", {"swing": swing, "intraday": intraday})
+    print("motor_smc.tendencia.demo() OK —", r)
 
 
 if __name__ == "__main__":
