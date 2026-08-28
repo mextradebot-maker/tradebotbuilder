@@ -80,6 +80,36 @@ if hay_evento_alto_impacto_cerca(datetime.now(timezone.utc), ventana_minutos=30,
     pass  # no abrir posiciones nuevas
 ```
 
+## Backtesting formal
+
+`backtesting.backtest` — simulación propia sobre pandas, no Backtrader/VectorBT
+(ver el porqué en el docstring del módulo: los setups son eventos discretos,
+no una estrategia continua barra-por-barra, así que un framework completo es
+más de lo que hace falta hoy). Aplica las 3 reglas de oro de la Sección 05
+del mapa técnico: nunca optimizar volumen (N/A, no hay money management
+todavía), siempre out-of-sample, nunca partir de un perdedor.
+
+```python
+from datetime import datetime
+from conectividad import obtener_velas
+from backtesting import backtest_out_of_sample
+
+ohlc = obtener_velas("XAUUSD", datetime(2020, 1, 1), datetime(2024, 1, 1))
+resultado = backtest_out_of_sample(ohlc, corte=datetime(2023, 1, 1, tzinfo=ohlc.index.tz))
+# {'in_sample': {...}, 'out_of_sample': {...}} -- cada uno con winrate, r_total,
+# expectativa_r, y rentable_sin_optimizar (la regla de oro como gate explícito)
+```
+
+**Limitaciones de este v1**, documentadas para no confundir el resultado con
+algo más sólido de lo que es:
+- Take-profit fijo a 2R (`RETORNO_RIESGO_TP`) — el setup §7.4 no documenta su
+  propia regla de salida, solo entrada y stop.
+- Asume que la entrada siempre se llena al precio del punto medio del FVG,
+  sin verificar que el precio realmente vuelva a tocarlo.
+- Si stop y take-profit se tocan en la misma vela, se asume el peor caso
+  (pierde) — no hay forma de saber el orden intrabar con velas ya cerradas.
+- Sin comisiones, spread ni slippage.
+
 ## API (Vercel)
 
 `POST /api/analizar` — body `{"ohlc": [{"open","high","low","close","volume"}, ...], "swing_length"?, "ventana_fvg"?}`,
@@ -95,10 +125,11 @@ probar el motor desde afuera; no reemplaza la conectividad real (MT5/dukascopy).
 .venv\Scripts\python.exe -m conectividad.historico
 .venv\Scripts\python.exe -m conectividad.xm
 .venv\Scripts\python.exe -m conectividad.calendario
+.venv\Scripts\python.exe -m backtesting.backtest
 ```
 
 ## Pendiente
 
 - Envío de órdenes vía XM (el conector de arriba es solo lectura por ahora).
-- Backtesting formal (Backtrader/VectorBT) con disciplina out-of-sample.
+- Reparar pipeline n8n T-01→T-05 (Paso 2 del plan de construcción).
 - Más setups de la metodología (§7) además del insignia OB+FVG.
