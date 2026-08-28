@@ -9,6 +9,8 @@ despacha por path hacia la lógica de cada endpoint:
 
   POST /api/analizar          — analiza OHLC ya provisto (esta misma vela abajo)
   GET/POST /api/setups?simbolo=XAUUSD — ver api/setups.py (trae datos + analiza)
+  GET/POST /api/tendencia?simbolo=XAUUSD&tipo=Intraday — ver api/tendencia.py
+  GET/POST /api/backtest?simbolo=XAUUSD&direccion=compra — ver api/backtest.py
 """
 
 import json
@@ -20,6 +22,8 @@ import pandas as pd
 from motor_smc import analizar, detectar_setups
 
 RUTA_SETUPS = "/api/setups"
+RUTA_TENDENCIA = "/api/tendencia"
+RUTA_BACKTEST = "/api/backtest"
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -39,13 +43,23 @@ def procesar(payload: dict) -> tuple[int, dict]:
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         partes = urlparse(self.path)
-        if partes.path.rstrip("/") == RUTA_SETUPS:
+        ruta = partes.path.rstrip("/")
+        qs = {k: v[0] for k, v in parse_qs(partes.query).items()}
+
+        if ruta == RUTA_SETUPS:
             from api.setups import procesar as procesar_setups
 
-            qs = {k: v[0] for k, v in parse_qs(partes.query).items()}
             status, body = procesar_setups(qs)
+        elif ruta == RUTA_TENDENCIA:
+            from api.tendencia import procesar as procesar_tendencia
+
+            status, body = procesar_tendencia(qs)
+        elif ruta == RUTA_BACKTEST:
+            from api.backtest import procesar as procesar_backtest
+
+            status, body = procesar_backtest(qs)
         else:
-            status, body = 200, {"uso": "POST /api/analizar con {'ohlc': [...]}. GET/POST /api/setups?simbolo=XAUUSD — ver README"}
+            status, body = 200, {"uso": "POST /api/analizar con {'ohlc': [...]}. GET/POST /api/setups, /api/tendencia, /api/backtest — ver README"}
         self._responder(status, body)
 
     def do_POST(self):
@@ -56,10 +70,19 @@ class handler(BaseHTTPRequestHandler):
             self._responder(400, {"error": "body inválido, se esperaba JSON"})
             return
 
-        if urlparse(self.path).path.rstrip("/") == RUTA_SETUPS:
+        ruta = urlparse(self.path).path.rstrip("/")
+        if ruta == RUTA_SETUPS:
             from api.setups import procesar as procesar_setups
 
             status, body = procesar_setups(payload)
+        elif ruta == RUTA_TENDENCIA:
+            from api.tendencia import procesar as procesar_tendencia
+
+            status, body = procesar_tendencia(payload)
+        elif ruta == RUTA_BACKTEST:
+            from api.backtest import procesar as procesar_backtest
+
+            status, body = procesar_backtest(payload)
         else:
             status, body = procesar(payload)
         self._responder(status, body)

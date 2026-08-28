@@ -81,6 +81,20 @@ def reporte(resultados: pd.DataFrame) -> dict:
     }
 
 
+def backtest_direccion(ohlc: pd.DataFrame, direccion: str, swing_length: int = 20, r_multiplo_tp: float = RETORNO_RIESGO_TP) -> dict:
+    """Corre detección + backtest sobre todo el ohlc, filtrado a una sola
+    dirección ('long'/'short') — usado por el backtest bajo demanda de T-04
+    (Telegram): el usuario ya eligió símbolo y el motor ya determinó la
+    tendencia (`motor_smc.obtener_tendencia`), así que solo interesa el
+    desempeño histórico de esa dirección específica."""
+    from motor_smc import analizar, detectar_setups
+
+    resultado_motor = analizar(ohlc, swing_length=swing_length)
+    setups = detectar_setups(ohlc, resultado_motor)
+    setups_direccion = setups[setups["direccion"] == direccion]
+    return reporte(simular(ohlc, setups_direccion, r_multiplo_tp))
+
+
 def backtest_out_of_sample(ohlc: pd.DataFrame, corte, swing_length: int = 20, r_multiplo_tp: float = RETORNO_RIESGO_TP) -> dict:
     """Separa in-sample (antes de `corte`) de out-of-sample (desde `corte`) y
     corre deteccion + simulacion en cada tramo por separado, sin mezclar."""
