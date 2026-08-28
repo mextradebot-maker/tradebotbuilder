@@ -39,6 +39,28 @@ ohlc = obtener_velas("XAUUSD", datetime(2024, 1, 1), datetime(2024, 2, 1))
 setups = detectar_setups(ohlc, analizar(ohlc, swing_length=20))
 ```
 
+## Cuenta XM (MT5, en vivo)
+
+Solo lectura por ahora (conexión, info de cuenta, velas en vivo) — **envío de
+órdenes no está implementado todavía**, queda para un paso aparte con sus
+propias salvaguardas. Requiere una terminal MT5 de XM corriendo/logueada en
+esta máquina (`MetaTrader5` es un puente IPC local, Windows-only — **no
+funciona en Vercel**, por eso está marcado `sys_platform == 'win32'` en las
+dependencias y no se importa desde `conectividad/__init__.py`).
+
+```
+copy .env.example .env
+:: llena XM_LOGIN / XM_PASSWORD / XM_SERVER en .env (nunca en el repo)
+```
+
+```python
+from conectividad.xm import conectar, info_cuenta, velas_en_vivo, desconectar
+
+conectar()
+cuenta = info_cuenta()
+desconectar()
+```
+
 ## API (Vercel)
 
 `POST /api/analizar` — body `{"ohlc": [{"open","high","low","close","volume"}, ...], "swing_length"?, "ventana_fvg"?}`,
@@ -52,11 +74,12 @@ probar el motor desde afuera; no reemplaza la conectividad real (MT5/dukascopy).
 .venv\Scripts\python.exe -m motor_smc.setup_ob_fvg
 .venv\Scripts\python.exe -m api.analizar
 .venv\Scripts\python.exe -m conectividad.historico
+.venv\Scripts\python.exe -m conectividad.xm
 ```
 
 ## Pendiente
 
-- Conector XM (credenciales de cuenta) y soporte MT4/MT5 en vivo (`MetaTrader5`).
+- Envío de órdenes vía XM (el conector de arriba es solo lectura por ahora).
 - Filtro de calendario económico (`nfs.faireconomy.media`).
 - Backtesting formal (Backtrader/VectorBT) con disciplina out-of-sample.
 - Más setups de la metodología (§7) además del insignia OB+FVG.

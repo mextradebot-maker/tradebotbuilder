@@ -198,6 +198,19 @@ wheels = [
 ]
 
 [[package]]
+name = "metatrader5"
+version = "5.0.6147"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/aa/9416b777a5458a936eadae06a0e237d0f6a3890d9548e37ee8b33505b897/metatrader5-5.0.6147-cp312-cp312-win_amd64.whl", hash = "sha256:5b1c0f886809b38cf594c0142bc2a32d98d34e8b9fc0297bab7878957be00f56", size = 47969, upload-time = "2026-08-27T00:15:40.459Z" },
+    { url = "https://files.pythonhosted.org/packages/20/9d/059ad53ee601b1c46df19de06a058146d44e646401a1762d9e8238b4b4b0/metatrader5-5.0.6147-cp313-cp313-win_amd64.whl", hash = "sha256:fd8cb7023ffa7f6d405546647b38e5bb2561c0c00d6d7a4e88b6dce00d3a20f5", size = 47967, upload-time = "2026-08-27T00:15:41.34Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/a6/8f9112837c59f1f4829ab636f30e64b7a07c65d39ab30557a2c94f9055f2/metatrader5-5.0.6147-cp314-cp314-win_amd64.whl", hash = "sha256:ff08a96d3fea83a881f71fc03a3ed4b44e41167ac7b0f2e79bc084e98333d23d", size = 49528, upload-time = "2026-08-27T00:15:42.342Z" },
+]
+
+[[package]]
 name = "numba"
 version = "0.67.0"
 source = { registry = "https://pypi.org/simple" }
@@ -358,6 +371,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-dotenv"
+version = "1.2.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6a/53/ed9d74092561d4b01a2ef1349d52cdbc135e526c245f366b089cfca6de49/python_dotenv-1.2.3.tar.gz", hash = "sha256:a20a594dabeaa385725aa239d5244871c143ecb356add8a20fcf23773a6c3a35", size = 58945, upload-time = "2026-08-16T16:54:54.067Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0d/17/c5c6b53ddc18f297992099b3d9ec16c855c0ccc83263a21fe4d1c625ec6c/python_dotenv-1.2.3-py3-none-any.whl", hash = "sha256:904552145e8bfed22162c09dab1c2b9b54fefa7b23ba780f4f26ca0316b0f0d9", size = 22780, upload-time = "2026-08-16T16:54:52.473Z" },
+]
+
+[[package]]
 name = "requests"
 version = "2.34.2"
 source = { registry = "https://pypi.org/simple" }
@@ -401,16 +423,20 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "dukascopy-python" },
+    { name = "metatrader5", marker = "sys_platform == 'win32'" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "python-dotenv" },
     { name = "smartmoneyconcepts" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "dukascopy-python" },
+    { name = "metatrader5", marker = "sys_platform == 'win32'" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "python-dotenv" },
     { name = "smartmoneyconcepts" },
 ]
 

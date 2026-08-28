@@ -7,6 +7,8 @@ dependencies = [
     "pandas",
     "numpy",
     "dukascopy-python",
+    "python-dotenv",
+    "MetaTrader5; sys_platform == 'win32'",
 ]
 
 [tool.vercel]
