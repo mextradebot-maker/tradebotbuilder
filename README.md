@@ -112,9 +112,20 @@ algo más sólido de lo que es:
 
 ## API (Vercel)
 
-`POST /api/analizar` — body `{"ohlc": [{"open","high","low","close","volume"}, ...], "swing_length"?, "ventana_fvg"?}`,
-responde `{"setups": [...]}`. Es un endpoint mínimo (sin auth, sin rate limit) para
-probar el motor desde afuera; no reemplaza la conectividad real (MT5/dukascopy).
+Sin auth ni rate limit — endpoints mínimos para probar el motor desde afuera
+(ej. n8n). **Importante:** Vercel corre Python en modo single-entrypoint
+(`[tool.vercel] entrypoint` en pyproject.toml) — a diferencia de Next.js/Node,
+NO auto-descubre cada archivo de `api/` como su propia función. `api/analizar.py`
+es el único entrypoint real; hace de router por `path` hacia la lógica de
+`api/setups.py`. Si se agrega un endpoint nuevo, hay que sumarlo al router,
+no basta con crear el archivo.
+
+- `POST /api/analizar` — body `{"ohlc": [...], "swing_length"?, "ventana_fvg"?}`
+  → `{"setups": [...]}`. Analiza OHLC ya provisto.
+- `GET/POST /api/setups?simbolo=XAUUSD&dias=90` → `{"simbolo", "velas", "setups": [...]}`.
+  Trae los datos históricos él mismo (dukascopy) y corre el motor completo —
+  para consumidores (como n8n) que no pueden llamar a `dukascopy-python`
+  directamente por HTTP.
 
 ## Self-checks
 

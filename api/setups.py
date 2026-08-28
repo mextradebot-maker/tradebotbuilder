@@ -1,16 +1,15 @@
-"""API — GET/POST /api/setups?simbolo=XAUUSD&dias=90
+"""Lógica de GET/POST /api/setups?simbolo=XAUUSD&dias=90 — invocado desde el
+router en api/analizar.py (ver ese módulo para el porqué: Vercel en modo
+single-entrypoint no auto-descubre este archivo como su propia función).
 
-A diferencia de /api/analizar (que solo analiza OHLC ya provisto), este
-endpoint trae los datos históricos él mismo (dukascopy) y corre el motor
-completo — pensado para que n8n (T-01 Detector Activos) pregunte "¿hay
-setups reales en XAUUSD/EURUSD ahora?" sin tener que conseguir velas por su
-cuenta (dukascopy no es una API HTTP que n8n pueda golpear directo).
+A diferencia de /api/analizar (que solo analiza OHLC ya provisto), esto trae
+los datos históricos él mismo (dukascopy) y corre el motor completo —
+pensado para que n8n (T-01 Detector Activos) pregunte "¿hay setups reales en
+XAUUSD/EURUSD ahora?" sin tener que conseguir velas por su cuenta (dukascopy
+no es una API HTTP que n8n pueda golpear directo).
 """
 
-import json
 from datetime import datetime, timedelta, timezone
-from http.server import BaseHTTPRequestHandler
-from urllib.parse import parse_qs, urlparse
 
 from conectividad import SIMBOLOS, obtener_velas
 from motor_smc import analizar, detectar_setups
@@ -42,30 +41,6 @@ def procesar(payload: dict) -> tuple[int, dict]:
     resultado = analizar(ohlc, swing_length=swing_length)
     setups = detectar_setups(ohlc, resultado, ventana_fvg=ventana_fvg)
     return 200, {"simbolo": simbolo, "velas": len(ohlc), "setups": setups.to_dict(orient="records")}
-
-
-class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        qs = parse_qs(urlparse(self.path).query)
-        payload = {k: v[0] for k, v in qs.items()}
-        status, body = procesar(payload)
-        self._responder(status, body)
-
-    def do_POST(self):
-        largo = int(self.headers.get("Content-Length", 0))
-        try:
-            payload = json.loads(self.rfile.read(largo) or b"{}")
-        except json.JSONDecodeError:
-            self._responder(400, {"error": "body inválido, se esperaba JSON"})
-            return
-        status, body = procesar(payload)
-        self._responder(status, body)
-
-    def _responder(self, status: int, payload: dict) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps(payload).encode())
 
 
 def demo() -> None:

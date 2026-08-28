@@ -1,22 +1,29 @@
-"""API mínima sobre el motor SMC — POST /api/analizar.
+"""API — router único para todo /api/* (Vercel Python en modo single-entrypoint).
 
-Body: {"ohlc": [{"open":..,"high":..,"low":..,"close":..}, ...], "swing_length"?: int, "ventana_fvg"?: int}
-Respuesta: {"setups": [...]} — ver motor_smc.setup_ob_fvg para el formato de cada setup.
+Con `[tool.vercel] entrypoint` declarado en pyproject.toml, Vercel invoca UN
+solo handler para TODAS las rutas bajo /api/* — a diferencia de Next.js/Node,
+NO auto-descubre cada archivo de api/ como su propia función serverless
+(esto se confirmó en vivo: /api/setups devolvía la respuesta de /api/analizar
+hasta que se agregó el router de abajo — ver bitácora). Por eso este módulo
+despacha por path hacia la lógica de cada endpoint:
 
-Vercel detecta cualquier archivo bajo api/ como función serverless propia — no
-hace falta vercel.json ni un entrypoint único (rung 4 de la escalera: la
-plataforma ya resuelve el ruteo).
+  POST /api/analizar          — analiza OHLC ya provisto (esta misma vela abajo)
+  GET/POST /api/setups?simbolo=XAUUSD — ver api/setups.py (trae datos + analiza)
 """
 
 import json
 from http.server import BaseHTTPRequestHandler
+from urllib.parse import parse_qs, urlparse
 
 import pandas as pd
 
 from motor_smc import analizar, detectar_setups
 
+RUTA_SETUPS = "/api/setups"
+
 
 def procesar(payload: dict) -> tuple[int, dict]:
+    """POST /api/analizar — analiza OHLC ya provisto en el body."""
     velas = payload.get("ohlc")
     if not velas:
         return 400, {"error": "falta 'ohlc': lista de velas con open/high/low/close"}
@@ -31,7 +38,15 @@ def procesar(payload: dict) -> tuple[int, dict]:
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self._responder(200, {"uso": "POST con {'ohlc': [...]} — ver README"})
+        partes = urlparse(self.path)
+        if partes.path.rstrip("/") == RUTA_SETUPS:
+            from api.setups import procesar as procesar_setups
+
+            qs = {k: v[0] for k, v in parse_qs(partes.query).items()}
+            status, body = procesar_setups(qs)
+        else:
+            status, body = 200, {"uso": "POST /api/analizar con {'ohlc': [...]}. GET/POST /api/setups?simbolo=XAUUSD — ver README"}
+        self._responder(status, body)
 
     def do_POST(self):
         largo = int(self.headers.get("Content-Length", 0))
@@ -40,7 +55,13 @@ class handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             self._responder(400, {"error": "body inválido, se esperaba JSON"})
             return
-        status, body = procesar(payload)
+
+        if urlparse(self.path).path.rstrip("/") == RUTA_SETUPS:
+            from api.setups import procesar as procesar_setups
+
+            status, body = procesar_setups(payload)
+        else:
+            status, body = procesar(payload)
         self._responder(status, body)
 
     def _responder(self, status: int, payload: dict) -> None:
