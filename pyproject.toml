@@ -1,2 +1,12 @@
+[project]
+name = "tradebotbuilder"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "smartmoneyconcepts",
+    "pandas",
+    "numpy",
+]
+
 [tool.vercel]
 entrypoint = "api.analizar:handler"
