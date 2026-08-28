@@ -1,3 +1,4 @@
 smartmoneyconcepts
 pandas
 numpy
+dukascopy-python

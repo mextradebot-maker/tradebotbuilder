@@ -6,6 +6,7 @@ dependencies = [
     "smartmoneyconcepts",
     "pandas",
     "numpy",
+    "dukascopy-python",
 ]
 
 [tool.vercel]
