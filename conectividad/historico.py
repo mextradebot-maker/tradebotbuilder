@@ -11,12 +11,19 @@ from datetime import datetime
 import dukascopy_python as dp
 from dukascopy_python import instruments as inst
 
-# Solo los símbolos que ya aparecen en este proyecto (mtb-bot-builder, docs);
-# dukascopy soporta muchos más — pasar el string de dukascopy_python.instruments
-# directo si hace falta uno que no esté aquí.
+# Catálogo básico (ampliado 01 sep 2026, a petición de Ricardo — pendiente T-04 #1):
+# metales + los 7 majors de forex. dukascopy soporta muchos más — pasar el string
+# de dukascopy_python.instruments directo si hace falta uno que no esté aquí.
 SIMBOLOS = {
     "XAUUSD": inst.INSTRUMENT_FX_METALS_XAU_USD,
+    "XAGUSD": inst.INSTRUMENT_FX_METALS_XAG_USD,
     "EURUSD": inst.INSTRUMENT_FX_MAJORS_EUR_USD,
+    "GBPUSD": inst.INSTRUMENT_FX_MAJORS_GBP_USD,
+    "USDJPY": inst.INSTRUMENT_FX_MAJORS_USD_JPY,
+    "AUDUSD": inst.INSTRUMENT_FX_MAJORS_AUD_USD,
+    "USDCAD": inst.INSTRUMENT_FX_MAJORS_USD_CAD,
+    "USDCHF": inst.INSTRUMENT_FX_MAJORS_USD_CHF,
+    "NZDUSD": inst.INSTRUMENT_FX_MAJORS_NZD_USD,
 }
 
 

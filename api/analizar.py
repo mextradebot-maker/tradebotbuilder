@@ -11,6 +11,7 @@ despacha por path hacia la lógica de cada endpoint:
   GET/POST /api/setups?simbolo=XAUUSD — ver api/setups.py (trae datos + analiza)
   GET/POST /api/tendencia?simbolo=XAUUSD&tipo=Intraday — ver api/tendencia.py
   GET/POST /api/backtest?simbolo=XAUUSD&direccion=compra — ver api/backtest.py
+  GET/POST /api/calendario?simbolo=XAUUSD&horas=24 — ver api/calendario.py
 """
 
 import json
@@ -24,6 +25,7 @@ from motor_smc import analizar, detectar_setups
 RUTA_SETUPS = "/api/setups"
 RUTA_TENDENCIA = "/api/tendencia"
 RUTA_BACKTEST = "/api/backtest"
+RUTA_CALENDARIO = "/api/calendario"
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -58,6 +60,10 @@ class handler(BaseHTTPRequestHandler):
             from api.backtest import procesar as procesar_backtest
 
             status, body = procesar_backtest(qs)
+        elif ruta == RUTA_CALENDARIO:
+            from api.calendario import procesar as procesar_calendario
+
+            status, body = procesar_calendario(qs)
         else:
             status, body = 200, {"uso": "POST /api/analizar con {'ohlc': [...]}. GET/POST /api/setups, /api/tendencia, /api/backtest — ver README"}
         self._responder(status, body)
@@ -83,6 +89,10 @@ class handler(BaseHTTPRequestHandler):
             from api.backtest import procesar as procesar_backtest
 
             status, body = procesar_backtest(payload)
+        elif ruta == RUTA_CALENDARIO:
+            from api.calendario import procesar as procesar_calendario
+
+            status, body = procesar_calendario(payload)
         else:
             status, body = procesar(payload)
         self._responder(status, body)
