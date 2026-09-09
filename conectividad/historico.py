@@ -26,6 +26,19 @@ SIMBOLOS = {
     "NZDUSD": inst.INSTRUMENT_FX_MAJORS_NZD_USD,
 }
 
+# Temporalidad -> intervalo real de velas (agregado 08 sep 2026, a peticion de
+# Ricardo: comparar cual temporalidad es mas rentable por activo, en vez de
+# operar siempre en H1 sin importar lo que el cliente elija). Usado por
+# api/tendencia.py y api/backtest.py -- cada temporalidad tiene su PROPIA
+# tendencia (verificado con datos reales: XAUUSD daba venta rentable en H4
+# pero esa misma direccion no era rentable en H1), asi que no se puede
+# comparar temporalidades contra una sola direccion compartida.
+TEMPORALIDAD_A_INTERVALO = {
+    "Scalping": dp.INTERVAL_MIN_15,
+    "Intraday": dp.INTERVAL_HOUR_1,
+    "Swing": dp.INTERVAL_HOUR_4,
+}
+
 
 def obtener_velas(
     simbolo: str,

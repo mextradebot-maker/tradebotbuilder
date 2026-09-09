@@ -1,18 +1,24 @@
-"""Lógica de GET/POST /api/tendencia?simbolo=XAUUSD&dias=90 — invocado desde
-el router en api/analizar.py (mismo motivo que api/setups.py: Vercel en modo
-single-entrypoint no auto-descubre este archivo).
+"""Lógica de GET/POST /api/tendencia?simbolo=XAUUSD&dias=90&temporalidad=Intraday
+— invocado desde el router en api/analizar.py (mismo motivo que api/setups.py:
+Vercel en modo single-entrypoint no auto-descubre este archivo).
 
 Trae los datos históricos y determina el sesgo actual (compra/venta) del
 símbolo — usado por T-04 (Telegram, entrega de robots) para avisarle al
 usuario el momento del mercado antes de entregarle el robot y su backtest.
-La dirección real es la misma sin importar la temporalidad que el usuario
-haya elegido; la restricción "swing solo si es alcista" la aplica quien
-llama a este endpoint (T-04 en n8n), no este módulo — ver motor_smc/tendencia.py.
+
+`temporalidad` es opcional (Scalping/Intraday/Swing, default Intraday=H1,
+compatible con todos los llamadores existentes) — cada temporalidad tiene su
+PROPIA tendencia, no son la misma dirección vista a distinta escala:
+verificado con datos reales el 08 sep 2026, XAUUSD mostraba venta rentable en
+H4 pero esa misma dirección no era rentable en H1. Por eso "swing solo si es
+alcista" y comparar cuál temporalidad conviene más se resuelven por separado,
+comparando la tendencia de cada intervalo, no reutilizando una sola dirección
+para las tres (ver n8n "MTB Analisis Diario de Mercado").
 """
 
 from datetime import datetime, timedelta, timezone
 
-from conectividad import SIMBOLOS, obtener_velas
+from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, obtener_velas
 from motor_smc import obtener_tendencia
 
 
@@ -20,6 +26,10 @@ def procesar(payload: dict) -> tuple[int, dict]:
     simbolo = payload.get("simbolo")
     if not simbolo:
         return 400, {"error": f"falta 'simbolo' (uno de {list(SIMBOLOS)} o un instrumento crudo de dukascopy_python.instruments)"}
+
+    temporalidad = payload.get("temporalidad", "Intraday")
+    if temporalidad not in TEMPORALIDAD_A_INTERVALO:
+        return 400, {"error": f"'temporalidad' debe ser una de {list(TEMPORALIDAD_A_INTERVALO)}"}
 
     try:
         dias = int(payload.get("dias", 90))
@@ -31,22 +41,27 @@ def procesar(payload: dict) -> tuple[int, dict]:
     inicio = fin - timedelta(days=dias)
 
     try:
-        ohlc = obtener_velas(simbolo, inicio, fin)
+        ohlc = obtener_velas(simbolo, inicio, fin, intervalo=TEMPORALIDAD_A_INTERVALO[temporalidad])
     except Exception as e:
         return 502, {"error": f"no se pudieron obtener velas de {simbolo}: {e}"}
 
     if ohlc.empty:
-        return 200, {"simbolo": simbolo, "velas": 0, "direccion": "sin_definir", "fuente": "sin_datos", "razon": "Sin velas en el rango solicitado."}
+        return 200, {"simbolo": simbolo, "temporalidad": temporalidad, "velas": 0, "direccion": "sin_definir", "fuente": "sin_datos", "razon": "Sin velas en el rango solicitado."}
 
     tendencia = obtener_tendencia(ohlc, swing_length=swing_length)
-    return 200, {"simbolo": simbolo, "velas": len(ohlc), **tendencia}
+    return 200, {"simbolo": simbolo, "temporalidad": temporalidad, "velas": len(ohlc), **tendencia}
 
 
 def demo() -> None:
     status, body = procesar({"simbolo": "XAUUSD", "dias": 90})
     assert status == 200
     assert body["direccion"] in {"compra", "venta", "sin_definir"}
-    print(f"api.tendencia.demo() OK — XAUUSD: {body['direccion']} ({body.get('fuente')})")
+    assert body["temporalidad"] == "Intraday"
+    print(f"api.tendencia.demo() OK — XAUUSD Intraday: {body['direccion']} ({body.get('fuente')})")
+
+    status_swing, body_swing = procesar({"simbolo": "XAUUSD", "dias": 365, "temporalidad": "Swing"})
+    assert status_swing == 200 and body_swing["temporalidad"] == "Swing"
+    print(f"api.tendencia.demo() OK — XAUUSD Swing: {body_swing['direccion']}")
 
     status_malo, body_malo = procesar({})
     assert status_malo == 400 and "error" in body_malo
