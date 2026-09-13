@@ -12,6 +12,7 @@ está en la ruta por defecto. Copia .env.example a .env y llénalo ahí.
 """
 
 import os
+from datetime import datetime, timedelta, timezone
 
 import MetaTrader5 as mt5
 import pandas as pd
@@ -57,6 +58,9 @@ def info_cuenta() -> dict:
 
 def velas_en_vivo(simbolo: str, inicio, fin, timeframe=mt5.TIMEFRAME_H1) -> pd.DataFrame:
     """Igual formato que conectividad.historico.obtener_velas — compatible con motor_smc.analizar()."""
+    if not mt5.symbol_select(simbolo, True):
+        codigo, mensaje = mt5.last_error()
+        raise ConexionXMError(f"No se pudo seleccionar el símbolo {simbolo} en Market Watch: [{codigo}] {mensaje}")
     rates = mt5.copy_rates_range(simbolo, timeframe, inicio, fin)
     if rates is None or len(rates) == 0:
         codigo, mensaje = mt5.last_error()
@@ -64,6 +68,23 @@ def velas_en_vivo(simbolo: str, inicio, fin, timeframe=mt5.TIMEFRAME_H1) -> pd.D
     df = pd.DataFrame(rates)
     df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
     return df.set_index("time").rename(columns={"tick_volume": "volume"})[["open", "high", "low", "close", "volume"]]
+
+
+def historial_operaciones(dias: int = 60) -> list[dict]:
+    """Deals (aperturas y cierres) de los últimos `dias`, vía mt5.history_deals_get().
+
+    Devuelve TODOS los deals crudos (entrada y salida) — quien consuma esto
+    filtra según lo que necesite. Para T-05, ver servidor_local.calcular_resumen,
+    que se queda solo con los de cierre (DEAL_ENTRY_OUT) para calcular P&L
+    realizado por semana, sin duplicar esa lógica aquí.
+    """
+    fin = datetime.now(timezone.utc)
+    inicio = fin - timedelta(days=dias)
+    deals = mt5.history_deals_get(inicio, fin)
+    if deals is None:
+        codigo, mensaje = mt5.last_error()
+        raise ConexionXMError(f"No se pudo obtener historial de operaciones: [{codigo}] {mensaje}")
+    return [d._asdict() for d in deals]
 
 
 def demo() -> None:
@@ -79,12 +100,15 @@ def demo() -> None:
         assert "login" in cuenta and "balance" in cuenta
         print(f"conectividad.xm.demo() OK — cuenta {cuenta['login']} en {cuenta['server']}, balance {cuenta['balance']} {cuenta['currency']}")
 
-        from datetime import datetime, timedelta
-
         ahora = datetime.utcnow()
-        ohlc = velas_en_vivo("XAUUSD", ahora - timedelta(days=5), ahora)
+        # "GOLD" es el nombre real en este servidor XM (no "XAUUSD" — cada broker nombra distinto,
+        # verificar con mt5.symbols_get() si cambia de cuenta/servidor)
+        ohlc = velas_en_vivo("GOLD", ahora - timedelta(days=5), ahora)
         assert list(ohlc.columns) == ["open", "high", "low", "close", "volume"]
-        print(f"  {len(ohlc)} velas XAUUSD H1 en vivo, última: {ohlc.index[-1]}")
+        print(f"  {len(ohlc)} velas GOLD H1 en vivo, última: {ohlc.index[-1]}")
+
+        ops = historial_operaciones(dias=30)
+        print(f"  {len(ops)} deals en los últimos 30 días")
     finally:
         desconectar()
 

@@ -93,7 +93,13 @@ bool ConsultarUltimoSetup(string &direccion, double &entrada, double &stop)
    string headers_respuesta;
 
    ResetLastError();
-   int status = WebRequest("GET", url, headers, 5000, datos, respuesta, headers_respuesta);
+   // 15s, no 5s: /api/setups es una funcion serverless (Vercel) que importa pandas/numpy --
+   // un "cold start" tras ~5-15min sin trafico (normal para un EA que solo llama 1 vez por
+   // vela H1) puede tardar mas de 5s en responder. Confirmado en vivo 13 sep 2026: la MISMA
+   // URL fallaba (WebRequest devolvia un status invalido, ~1003) en la primera llamada tras
+   // inactividad y funcionaba normal (200) al reintentar de inmediato -- clasico cold start,
+   // no un bug de la API ni de este EA.
+   int status = WebRequest("GET", url, headers, 15000, datos, respuesta, headers_respuesta);
 
    if(status == -1)
    {
