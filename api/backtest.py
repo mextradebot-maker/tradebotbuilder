@@ -64,9 +64,9 @@ def demo() -> None:
     assert body["temporalidad"] == "Intraday"
     print(f"api.backtest.demo() OK — XAUUSD compra Intraday 365d: {body}")
 
-    status_swing, body_swing = procesar({"simbolo": "XAUUSD", "direccion": "venta", "dias": 365, "temporalidad": "Swing"})
-    assert status_swing == 200 and body_swing["temporalidad"] == "Swing"
-    print(f"api.backtest.demo() OK — XAUUSD venta Swing 365d: {body_swing}")
+    status_swing, body_swing = procesar({"simbolo": "XAUUSD", "direccion": "venta", "dias": 365, "temporalidad": "Swing (H)"})
+    assert status_swing == 200 and body_swing["temporalidad"] == "Swing (H)"
+    print(f"api.backtest.demo() OK — XAUUSD venta Swing (H) 365d: {body_swing}")
 
     status_malo, body_malo = procesar({})
     assert status_malo == 400 and "error" in body_malo

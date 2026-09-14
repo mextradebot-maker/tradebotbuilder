@@ -59,9 +59,9 @@ def demo() -> None:
     assert body["temporalidad"] == "Intraday"
     print(f"api.tendencia.demo() OK — XAUUSD Intraday: {body['direccion']} ({body.get('fuente')})")
 
-    status_swing, body_swing = procesar({"simbolo": "XAUUSD", "dias": 365, "temporalidad": "Swing"})
-    assert status_swing == 200 and body_swing["temporalidad"] == "Swing"
-    print(f"api.tendencia.demo() OK — XAUUSD Swing: {body_swing['direccion']}")
+    status_swing, body_swing = procesar({"simbolo": "XAUUSD", "dias": 365, "temporalidad": "Swing (H)"})
+    assert status_swing == 200 and body_swing["temporalidad"] == "Swing (H)"
+    print(f"api.tendencia.demo() OK — XAUUSD Swing (H): {body_swing['direccion']}")
 
     status_malo, body_malo = procesar({})
     assert status_malo == 400 and "error" in body_malo
