@@ -63,11 +63,26 @@ def simular(ohlc: pd.DataFrame, setups: pd.DataFrame, r_multiplo_tp: float = RET
     return pd.concat([setups.reset_index(drop=True), pd.DataFrame(resultados)], axis=1)
 
 
+def _tasas_confluencia(resultados: pd.DataFrame) -> dict:
+    """% de los setups (todos, no solo los resueltos) que ademas tuvieron Order
+    Block/Liquidez confluente -- ver motor_smc/setup_ob_fvg.py: son anotaciones
+    informativas, no un filtro, asi que se reportan como tasa histórica en vez
+    de exigirlas. `None` si las columnas no vienen (p.ej. resultados vacio)."""
+    total = len(resultados)
+    if total == 0 or "order_block_confluente" not in resultados.columns:
+        return {"confluencia_order_block": None, "confluencia_liquidez": None}
+    return {
+        "confluencia_order_block": round(float(resultados["order_block_confluente"].sum()) / total, 4),
+        "confluencia_liquidez": round(float(resultados["liquidez_confluente"].sum()) / total, 4),
+    }
+
+
 def reporte(resultados: pd.DataFrame) -> dict:
+    confluencia = _tasas_confluencia(resultados)
     resueltos = resultados[resultados["resultado"] != "sin_resolver"]
     n = len(resueltos)
     if n == 0:
-        return {"n_setups": 0, "sin_resolver": len(resultados), "rentable_sin_optimizar": None}
+        return {"n_setups": 0, "sin_resolver": len(resultados), "rentable_sin_optimizar": None, **confluencia}
 
     ganadas = (resueltos["resultado"] == "gano").sum()
     expectativa = float(resueltos["r"].mean())
@@ -78,6 +93,7 @@ def reporte(resultados: pd.DataFrame) -> dict:
         "r_total": round(float(resueltos["r"].sum()), 4),
         "expectativa_r": round(expectativa, 4),
         "rentable_sin_optimizar": expectativa > 0,
+        **confluencia,
     }
 
 
