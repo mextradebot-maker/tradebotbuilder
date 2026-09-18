@@ -1,0 +1,10 @@
+{
+  "rewrites": [
+    { "source": "/alumnos", "destination": "https://chatbotventas-n8n.h0w0dc.easypanel.host/webhook/panel-alumnos" },
+    { "source": "/webhook/panel-alumnos", "destination": "https://chatbotventas-n8n.h0w0dc.easypanel.host/webhook/panel-alumnos" },
+    { "source": "/webhook/panel-alumnos-login", "destination": "https://chatbotventas-n8n.h0w0dc.easypanel.host/webhook/panel-alumnos-login" },
+    { "source": "/webhook/panel-alumnos-logout", "destination": "https://chatbotventas-n8n.h0w0dc.easypanel.host/webhook/panel-alumnos-logout" },
+    { "source": "/webhook/panel-alumnos-robots", "destination": "https://chatbotventas-n8n.h0w0dc.easypanel.host/webhook/panel-alumnos-robots" },
+    { "source": "/webhook/panel-alumnos-demo-status", "destination": "https://chatbotventas-n8n.h0w0dc.easypanel.host/webhook/panel-alumnos-demo-status" }
+  ]
+}
