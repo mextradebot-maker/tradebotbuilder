@@ -12,6 +12,7 @@ despacha por path hacia la lógica de cada endpoint:
   GET/POST /api/tendencia?simbolo=XAUUSD&tipo=Intraday — ver api/tendencia.py
   GET/POST /api/backtest?simbolo=XAUUSD&direccion=compra — ver api/backtest.py
   GET/POST /api/calendario?simbolo=XAUUSD&horas=24 — ver api/calendario.py
+  GET/POST /api/mejor-indicador?simbolo=XAUUSD&direccion=compra — ver api/mejor_indicador.py
 """
 
 import json
@@ -26,6 +27,7 @@ RUTA_SETUPS = "/api/setups"
 RUTA_TENDENCIA = "/api/tendencia"
 RUTA_BACKTEST = "/api/backtest"
 RUTA_CALENDARIO = "/api/calendario"
+RUTA_MEJOR_INDICADOR = "/api/mejor-indicador"
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -64,6 +66,10 @@ class handler(BaseHTTPRequestHandler):
             from api.calendario import procesar as procesar_calendario
 
             status, body = procesar_calendario(qs)
+        elif ruta == RUTA_MEJOR_INDICADOR:
+            from api.mejor_indicador import procesar as procesar_mejor_indicador
+
+            status, body = procesar_mejor_indicador(qs)
         else:
             status, body = 200, {"uso": "POST /api/analizar con {'ohlc': [...]}. GET/POST /api/setups, /api/tendencia, /api/backtest — ver README"}
         self._responder(status, body)
@@ -93,6 +99,10 @@ class handler(BaseHTTPRequestHandler):
             from api.calendario import procesar as procesar_calendario
 
             status, body = procesar_calendario(payload)
+        elif ruta == RUTA_MEJOR_INDICADOR:
+            from api.mejor_indicador import procesar as procesar_mejor_indicador
+
+            status, body = procesar_mejor_indicador(payload)
         else:
             status, body = procesar(payload)
         self._responder(status, body)
