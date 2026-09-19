@@ -9,6 +9,12 @@
 //| refleja aqui sin tocar este archivo. Ver docs/manual-tecnico-     |
 //| interno.md Seccion 7.1 para la decision Opcion A vs Opcion B.     |
 //|                                                                    |
+//| Opera solo setups_confirmados -- /api/setups (con InpTemporalidad) |
+//| cruza cada setup crudo contra la tendencia del dia y el backtest  |
+//| de esa direccion antes de confirmarlo (ver api/setups.py). Si la  |
+//| API responde sin ese campo (version vieja), este EA no opera --   |
+//| mas seguro que asumir el setup crudo sin confirmar.                |
+//|                                                                    |
 //| SL/TP fijos (sin break-even ni trailing) A PROPOSITO: el TP a 2R  |
 //| es exactamente lo que se valido en backtesting/backtest.py -- si  |
 //| se agrega gestion dinamica aqui, los resultados en vivo dejan de  |
@@ -21,7 +27,8 @@
 //--- CONEXION AL MOTOR PROPIO
 input string InpApiUrl           = "https://mextradebot-app.vercel.app/api/setups"; // URL de /api/setups
 input string InpSimboloConsulta  = "XAUUSD";      // Simbolo tal como lo espera la API (ver conectividad.SIMBOLOS)
-input int    InpDiasHistorico    = 30;            // Dias de historico a pedir en cada consulta
+input string InpTemporalidad     = "Intraday";    // Scalping / Intraday / Swing (H) / Swing (S) / Swing (M)
+input int    InpDiasHistorico    = 0;             // 0 = usa el default calibrado de la API para InpTemporalidad
 
 //--- PARAMETROS DE OPERACION
 input ENUM_TIMEFRAMES InpTF      = PERIOD_H1;     // Timeframe del disparo (nueva vela = nueva consulta)
@@ -45,7 +52,7 @@ int OnInit()
       Print("ERROR: InpApiUrl vacio");
       return INIT_FAILED;
    }
-   Print("MexTradeBot_SeguidorSMC inicializado -- consultando ", InpApiUrl, " para ", InpSimboloConsulta);
+   Print("MexTradeBot_SeguidorSMC inicializado -- consultando ", InpApiUrl, " para ", InpSimboloConsulta, " (", InpTemporalidad, "), solo opera setups confirmados");
    Print("IMPORTANTE: agrega '", InpApiUrl, "' en Herramientas > Opciones > Expert Advisors > 'Permitir WebRequest para las URL siguientes', si no las consultas fallan.");
    return INIT_SUCCEEDED;
 }
@@ -86,7 +93,9 @@ void OnTick()
 //+------------------------------------------------------------------+
 bool ConsultarUltimoSetup(string &direccion, double &entrada, double &stop)
 {
-   string url = InpApiUrl + "?simbolo=" + InpSimboloConsulta + "&dias=" + IntegerToString(InpDiasHistorico);
+   string url = InpApiUrl + "?simbolo=" + InpSimboloConsulta + "&temporalidad=" + CodificarParametroUrl(InpTemporalidad);
+   if(InpDiasHistorico > 0)
+      url += "&dias=" + IntegerToString(InpDiasHistorico);
    string headers = "";
    char   datos[];
    char   respuesta[];
@@ -117,16 +126,33 @@ bool ConsultarUltimoSetup(string &direccion, double &entrada, double &stop)
    }
 
    string cuerpo = CharArrayToString(respuesta);
-   return ExtraerUltimoSetup(cuerpo, direccion, entrada, stop);
+   return ExtraerUltimoSetupConfirmado(cuerpo, direccion, entrada, stop);
+}
+
+//+------------------------------------------------------------------+
+//| Codifica los unicos caracteres especiales que aparecen en los     |
+//| valores de InpTemporalidad ("Swing (H)", etc.) -- no es un        |
+//| url-encode general, MQL5 no trae uno y no hace falta aqui.        |
+//+------------------------------------------------------------------+
+string CodificarParametroUrl(const string valor)
+{
+   string r = valor;
+   StringReplace(r, " ", "%20");
+   StringReplace(r, "(", "%28");
+   StringReplace(r, ")", "%29");
+   return r;
 }
 
 //+------------------------------------------------------------------+
 //| PARSER MINIMO DE JSON -- a proposito, no una libreria completa    |
-//| El formato de /api/setups es fijo y conocido (ver                 |
-//| tradebotbuilder/api/setups.py y motor_smc/setup_ob_fvg.py):        |
-//| {"simbolo":.., "velas":N, "setups":[{...,"direccion":"long",       |
-//| "entrada":F, "stop":F}, ...]} -- se toma el ULTIMO objeto del      |
-//| arreglo (el setup mas reciente).                                   |
+//| El formato de /api/setups con InpTemporalidad es fijo y conocido  |
+//| (ver tradebotbuilder/api/setups.py): {..., "setups":[...],         |
+//| "setups_confirmados":[{...,"direccion":"long","entrada":F,         |
+//| "stop":F}, ...]} -- se busca el marcador de "setups_confirmados"   |
+//| primero y SOLO se lee direccion/entrada/stop despues de ese punto, |
+//| nunca del arreglo "setups" crudo -- si "setups_confirmados" viene  |
+//| vacio ([]) no hay nada que leer despues del marcador y se regresa  |
+//| false, que es lo correcto (no operar un setup sin confirmar).      |
 //+------------------------------------------------------------------+
 bool ExtraerCampoStringDesde(const string &json, const string campo, int desde, string &valor)
 {
@@ -159,10 +185,13 @@ bool ExtraerCampoNumeroDesde(const string &json, const string campo, int desde, 
    return true;
 }
 
-bool ExtraerUltimoSetup(const string &json, string &direccion, double &entrada, double &stop)
+bool ExtraerUltimoSetupConfirmado(const string &json, string &direccion, double &entrada, double &stop)
 {
+   int marcador = StringFind(json, "\"setups_confirmados\":[");
+   if(marcador < 0) return false; // API vieja sin confirmacion -- no operar por seguridad
+
    int pos_ultimo = -1;
-   int desde = 0;
+   int desde = marcador;
    while(true)
    {
       int p = StringFind(json, "\"direccion\":\"", desde);
@@ -170,7 +199,7 @@ bool ExtraerUltimoSetup(const string &json, string &direccion, double &entrada, 
       pos_ultimo = p;
       desde = p + 1;
    }
-   if(pos_ultimo < 0) return false; // sin setups en la ventana consultada
+   if(pos_ultimo < 0) return false; // setups_confirmados vacio -- nada que operar
 
    if(!ExtraerCampoStringDesde(json, "direccion", pos_ultimo, direccion)) return false;
    if(!ExtraerCampoNumeroDesde(json, "entrada", pos_ultimo, entrada)) return false;
