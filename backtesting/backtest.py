@@ -31,6 +31,7 @@ RETORNO_RIESGO_TP = 2.0
 def _simular_uno(ohlc: pd.DataFrame, setup: pd.Series, r_multiplo_tp: float) -> dict:
     entrada, stop, direccion = setup["entrada"], setup["stop"], setup["direccion"]
     riesgo = abs(entrada - stop)
+    riesgo_pct = riesgo / entrada  # distancia del stop como % del precio -- ver reporte()
     tp = entrada + r_multiplo_tp * riesgo if direccion == "long" else entrada - r_multiplo_tp * riesgo
 
     inicio = int(setup["indice_fvg"]) + 1
@@ -46,17 +47,17 @@ def _simular_uno(ohlc: pd.DataFrame, setup: pd.Series, r_multiplo_tp: float) -> 
             # orden intrabar con datos OHLC de vela cerrada: se asume el
             # peor caso (stop) para no inflar el resultado
             if toco_stop:
-                return {"resultado": "perdio", "r": -1.0, "velas": i - inicio + 1}
-            return {"resultado": "gano", "r": r_multiplo_tp, "velas": i - inicio + 1}
+                return {"resultado": "perdio", "r": -1.0, "velas": i - inicio + 1, "riesgo_pct": riesgo_pct}
+            return {"resultado": "gano", "r": r_multiplo_tp, "velas": i - inicio + 1, "riesgo_pct": riesgo_pct}
 
-    return {"resultado": "sin_resolver", "r": 0.0, "velas": len(ohlc) - inicio}
+    return {"resultado": "sin_resolver", "r": 0.0, "velas": len(ohlc) - inicio, "riesgo_pct": riesgo_pct}
 
 
 def simular(ohlc: pd.DataFrame, setups: pd.DataFrame, r_multiplo_tp: float = RETORNO_RIESGO_TP) -> pd.DataFrame:
     """Corre cada setup detectado hacia adelante hasta que toque stop o TP.
     Entrada asumida como fill garantizado al precio de `entrada` (no verifica
     que el precio realmente vuelva a tocar el FVG) — ver limitación en README."""
-    columnas_resultado = ["resultado", "r", "velas"]
+    columnas_resultado = ["resultado", "r", "velas", "riesgo_pct"]
     if setups.empty:
         return pd.concat([setups, pd.DataFrame(columns=columnas_resultado)], axis=1)
     resultados = [_simular_uno(ohlc, fila, r_multiplo_tp) for _, fila in setups.iterrows()]
@@ -86,6 +87,12 @@ def reporte(resultados: pd.DataFrame) -> dict:
 
     ganadas = (resueltos["resultado"] == "gano").sum()
     expectativa = float(resueltos["r"].mean())
+    # riesgo_pct_promedio: distancia promedio del stop como % del precio de
+    # entrada -- insumo del position sizing (Modulo 10 de metodologia-trading.md,
+    # L54: riesgo 0.25%-1% del capital por operacion). Independiente del
+    # instrumento (forex/metales/indices/cripto/acciones tienen tamanos de
+    # contrato y valor de pip distintos; el % de distancia no).
+    riesgo_pct_promedio = float(resueltos["riesgo_pct"].mean()) if "riesgo_pct" in resueltos.columns else None
     return {
         "n_setups": n,
         "sin_resolver": len(resultados) - n,
@@ -93,6 +100,7 @@ def reporte(resultados: pd.DataFrame) -> dict:
         "r_total": round(float(resueltos["r"].sum()), 4),
         "expectativa_r": round(expectativa, 4),
         "rentable_sin_optimizar": expectativa > 0,
+        "riesgo_pct_promedio": round(riesgo_pct_promedio, 6) if riesgo_pct_promedio is not None else None,
         **confluencia,
     }
 
@@ -135,6 +143,9 @@ def demo() -> None:
 
     for tramo in ("in_sample", "out_of_sample"):
         assert "n_setups" in resultado[tramo]
+        if resultado[tramo]["n_setups"] > 0:
+            assert "riesgo_pct_promedio" in resultado[tramo]
+            assert resultado[tramo]["riesgo_pct_promedio"] > 0
 
     print("backtesting.backtest.demo() OK — XAUUSD H1 2020-2024, corte 2023-01-01")
     for nombre, r in resultado.items():
