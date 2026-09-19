@@ -100,6 +100,7 @@ class handler(BaseHTTPRequestHandler):
     def _responder(self, status: int, payload: dict) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(json.dumps(payload).encode())
 
