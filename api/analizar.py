@@ -28,6 +28,7 @@ RUTA_TENDENCIA = "/api/tendencia"
 RUTA_BACKTEST = "/api/backtest"
 RUTA_CALENDARIO = "/api/calendario"
 RUTA_MEJOR_INDICADOR = "/api/mejor-indicador"
+RUTA_REFRESCAR_SNAPSHOT = "/api/refrescar-snapshot"
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -70,6 +71,10 @@ class handler(BaseHTTPRequestHandler):
             from api.mejor_indicador import procesar as procesar_mejor_indicador
 
             status, body = procesar_mejor_indicador(qs)
+        elif ruta == RUTA_REFRESCAR_SNAPSHOT:
+            from api.refrescar_snapshot import procesar as procesar_refrescar
+
+            status, body = procesar_refrescar(qs, dict(self.headers))
         else:
             status, body = 200, {"uso": "POST /api/analizar con {'ohlc': [...]}. GET/POST /api/setups, /api/tendencia, /api/backtest — ver README"}
         self._responder(status, body)
@@ -103,6 +108,10 @@ class handler(BaseHTTPRequestHandler):
             from api.mejor_indicador import procesar as procesar_mejor_indicador
 
             status, body = procesar_mejor_indicador(payload)
+        elif ruta == RUTA_REFRESCAR_SNAPSHOT:
+            from api.refrescar_snapshot import procesar as procesar_refrescar
+
+            status, body = procesar_refrescar(payload, dict(self.headers))
         else:
             status, body = procesar(payload)
         self._responder(status, body)

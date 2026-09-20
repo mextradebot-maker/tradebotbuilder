@@ -41,6 +41,25 @@ from motor_smc import analizar, detectar_setups, obtener_tendencia
 # compartida entre Python y n8n. Si se ajusta uno, ajustar los tres.
 UMBRAL_SETUPS_SUFICIENTES = 20
 
+# Cache Postgres (Fase 1 BD SMC persistente). Si DATABASE_URL no esta disponible
+# o Postgres esta caido, _persistencia queda None y se cae al compute fresco.
+TOLERANCIA_SNAPSHOT_MIN = 10
+try:
+    import persistencia as _persistencia
+except Exception:
+    _persistencia = None
+
+
+def _snapshot_viejo(snap: dict) -> bool:
+    ts = snap.get("refrescado_en")
+    if ts is None:
+        return True
+    if isinstance(ts, str):
+        ts = datetime.fromisoformat(ts)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts < datetime.now(timezone.utc) - timedelta(minutes=TOLERANCIA_SNAPSHOT_MIN)
+
 DIAS_POR_TEMPORALIDAD = {
     "Scalping": 60,
     "Intraday": 365,
@@ -69,6 +88,17 @@ def procesar(payload: dict) -> tuple[int, dict]:
     except (TypeError, ValueError):
         return 400, {"error": "'dias'/'swing_length'/'ventana_fvg' deben ser enteros"}
 
+    # Cache hit — evita Dukascopy + analisis completo si el snapshot es fresco
+    force_refresh = payload.get("_force_refresh", False)
+    cache_key_temp = temporalidad or ""
+    if not force_refresh and _persistencia is not None:
+        try:
+            snap = _persistencia.leer_snapshot(simbolo, cache_key_temp)
+            if snap is not None and not _snapshot_viejo(snap):
+                return 200, snap["respuesta"]
+        except Exception:
+            pass  # Postgres caido -> compute fresco
+
     fin = datetime.now(timezone.utc)
     inicio = fin - timedelta(days=dias)
 
@@ -94,7 +124,13 @@ def procesar(payload: dict) -> tuple[int, dict]:
         # Comportamiento historico sin cambios -- llamadores que no piden
         # temporalidad (T-01 Detector Activos, o un EA viejo sin ese input)
         # siguen recibiendo setups crudos, sin confirmacion.
-        return 200, {"simbolo": simbolo, "velas": len(ohlc), "setups": setups_dict}
+        respuesta = {"simbolo": simbolo, "velas": len(ohlc), "setups": setups_dict}
+        if _persistencia is not None:
+            try:
+                _persistencia.escribir_snapshot(simbolo, cache_key_temp, respuesta, None)
+            except Exception:
+                pass
+        return 200, respuesta
 
     tendencia = obtener_tendencia(ohlc, swing_length=swing_length)
     tendencia_actual = tendencia.get("direccion")
@@ -124,7 +160,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
         if s["confirmado"]:
             confirmados.append(s)
 
-    return 200, {
+    respuesta = {
         "simbolo": simbolo,
         "temporalidad": temporalidad,
         "velas": len(ohlc),
@@ -132,6 +168,14 @@ def procesar(payload: dict) -> tuple[int, dict]:
         "setups": setups_dict,
         "setups_confirmados": confirmados,
     }
+    if _persistencia is not None:
+        try:
+            tendencia_prev = _persistencia.leer_ultima_tendencia(simbolo, cache_key_temp)
+            _persistencia.escribir_snapshot(simbolo, cache_key_temp, respuesta, tendencia_actual)
+            _persistencia.registrar_cambio_tendencia(simbolo, cache_key_temp, tendencia_actual, tendencia_prev)
+        except Exception:
+            pass
+    return 200, respuesta
 
 
 def demo() -> None:
