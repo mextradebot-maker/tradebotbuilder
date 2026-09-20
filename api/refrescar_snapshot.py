@@ -8,7 +8,7 @@ import os
 
 
 def procesar(payload: dict, headers: dict | None = None) -> tuple[int, dict]:
-    token = (headers or {}).get("X-Internal-Token", "")
+    token = next((v for k, v in (headers or {}).items() if k.lower() == "x-internal-token"), "")
     if token != os.environ.get("INTERNAL_REFRESH_TOKEN", ""):
         return 401, {"error": "no autorizado"}
 
