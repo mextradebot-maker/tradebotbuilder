@@ -29,7 +29,7 @@ un bot decide si entra o no — sin eso, el bot podía tomar un setup técnicame
 válido pero contra la tendencia del día o con historial no rentable.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, time as _time
 
 from backtesting.backtest import backtest_direccion
 from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, obtener_velas
@@ -100,7 +100,17 @@ def procesar(payload: dict) -> tuple[int, dict]:
             pass  # Postgres caido -> compute fresco
 
     fin = datetime.now(timezone.utc)
-    inicio = fin - timedelta(days=dias)
+    desde_catalogo = str(payload.get("desde_catalogo", "")).lower() in ("1", "true", "yes")
+    inicio = None
+    if desde_catalogo and temporalidad and _persistencia is not None:
+        try:
+            fecha = _persistencia.leer_fecha_inicio(simbolo, temporalidad)
+            if fecha is not None:
+                inicio = datetime.combine(fecha, _time.min, tzinfo=timezone.utc)
+        except Exception:
+            pass
+    if inicio is None:
+        inicio = fin - timedelta(days=dias)
 
     try:
         if temporalidad:

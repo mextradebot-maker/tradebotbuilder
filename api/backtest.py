@@ -16,10 +16,15 @@ una por temporalidad, cada una con su propia dirección — para elegir la más
 rentable).
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, time as _time
 
 from backtesting.backtest import backtest_direccion
 from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, obtener_velas
+
+try:
+    import persistencia as _persistencia
+except Exception:
+    _persistencia = None
 
 DIRECCION_A_LONG_SHORT = {"compra": "long", "venta": "short"}
 
@@ -43,7 +48,17 @@ def procesar(payload: dict) -> tuple[int, dict]:
         return 400, {"error": "'dias'/'swing_length' deben ser enteros"}
 
     fin = datetime.now(timezone.utc)
-    inicio = fin - timedelta(days=dias)
+    desde_catalogo = str(payload.get("desde_catalogo", "")).lower() in ("1", "true", "yes")
+    inicio = None
+    if desde_catalogo and _persistencia is not None:
+        try:
+            fecha = _persistencia.leer_fecha_inicio(simbolo, temporalidad)
+            if fecha is not None:
+                inicio = datetime.combine(fecha, _time.min, tzinfo=timezone.utc)
+        except Exception:
+            pass
+    if inicio is None:
+        inicio = fin - timedelta(days=dias)
 
     try:
         ohlc = obtener_velas(simbolo, inicio, fin, intervalo=TEMPORALIDAD_A_INTERVALO[temporalidad])
@@ -54,7 +69,8 @@ def procesar(payload: dict) -> tuple[int, dict]:
         return 200, {"simbolo": simbolo, "direccion": direccion, "temporalidad": temporalidad, "velas": 0, "n_setups": 0, "rentable_sin_optimizar": None}
 
     reporte = backtest_direccion(ohlc, DIRECCION_A_LONG_SHORT[direccion], swing_length=swing_length)
-    return 200, {"simbolo": simbolo, "direccion": direccion, "temporalidad": temporalidad, "velas": len(ohlc), **reporte}
+    extra = {"desde_catalogo": desde_catalogo, "inicio": inicio.date().isoformat()} if desde_catalogo else {}
+    return 200, {"simbolo": simbolo, "direccion": direccion, "temporalidad": temporalidad, "velas": len(ohlc), **reporte, **extra}
 
 
 def demo() -> None:
