@@ -55,7 +55,8 @@ def aplicar() -> None:
     with get_conn() as conn:
         for sql in _SQL:
             conn.execute(sql)
-        conn.executemany(
-            "INSERT INTO catalogo_activos (simbolo, temporalidad, fecha_inicio) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-            [(s, t, _FECHA_SEED) for s in _SIMBOLOS_SEED for t in _TEMPORALIDADES_SEED],
-        )
+        with conn.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO catalogo_activos (simbolo, temporalidad, fecha_inicio) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                [(s, t, _FECHA_SEED) for s in _SIMBOLOS_SEED for t in _TEMPORALIDADES_SEED],
+            )
