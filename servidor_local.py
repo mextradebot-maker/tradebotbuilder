@@ -28,6 +28,7 @@ load_dotenv()
 RUTA_DEMO_STATUS = "/demo-status"
 RUTA_TRADING_RESUMEN = "/trading-resumen"
 RUTA_PANEL_RESUMEN = "/panel-resumen-page"
+RUTA_PANEL_RESUMEN_JSON = "/panel-resumen-json"
 PUERTO_DEFAULT = 8765
 
 _HTML_TEMPLATE = """<!doctype html>
@@ -311,8 +312,15 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._responder(502, {"error": str(e)})
             return
+        elif ruta == RUTA_PANEL_RESUMEN_JSON:
+            try:
+                html = panel_resumen_page()
+                self._responder(200, {"html": html})
+            except Exception as e:
+                self._responder(502, {"error": str(e)})
+            return
         else:
-            status, body = 404, {"error": f"rutas: {RUTA_DEMO_STATUS}, {RUTA_TRADING_RESUMEN}, {RUTA_PANEL_RESUMEN}"}
+            status, body = 404, {"error": f"rutas: {RUTA_DEMO_STATUS}, {RUTA_TRADING_RESUMEN}, {RUTA_PANEL_RESUMEN}, {RUTA_PANEL_RESUMEN_JSON}"}
         self._responder(status, body)
 
     def _responder_html(self, status: int, html: str) -> None:
