@@ -1,6 +1,7 @@
 from .conexion import get_conn
 
 _SQL = [
+    # ── Bloque 1: señales SMC ─────────────────────────────────────────────
     """
     CREATE TABLE IF NOT EXISTS smc_snapshot (
         simbolo           text        NOT NULL,
@@ -16,11 +17,11 @@ _SQL = [
     """,
     """
     CREATE TABLE IF NOT EXISTS historico_tendencias (
-        id               bigserial   PRIMARY KEY,
-        simbolo          text        NOT NULL,
-        temporalidad     text        NOT NULL,
-        fecha_cambio     timestamptz NOT NULL DEFAULT now(),
-        tendencia_nueva  text,
+        id                bigserial   PRIMARY KEY,
+        simbolo           text        NOT NULL,
+        temporalidad      text        NOT NULL,
+        fecha_cambio      timestamptz NOT NULL DEFAULT now(),
+        tendencia_nueva   text,
         tendencia_anterior text
     )
     """,
@@ -37,6 +38,105 @@ _SQL = [
         PRIMARY KEY (simbolo, temporalidad)
     )
     """,
+
+    # ── Bloque 2: configuración de cuentas demo ───────────────────────────
+    """
+    CREATE TABLE IF NOT EXISTS cuentas_demo (
+        login         bigint   PRIMARY KEY,
+        server        text     NOT NULL,
+        nombre        text     NOT NULL,
+        simbolo       text     NOT NULL,
+        temporalidad  text     NOT NULL,
+        pct_riesgo    numeric  NOT NULL DEFAULT 0.01,
+        activa        boolean  NOT NULL DEFAULT true
+    )
+    """,
+
+    # ── Bloque 3: posiciones activas del coordinador ──────────────────────
+    """
+    CREATE TABLE IF NOT EXISTS posiciones_abiertas (
+        ticket             bigint      PRIMARY KEY,
+        login              bigint      NOT NULL REFERENCES cuentas_demo(login),
+        simbolo            text        NOT NULL,
+        temporalidad       text        NOT NULL,
+        direccion          text        NOT NULL,
+        lotes              numeric     NOT NULL,
+        precio_entrada     numeric     NOT NULL,
+        tiene_sl           boolean     NOT NULL DEFAULT false,
+        sl_precio          numeric,
+        tendencia_apertura text,
+        abierta_en         timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_pos_abiertas_login
+        ON posiciones_abiertas (login)
+    """,
+
+    # ── Bloque 4: historial de trades cerrados ────────────────────────────
+    """
+    CREATE TABLE IF NOT EXISTS historial_posiciones (
+        id             bigserial   PRIMARY KEY,
+        ticket         bigint      NOT NULL,
+        login          bigint      NOT NULL,
+        simbolo        text        NOT NULL,
+        temporalidad   text        NOT NULL,
+        direccion      text        NOT NULL,
+        lotes          numeric     NOT NULL,
+        precio_entrada numeric     NOT NULL,
+        precio_cierre  numeric     NOT NULL,
+        profit_usd     numeric     NOT NULL,
+        razon_cierre   text        NOT NULL,
+        abierta_en     timestamptz NOT NULL,
+        cerrada_en     timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_hist_pos_login_fecha
+        ON historial_posiciones (login, cerrada_en DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_hist_pos_simbolo_fecha
+        ON historial_posiciones (simbolo, cerrada_en DESC)
+    """,
+
+    # ── Bloque 5: auditoría de decisiones del coordinador ─────────────────
+    """
+    CREATE TABLE IF NOT EXISTS log_coordinador (
+        id            bigserial   PRIMARY KEY,
+        login         bigint,
+        simbolo       text,
+        temporalidad  text,
+        accion        text        NOT NULL,
+        motivo        text,
+        lotes         numeric,
+        detalle       jsonb,
+        registrado_en timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_log_coord_login_fecha
+        ON log_coordinador (login, registrado_en DESC)
+    """,
+
+    # ── Bloque 6: peticiones manuales del usuario ─────────────────────────
+    """
+    CREATE TABLE IF NOT EXISTS peticiones_usuario (
+        id           bigserial   PRIMARY KEY,
+        simbolo      text        NOT NULL,
+        direccion    text        NOT NULL,
+        cuenta       bigint,
+        lotes        numeric,
+        estado       text        NOT NULL DEFAULT 'pendiente',
+        motivo_error text,
+        creada_en    timestamptz NOT NULL DEFAULT now(),
+        ejecutada_en timestamptz
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_peticiones_estado
+        ON peticiones_usuario (estado, creada_en)
+    """,
 ]
 
 # 36 simbolos × 5 temporalidades = 180 pares seeded en la primera migración
@@ -51,6 +151,19 @@ _TEMPORALIDADES_SEED = ["Scalping", "Intraday", "Swing (H)", "Swing (S)", "Swing
 _FECHA_SEED = "2026-09-20"
 
 
+# Cuentas confirmadas al 2026-09-21 (5 de 5 completas).
+# GOLD = símbolo correcto en XMGlobal-MT5 7/9 (no XAUUSD).
+# WTIUSD = Petróleo WTI en XM — confirmar nombre exacto del símbolo en MT5 si falla.
+_CUENTAS_SEED = [
+    # login,      server,              nombre,                   simbolo,   temporalidad,  pct_riesgo
+    (318680674, "XMGlobal-MT5 7", "PETROLEO CRUDO SWING",   "WTIUSD",  "Swing (S)",   0.02),
+    (318735437, "XMGlobal-MT5 7", "EUR/USD SCALPING",       "EURUSD",  "Scalping",    0.01),
+    (336903105, "XMGlobal-MT5 9", "USD/JPY",                "USDJPY",  "Intraday",    0.01),
+    (336903102, "XMGlobal-MT5 9", "ORO INTRADAY",           "GOLD",    "Intraday",    0.02),
+    (108460538, "XMGlobal-MT5 5", "ORO SWING",              "GOLD",    "Swing (S)",   0.02),
+]
+
+
 def aplicar() -> None:
     with get_conn() as conn:
         for sql in _SQL:
@@ -59,4 +172,9 @@ def aplicar() -> None:
             cur.executemany(
                 "INSERT INTO catalogo_activos (simbolo, temporalidad, fecha_inicio) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
                 [(s, t, _FECHA_SEED) for s in _SIMBOLOS_SEED for t in _TEMPORALIDADES_SEED],
+            )
+            cur.executemany(
+                """INSERT INTO cuentas_demo (login, server, nombre, simbolo, temporalidad, pct_riesgo)
+                   VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING""",
+                _CUENTAS_SEED,
             )

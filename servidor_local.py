@@ -252,7 +252,7 @@ def trading_resumen() -> dict:
                       h.profit_usd, h.razon_cierre, h.cerrada_en
                FROM historial_posiciones h
                JOIN cuentas_demo cd ON cd.login = h.login
-               ORDER BY h.cerrada_en DESC LIMIT 10"""
+               ORDER BY h.cerrada_en DESC LIMIT 100"""
         ).fetchall()
 
     def _fmt(row, keys):
