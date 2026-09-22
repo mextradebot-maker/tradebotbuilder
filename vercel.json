@@ -7,6 +7,6 @@
     { "source": "/webhook/panel-alumnos-logout", "destination": "https://chatbotventas-n8n.h0w0dc.easypanel.host/webhook/panel-alumnos-logout" },
     { "source": "/webhook/panel-alumnos-robots", "destination": "https://chatbotventas-n8n.h0w0dc.easypanel.host/webhook/panel-alumnos-robots" },
     { "source": "/webhook/panel-alumnos-demo-status", "destination": "https://chatbotventas-n8n.h0w0dc.easypanel.host/webhook/panel-alumnos-demo-status" },
-    { "source": "/webhook/panel-alumnos-resumen", "destination": "https://chatbotventas-n8n.h0w0dc.easypanel.host/webhook/panel-alumnos-resumen" }
+    { "source": "/webhook/panel-alumnos-resumen", "destination": "https://demo-status.mextradebot.com.mx/trading-resumen" }
   ]
 }
