@@ -63,12 +63,7 @@ document.addEventListener('DOMContentLoaded', function(){
   if (regFormEl) {
     regFormEl.addEventListener('submit', function(ev){
       if (ev) ev.preventDefault();
-      var nombreInput = regFormEl.querySelector('input[name="nombre_completo"]');
-      var correoInput = regFormEl.querySelector('input[name="correo"]');
-      var nombreVal = (nombreInput && nombreInput.value.trim()) ? nombreInput.value.trim() : 'Alumno MexTradeBot';
-      var correoVal = correoInput ? correoInput.value.trim() : '';
-      localStorage.setItem('mtb_user_session', JSON.stringify({ nombre: nombreVal, correo: correoVal }));
-      mostrarWizard(nombreVal);
+      handleRegSubmit();
     });
   }
 
@@ -76,11 +71,66 @@ document.addEventListener('DOMContentLoaded', function(){
   if (loginFormEl) {
     loginFormEl.addEventListener('submit', function(ev){
       if (ev) ev.preventDefault();
-      var correoInput = loginFormEl.querySelector('input[name="correo"]');
-      var correoVal = correoInput ? correoInput.value.trim() : '';
-      var nombreVal = (correoVal.toLowerCase().indexOf('admin') !== -1) ? 'Admin MexTradeBot' : (correoVal ? correoVal.split('@')[0] : 'Alumno MexTradeBot');
-      localStorage.setItem('mtb_user_session', JSON.stringify({ nombre: nombreVal, correo: correoVal }));
-      mostrarWizard(nombreVal);
+      handleLoginSubmit();
+    });
+  }
+
+  var sidebarNav = document.getElementById('mtbSidebarNav');
+  if (sidebarNav) {
+    sidebarNav.addEventListener('click', function(ev){
+      var btn = ev.target.closest('[data-page]');
+      if (!btn) return;
+      document.querySelectorAll('#mtbSidebarNav [data-page]').forEach(function(b){ b.removeAttribute('aria-current'); });
+      btn.setAttribute('aria-current', 'true');
+      document.querySelectorAll('[id^="page-"]').forEach(function(p){ p.hidden = true; });
+      var page = document.getElementById('page-' + btn.dataset.page);
+      if (page) page.hidden = false;
+      var titleEl = document.getElementById('pageTitulo');
+      if (titleEl) titleEl.textContent = MTB_PAGE_TITULOS[btn.dataset.page] || '';
+      if (btn.dataset.page === 'catalogoTop' && typeof cargarCatalogoTopLevel === 'function') cargarCatalogoTopLevel();
+      if (btn.dataset.page === 'calendario' && typeof cargarCalendarioEconomico === 'function') cargarCalendarioEconomico();
+      if (btn.dataset.page === 'resumen' && typeof cargarResumen === 'function') cargarResumen();
+      if (btn.dataset.page === 'botsProduccion' && typeof cargarCatalogo === 'function') cargarCatalogo();
+    });
+  }
+
+  var wizardNav = document.getElementById('wizardNav');
+  if (wizardNav) {
+    wizardNav.addEventListener('click', function(ev){
+      var btn = ev.target.closest('[data-section]');
+      if (!btn) return;
+      document.querySelectorAll('#wizardNav [data-section]').forEach(function(b){ b.removeAttribute('aria-current'); });
+      btn.setAttribute('aria-current', 'true');
+      var pageBots = document.getElementById('page-botsProduccion');
+      if (pageBots) {
+        pageBots.querySelectorAll('section[data-section]').forEach(function(sec){ sec.hidden = true; });
+        var targetSec = pageBots.querySelector('section[data-section="' + btn.dataset.section + '"]');
+        if (targetSec) targetSec.hidden = false;
+      }
+      if (btn.dataset.section === 'catalogo' && typeof cargarCatalogo === 'function') cargarCatalogo();
+      if (btn.dataset.section === 'activos' && typeof cargarActivosAnalizados === 'function') cargarActivosAnalizados();
+      if (btn.dataset.section === 'personalizado' && typeof cargarPersonalizado === 'function') cargarPersonalizado();
+      if (btn.dataset.section === 'demo' && typeof cargarCuentaDemo === 'function') cargarCuentaDemo();
+      if (btn.dataset.section === 'validaciones' && typeof cargarValidaciones === 'function') cargarValidaciones();
+    });
+  }
+
+  var glosarioBtn = document.getElementById('glosarioBtn');
+  var cerrarGlosarioBtn = document.getElementById('cerrarGlosarioBtn');
+  var glosarioModal = document.getElementById('glosarioModal');
+  if (glosarioBtn && glosarioModal) {
+    glosarioBtn.addEventListener('click', function(){ glosarioModal.classList.remove('hidden'); });
+  }
+  if (cerrarGlosarioBtn && glosarioModal) {
+    cerrarGlosarioBtn.addEventListener('click', function(){ glosarioModal.classList.add('hidden'); });
+  }
+
+  var cerrarSesionBtn = document.getElementById('cerrarSesionBtn');
+  if (cerrarSesionBtn) {
+    cerrarSesionBtn.addEventListener('click', function(ev){
+      if (ev) ev.preventDefault();
+      localStorage.removeItem('mtb_user_session');
+      location.reload();
     });
   }
 
@@ -91,20 +141,10 @@ document.addEventListener('DOMContentLoaded', function(){
     mostrarWizard(savedSession.nombre);
   }
 });
+
+
 var MTB_PAGE_TITULOS = { master: 'Master Trader', resumen: 'Resumen', catalogoTop: 'Catalogo de Activos', botsProduccion: 'Bots en Produccion', conexionXm: 'Conexion XM', calendario: 'Calendario Economico', constructor: 'Constructor de Bots' };
-document.getElementById('mtbSidebarNav').addEventListener('click', function(ev){
-  var btn = ev.target.closest('[data-page]');
-  if (!btn) return;
-  document.querySelectorAll('#mtbSidebarNav [data-page]').forEach(function(b){ b.removeAttribute('aria-current'); });
-  btn.setAttribute('aria-current', 'true');
-  document.querySelectorAll('[id^="page-"]').forEach(function(p){ p.hidden = true; });
-  var page = document.getElementById('page-' + btn.dataset.page);
-  if (page) page.hidden = false;
-  document.getElementById('pageTitulo').textContent = MTB_PAGE_TITULOS[btn.dataset.page] || '';
-  if (btn.dataset.page === 'catalogoTop' && typeof cargarCatalogoTopLevel === 'function') cargarCatalogoTopLevel();
-  if (btn.dataset.page === 'calendario' && typeof cargarCalendarioEconomico === 'function') cargarCalendarioEconomico();
-  if (btn.dataset.page === 'resumen' && typeof cargarResumen === 'function') cargarResumen();
-});
+
 if (MTB_NOMBRE_INICIAL) {
   mostrarWizard(MTB_NOMBRE_INICIAL);
 } else if (MTB_ERROR_TIPO === 'credenciales_invalidas') {
