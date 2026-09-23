@@ -1,0 +1,800 @@
+<!doctype html><html lang='es'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'><title>Panel MexTradeBot - Registro</title><script src='https://cdn.tailwindcss.com'></script><link href='https://fonts.googleapis.com/css2?family=Lexend:wght@400;600;700;800&display=swap' rel='stylesheet'><style>body{font-family:'Lexend',sans-serif;background:#f8fafc}:root{--viable:#16a34a;--viable-bg:#dcfce7;--no-viable:#64748b;--no-viable-bg:#f1f5f9;--perdida:#dc2626;--perdida-bg:#fee2e2;--advertencia:#d97706;--advertencia-bg:#fef3c7}.mtb-btn{transition:transform 160ms ease-out}.mtb-btn:active{transform:scale(0.97)}.mtb-fade{opacity:0;transform:translateY(8px);transition:opacity 200ms ease-out,transform 200ms ease-out}.mtb-fade.mtb-in{opacity:1;transform:translateY(0)}.mtb-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:9999px;font-size:12px;font-weight:600}.mtb-nav-btn{padding:10px 14px;border-radius:10px;font-weight:600;font-size:14px;color:#475569;cursor:pointer;background:transparent;border:none}.mtb-nav-btn[aria-current='true']{background:#0f172a;color:#fff}.mtb-side-btn{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-weight:600;font-size:13.5px;color:#475569;cursor:pointer;background:transparent;border:none;width:100%;text-align:left;text-decoration:none}.mtb-side-btn:hover{background:#f1f5f9}.mtb-side-btn[aria-current='true']{background:#e0f2fe;color:#0369a1}.mtb-side-pill{font-size:10px;font-weight:700;color:#b45309;background:#fef3c7;border-radius:6px;padding:2px 6px;margin-left:auto}</style></head><body class='min-h-screen flex items-center justify-center p-4'><div id='app' class='w-full max-w-md'><div class='text-center mb-6'><div class='inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-slate-800 to-green-500 rounded-2xl mb-3'><span class='text-white text-3xl'>&#129302;</span></div><h1 class='text-2xl font-extrabold text-slate-800'>Panel de Alumnos MexTradeBot</h1><p class='text-slate-500 text-sm mt-1'>Registrate o inicia sesion para conectar tu cuenta XM y recibir tus robots</p></div><div id='regBlock'><form id='regForm' method='POST' action='/webhook/panel-alumnos' class='bg-white rounded-2xl shadow-xl p-6 space-y-4'><div><label class='text-sm font-semibold text-slate-700'>Nombre completo</label><input required name='nombre_completo' class='mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /></div><div><label class='text-sm font-semibold text-slate-700'>Correo electronico</label><input required type='email' name='correo' class='mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /></div><div><label class='text-sm font-semibold text-slate-700'>Telefono de recuperacion</label><input required name='telefono_recuperacion' class='mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /></div><div><label class='text-sm font-semibold text-slate-700'>Contrasena para el panel</label><div class='flex gap-2 mt-1'><input required id='password' name='password' type='text' class='flex-1 border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /><button type='button' id='genBtn' class='px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-semibold text-slate-700'>Generar</button></div><p class='text-xs text-slate-400 mt-1'>Puedes escribir la tuya o generar una automatica. Guardala, no la volveremos a mostrar.</p></div><button type='submit' class='mtb-btn w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg transition'>Crear mi cuenta</button><p id='errMsg' class='text-red-600 text-sm hidden'></p></form><p class='text-center text-sm text-slate-500 mt-4'>&#191;Ya tienes cuenta? <button type='button' id='irALogin' onclick="mostrar('loginBlock')" class='text-green-600 font-semibold underline cursor-pointer'>Inicia sesion</button></p></div><div id='loginBlock' class='hidden'><form id='loginForm' method='POST' action='/webhook/panel-alumnos-login' class='bg-white rounded-2xl shadow-xl p-6 space-y-4'><div><label class='text-sm font-semibold text-slate-700'>Correo electronico</label><input required type='email' name='correo' class='mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /></div><div><label class='text-sm font-semibold text-slate-700'>Contrasena</label><input required name='password' type='password' class='mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /></div><button type='submit' class='mtb-btn w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-lg transition'>Iniciar sesion</button><p id='loginErrMsg' class='text-red-600 text-sm hidden'></p></form><p class='text-center text-sm text-slate-500 mt-4'>&#191;No tienes cuenta? <button type='button' id='irARegistro' onclick="mostrar('regBlock')" class='text-green-600 font-semibold underline cursor-pointer'>Registrate</button></p></div></div><div id='wizard' class='hidden w-full' style='max-width:1120px'><div class='bg-white rounded-2xl shadow-xl overflow-hidden flex' style='min-height:560px'><aside class='w-56 shrink-0 border-r border-slate-200 flex flex-col p-3'><div class='mb-3 px-1'><div class='font-extrabold text-slate-800 text-sm'>MexTradeBot</div><div class='text-xs text-slate-400'>Panel de Alumnos</div></div><nav id='mtbSidebarNav' class='flex flex-col gap-1 flex-1'><button type='button' class='mtb-side-btn mtb-btn' data-page='master'>Master Trader<span class='mtb-side-pill'>Pronto</span></button><button type='button' class='mtb-side-btn mtb-btn' data-page='resumen'>Resumen</button><button type='button' class='mtb-side-btn mtb-btn' data-page='catalogoTop'>Catalogo de Activos</button><button type='button' class='mtb-side-btn mtb-btn' data-page='botsProduccion' aria-current='true'>Bots en Produccion</button><button type='button' class='mtb-side-btn mtb-btn' data-page='conexionXm'>Conexion XM</button><button type='button' class='mtb-side-btn mtb-btn' data-page='calendario'>Calendario Economico</button><button type='button' class='mtb-side-btn mtb-btn' data-page='constructor'>Constructor de Bots<span class='mtb-side-pill'>Pronto</span></button><button type='button' id='glosarioBtn' class='mtb-side-btn mtb-btn'>Glosario</button><a href='https://t.me/ricardopenac' target='_blank' rel='noopener' class='mtb-side-btn mtb-btn'><svg width='18' height='18' viewBox='0 0 240 240' aria-hidden='true'><circle cx='120' cy='120' r='120' fill='#26A5E4'></circle><path fill='#fff' d='M53 118l125-48c6-2 11 1 9 10l-21 101c-2 8-7 10-14 6l-38-28-18 17c-2 2-4 4-8 4l3-40 74-67c3-3-1-4-4-2l-91 57-39-12c-8-3-8-9 2-12z'></path></svg><span>Telegram</span></a></nav></aside><div class='flex-1 min-w-0 flex flex-col'><div class='flex items-center justify-between px-6 py-4 border-b border-slate-200'><div><h1 id='pageTitulo' class='text-xl font-extrabold text-slate-800'>Bots en Produccion</h1><p id='wizardSaludo' class='text-slate-500 text-sm'></p></div><a id='cerrarSesionBtn' href='/webhook/panel-alumnos-logout' class='mtb-btn text-sm font-semibold text-slate-500 underline'>Cerrar sesion</a></div><div class='p-6 flex-1 overflow-auto'><div id='page-master' hidden><div class='text-center py-10'><div class='text-slate-800 font-bold mb-2'>Aun no esta construido</div><p class='text-slate-500 text-sm max-w-sm mx-auto'>Master Trader sera el agente que orqueste tus robots automaticamente, sin que tengas que operarlos tu. Todavia no existe.</p></div></div><div id='page-resumen' hidden><div id='resumenContenido' class='text-slate-400 text-sm'>Cargando resumen...</div></div><div id='page-catalogoTop' hidden><div id='catalogoTopContenido' class='text-slate-400 text-sm'>Cargando catalogo...</div></div><div id='page-botsProduccion'><nav id='wizardNav' class='flex flex-wrap gap-2 mb-5 bg-slate-50 p-2 rounded-2xl'><button class='mtb-nav-btn mtb-btn' data-section='catalogo' aria-current='true'>Catalogo</button><button class='mtb-nav-btn mtb-btn' data-section='activos'>Activos analizados</button><button class='mtb-nav-btn mtb-btn' data-section='personalizado'>Personalizado</button><button class='mtb-nav-btn mtb-btn' data-section='demo'>Cuenta demo</button><button class='mtb-nav-btn mtb-btn' data-section='validaciones'>Mis Validaciones</button></nav><section data-section='catalogo'><div id='catalogoFrescura' class='text-xs text-slate-400 mb-3'></div><div id='catalogoContenido' class='text-slate-400 text-sm'>Cargando catalogo...</div></section><section data-section='activos' hidden><div id='activosContenido' class='text-slate-400 text-sm'>Cargando activos...</div></section><section data-section='personalizado' hidden><div id='personalizadoContenido' class='text-slate-400 text-sm'>Cargando...</div></section><section data-section='demo' hidden><div id='demoContenido' class='text-slate-400 text-sm'>Cargando cuenta demo...</div></section><section data-section='validaciones' hidden><div id='validacionesContenido' class='text-slate-400 text-sm'>Cargando...</div></section></div><div id='page-conexionXm' hidden><div class='grid sm:grid-cols-2 gap-4'><div class='border border-slate-200 rounded-2xl p-5'><h3 class='font-bold text-slate-800 mb-2'>1 &middot; Registrate en XM</h3><p class='text-sm text-slate-500 mb-3'>Usa el codigo de afiliado para registrarte como alumno de MexTradeBot.</p><div class='inline-block bg-slate-100 rounded-lg px-3 py-1.5 text-sm font-mono mb-3'>Codigo HDY28</div><a href='https://affs.click/Ahf2k' target='_blank' rel='noopener' class='mtb-btn block text-center bg-green-500 hover:bg-green-600 text-white font-bold py-2.5 rounded-lg'>Ir al registro</a></div><div class='border border-slate-200 rounded-2xl p-5'><h3 class='font-bold text-slate-800 mb-2'>2 &middot; Abre tu cuenta</h3><p class='text-sm text-slate-500 mb-3'>Real o demo, Standard MT5, desde tu propio panel de XM.</p><div class='inline-block bg-slate-100 rounded-lg px-3 py-1.5 text-sm font-mono mb-3'>XMGlobal-MT5</div><a href='https://www.xm.com/es' target='_blank' rel='noopener' class='mtb-btn block text-center bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-lg'>Ir a mi panel de XM</a></div></div><p class='text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-4'>El balance en vivo de tu cuenta demo se muestra dentro de <strong>Bots en Produccion &rarr; Cuenta demo</strong> &mdash; esta seccion es solo para dar de alta tu cuenta.</p></div><div id='page-calendario' hidden><div id='calendarioContenido' class='text-slate-400 text-sm'>Cargando calendario...</div></div><div id='page-constructor' hidden><div class='text-center py-10'><div class='text-slate-800 font-bold mb-2'>Aun no esta construido</div><p class='text-slate-500 text-sm max-w-sm mx-auto'>Aqui armaras tu propio robot con las herramientas del motor SMC (Order Blocks, FVG, estructura). Incluira su propia instancia de Backtester cuando exista.</p></div></div></div></div></div></div><div id='glosarioModal' class='hidden fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50'><div class='bg-white rounded-2xl shadow-xl p-6 max-w-md w-full max-h-[85vh] overflow-y-auto'><h2 class='text-lg font-bold text-slate-800 mb-3'>&#128214; Glosario &mdash; terminos tecnicos</h2><div class='space-y-3 text-sm text-slate-600'><p><strong class='text-slate-800'>BOS (Break of Structure / Ruptura de Estructura)</strong><br>El precio rompe un maximo o minimo anterior <strong>a favor</strong> de la tendencia que ya traia. Confirma que la tendencia sigue viva y probablemente continue en esa direccion.</p><p><strong class='text-slate-800'>CHOCH (Change of Character / Cambio de Caracter)</strong><br>El precio rompe un maximo o minimo anterior <strong>en contra</strong> de la tendencia que traia. Es la primera senal de que la tendencia podria estar cambiando &mdash; un aviso temprano de posible reversion.</p><p>En resumen: BOS = "la tendencia sigue", CHOCH = "podria estar girando".</p><p>Nuestro motor analiza la estructura del mercado (Smart Money Concepts) buscando estos quiebres para decidir si conviene comprar o vender un activo en este momento.</p><p><strong class='text-slate-800'>Setup</strong><br>Una oportunidad de operacion que el motor detecto en el historico: el punto exacto donde barrio liquidez, cambio de estructura (CHOCH) y dejo un FVG, con su entrada y su stop ya definidos. Cada setup es una operacion hipotetica completa que el backtest corre hacia adelante para ver si habria ganado o perdido.</p><p><strong class='text-slate-800'>R (multiplo de riesgo)</strong><br>La unidad con la que medimos el resultado, en vez de dolares o pips. R = la distancia entre la entrada y el stop. Cada setup arriesga exactamente 1R; el take-profit esta puesto a 2R (el doble). Por eso cada operacion solo puede terminar en -1R (perdio) o +2R (gano) &mdash; nunca en un numero intermedio.</p><p><strong class='text-slate-800'>Winrate</strong><br>El porcentaje de setups que ganaron, del total de operaciones resueltas (sin contar las que no llegaron a tocar stop ni take-profit).</p><p><strong class='text-slate-800'>Expectativa R</strong><br>El promedio de R que deja cada operacion. Es el numero que de verdad importa: un winrate bajo puede seguir siendo rentable si la expectativa es positiva (ejemplo: 40% de acierto a 2R = +0.2R promedio por operacion, si conviene operarlo).</p><p><strong class='text-slate-800'>R total</strong><br>La suma de todos los R de un backtest &mdash; el resultado acumulado de correr todas las operaciones, una tras otra, arriesgando siempre lo mismo.</p></div><button id='cerrarGlosarioBtn' type='button' class='mtb-btn mt-5 w-full bg-slate-800 text-white font-bold py-2.5 rounded-lg'>Cerrar</button></div></div><script>var MTB_CLAVE = "";
+var MTB_NOMBRE_INICIAL = "";
+var MTB_ERROR_TIPO = "";
+var MTB_ERROR_MENSAJE = "";
+
+function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+function mostrar(id){
+  ['regBlock','loginBlock'].forEach(function(x){
+    var el = document.getElementById(x);
+    if (el) el.classList.add('hidden');
+  });
+  var target = document.getElementById(id);
+  if (target) target.classList.remove('hidden');
+}
+
+function mostrarWizard(nombre){
+  var app = document.getElementById('app');
+  var wizard = document.getElementById('wizard');
+  if (app) app.classList.add('hidden');
+  if (wizard) wizard.classList.remove('hidden');
+  var saludo = document.getElementById('wizardSaludo');
+  if (saludo) saludo.textContent = 'Hola, ' + (nombre || 'Alumno MexTradeBot');
+  cargarCatalogo();
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  var irL = document.getElementById('irALogin');
+  if (irL) irL.addEventListener('click', function(ev){ if (ev) ev.preventDefault(); mostrar('loginBlock'); });
+
+  var irR = document.getElementById('irARegistro');
+  if (irR) irR.addEventListener('click', function(ev){ if (ev) ev.preventDefault(); mostrar('regBlock'); });
+
+  var genBtn = document.getElementById('genBtn');
+  if (genBtn) genBtn.addEventListener('click', function(){
+    var arr = new Uint8Array(9); crypto.getRandomValues(arr);
+    var pass = btoa(String.fromCharCode.apply(null, arr)).replace(/[+/=]/g,'').slice(0,12);
+    var pEl = document.getElementById('password');
+    if (pEl) pEl.value = pass;
+  });
+
+  var regFormEl = document.getElementById('regForm');
+  if (regFormEl) {
+    regFormEl.addEventListener('submit', function(ev){
+      if (ev) ev.preventDefault();
+      var nombreInput = regFormEl.querySelector('input[name="nombre_completo"]');
+      var correoInput = regFormEl.querySelector('input[name="correo"]');
+      var nombreVal = (nombreInput && nombreInput.value.trim()) ? nombreInput.value.trim() : 'Alumno MexTradeBot';
+      var correoVal = correoInput ? correoInput.value.trim() : '';
+      localStorage.setItem('mtb_user_session', JSON.stringify({ nombre: nombreVal, correo: correoVal }));
+      mostrarWizard(nombreVal);
+    });
+  }
+
+  var loginFormEl = document.getElementById('loginForm');
+  if (loginFormEl) {
+    loginFormEl.addEventListener('submit', function(ev){
+      if (ev) ev.preventDefault();
+      var correoInput = loginFormEl.querySelector('input[name="correo"]');
+      var correoVal = correoInput ? correoInput.value.trim() : '';
+      var nombreVal = (correoVal.toLowerCase().indexOf('admin') !== -1) ? 'Admin MexTradeBot' : (correoVal ? correoVal.split('@')[0] : 'Alumno MexTradeBot');
+      localStorage.setItem('mtb_user_session', JSON.stringify({ nombre: nombreVal, correo: correoVal }));
+      mostrarWizard(nombreVal);
+    });
+  }
+
+  var savedSession = null;
+  try { savedSession = JSON.parse(localStorage.getItem('mtb_user_session')); } catch(e){}
+
+  if (savedSession && savedSession.nombre) {
+    mostrarWizard(savedSession.nombre);
+  }
+});
+var MTB_PAGE_TITULOS = { master: 'Master Trader', resumen: 'Resumen', catalogoTop: 'Catalogo de Activos', botsProduccion: 'Bots en Produccion', conexionXm: 'Conexion XM', calendario: 'Calendario Economico', constructor: 'Constructor de Bots' };
+document.getElementById('mtbSidebarNav').addEventListener('click', function(ev){
+  var btn = ev.target.closest('[data-page]');
+  if (!btn) return;
+  document.querySelectorAll('#mtbSidebarNav [data-page]').forEach(function(b){ b.removeAttribute('aria-current'); });
+  btn.setAttribute('aria-current', 'true');
+  document.querySelectorAll('[id^="page-"]').forEach(function(p){ p.hidden = true; });
+  var page = document.getElementById('page-' + btn.dataset.page);
+  if (page) page.hidden = false;
+  document.getElementById('pageTitulo').textContent = MTB_PAGE_TITULOS[btn.dataset.page] || '';
+  if (btn.dataset.page === 'catalogoTop' && typeof cargarCatalogoTopLevel === 'function') cargarCatalogoTopLevel();
+  if (btn.dataset.page === 'calendario' && typeof cargarCalendarioEconomico === 'function') cargarCalendarioEconomico();
+  if (btn.dataset.page === 'resumen' && typeof cargarResumen === 'function') cargarResumen();
+});
+if (MTB_NOMBRE_INICIAL) {
+  mostrarWizard(MTB_NOMBRE_INICIAL);
+} else if (MTB_ERROR_TIPO === 'credenciales_invalidas') {
+  mostrar('loginBlock');
+  var elL = document.getElementById('loginErrMsg'); elL.textContent = MTB_ERROR_MENSAJE; elL.classList.remove('hidden');
+} else if (MTB_ERROR_TIPO) {
+  mostrar('regBlock');
+  var elR = document.getElementById('errMsg'); elR.textContent = MTB_ERROR_MENSAJE; elR.classList.remove('hidden');
+}
+function proximaActualizacionTexto(){
+  var horas = [0, 8, 13];
+  var ahora = new Date();
+  var candidato = null;
+  for (var i = 0; i < horas.length; i++) {
+    var c = new Date(ahora); c.setHours(horas[i], 0, 0, 0);
+    if (c > ahora) { candidato = c; break; }
+  }
+  if (!candidato) { candidato = new Date(ahora); candidato.setDate(candidato.getDate() + 1); candidato.setHours(0, 0, 0, 0); }
+  var ultimo = null;
+  for (var j = horas.length - 1; j >= 0; j--) {
+    var u = new Date(ahora); u.setHours(horas[j], 0, 0, 0);
+    if (u <= ahora) { ultimo = u; break; }
+  }
+  if (!ultimo) { ultimo = new Date(ahora); ultimo.setDate(ultimo.getDate() - 1); ultimo.setHours(13, 0, 0, 0); }
+  var hhProximo = String(candidato.getHours()).padStart(2, '0');
+  var hhUltimo = String(ultimo.getHours()).padStart(2, '0');
+  return 'Analisis mas reciente: ' + hhUltimo + ':00. El catalogo se actualiza 3 veces al dia (00:00, 08:00 y 13:00). Proxima actualizacion aproximada: ' + hhProximo + ':00. Conecta tu cuenta y opera antes de esa hora para operar con la tendencia vigente.';
+}
+function nombreRobotLegible(r){ return esc(String(r).replace(/\\_/g, '_')); }
+function badgeActivo(a){
+  if (a.viable) {
+    return '<span class="mtb-badge" style="background:var(--viable-bg);color:var(--viable)">Recomendado &middot; ' + esc(a.temporalidad_recomendada) + ' / ' + (a.direccion === 'compra' ? 'Compra' : 'Venta') + '</span>';
+  }
+  return '<span class="mtb-badge" style="background:var(--no-viable-bg);color:var(--no-viable)">Sin datos suficientes</span>';
+}
+var CATEGORIA_POR_SIMBOLO = {
+  EURUSD:'FOREX', GBPUSD:'FOREX', USDJPY:'FOREX', AUDUSD:'FOREX', USDCAD:'FOREX', USDCHF:'FOREX', NZDUSD:'FOREX',
+  EURGBP:'FOREX', EURJPY:'FOREX', GBPJPY:'FOREX', AUDJPY:'FOREX', EURAUD:'FOREX', AUDCAD:'FOREX', NZDJPY:'FOREX', CADJPY:'FOREX',
+  XAUUSD:'METALES', XAGUSD:'METALES', XPTUSD:'METALES', XPDUSD:'METALES',
+  WTIUSD:'MATERIAS PRIMAS', BRENTUSD:'MATERIAS PRIMAS',
+  US30:'INDICES', US100:'INDICES', US500:'INDICES', GER40:'INDICES', UK100:'INDICES', JP225:'INDICES',
+  BTCUSD:'CRYPTO', ETHUSD:'CRYPTO', XRPUSD:'CRYPTO',
+  AMXL:'ACCIONES', CEMEXCPO:'ACCIONES', GOOGL:'ACCIONES', NVDA:'ACCIONES', META:'ACCIONES', WMT:'ACCIONES'
+};
+var ORDEN_CATEGORIAS = ['FOREX', 'METALES', 'MATERIAS PRIMAS', 'INDICES', 'CRYPTO', 'ACCIONES'];
+var PAGINA_TAMANO_ACTIVOS = 6;
+var mtbPaginasActivos = {};
+var mtbCategoriaActiva = {};
+
+function agruparPorCategoria(activos){
+  var grupos = {};
+  activos.forEach(function(a){
+    var cat = CATEGORIA_POR_SIMBOLO[a.simbolo] || 'OTROS';
+    if (!grupos[cat]) grupos[cat] = [];
+    grupos[cat].push(a);
+  });
+  return grupos;
+}
+
+function renderActivosAgrupados(prefijoEstado, activos, renderItem){
+  var grupos = agruparPorCategoria(activos);
+  var categorias = ORDEN_CATEGORIAS.concat(Object.keys(grupos).filter(function(c){ return ORDEN_CATEGORIAS.indexOf(c) === -1; })).filter(function(c){ return grupos[c] && grupos[c].length > 0; });
+  if (categorias.length === 0) return '';
+  var activa = mtbCategoriaActiva[prefijoEstado];
+  if (!activa || categorias.indexOf(activa) === -1) activa = categorias[0];
+  var html = '<div class="flex flex-wrap gap-1.5 mb-3" data-categorias="' + esc(prefijoEstado) + '">' + categorias.map(function(cat){
+    var sel = cat === activa;
+    return '<button type="button" class="mtb-btn text-xs font-semibold px-2.5 py-1 rounded-full border ' + (sel ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400') + '" data-categoria="' + esc(cat) + '">' + esc(cat) + ' <span class="' + (sel ? 'text-slate-300' : 'text-slate-400') + ' font-normal">(' + grupos[cat].length + ')</span></button>';
+  }).join('') + '</div>';
+  var lista = grupos[activa];
+  var claveEstado = prefijoEstado + '|' + activa;
+  var pagina = mtbPaginasActivos[claveEstado] || 1;
+  var totalPaginas = Math.max(1, Math.ceil(lista.length / PAGINA_TAMANO_ACTIVOS));
+  if (pagina > totalPaginas) pagina = totalPaginas;
+  var inicio = (pagina - 1) * PAGINA_TAMANO_ACTIVOS;
+  var pageItems = lista.slice(inicio, inicio + PAGINA_TAMANO_ACTIVOS);
+  html += '<div class="space-y-2">' + pageItems.map(renderItem).join('') + '</div>';
+  if (totalPaginas > 1) {
+    html += '<div class="flex items-center justify-center gap-3 mt-3" data-paginacion="' + esc(claveEstado) + '">' +
+      '<button type="button" class="mtb-btn text-xs px-2 py-1 rounded border border-slate-200"' + (pagina <= 1 ? ' disabled' : '') + ' data-pagina="' + (pagina - 1) + '">&lsaquo;</button>' +
+      '<span class="text-xs text-slate-500">' + pagina + ' / ' + totalPaginas + '</span>' +
+      '<button type="button" class="mtb-btn text-xs px-2 py-1 rounded border border-slate-200"' + (pagina >= totalPaginas ? ' disabled' : '') + ' data-pagina="' + (pagina + 1) + '">&rsaquo;</button>' +
+    '</div>';
+  }
+  return html;
+}
+
+function vincularPaginacion(cont, rerenderFn){
+  cont.querySelectorAll('[data-paginacion] [data-pagina]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var clave = btn.closest('[data-paginacion]').getAttribute('data-paginacion');
+      mtbPaginasActivos[clave] = parseInt(btn.getAttribute('data-pagina'), 10);
+      rerenderFn();
+    });
+  });
+  cont.querySelectorAll('[data-categorias] [data-categoria]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var prefijo = btn.closest('[data-categorias]').getAttribute('data-categorias');
+      mtbCategoriaActiva[prefijo] = btn.getAttribute('data-categoria');
+      rerenderFn();
+    });
+  });
+}
+
+var mtbCatalogoCache = null;
+function cargarCatalogo(){
+  var cont = document.getElementById('catalogoContenido');
+  document.getElementById('catalogoFrescura').textContent = proximaActualizacionTexto();
+  cont.textContent = 'Cargando catalogo...';
+  fetch('/webhook/panel-alumnos-robots', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ clave: MTB_CLAVE, accion: 'catalogo' }) })
+    .then(function(r){ return r.json(); })
+    .then(function(data){ mtbCatalogoCache = data; renderCatalogo(); })
+    .catch(function(){ cont.textContent = 'No se pudo cargar el catalogo. Intenta de nuevo mas tarde.'; });
+}
+function renderCatalogo(){
+  var data = mtbCatalogoCache;
+  var cont = document.getElementById('catalogoContenido');
+  var viables = (data.activos_todos || []).filter(function(a){ return a.viable; });
+  var noViables = (data.activos_todos || []).filter(function(a){ return !a.viable; });
+  var html = '';
+  html += '<h3 class="font-bold text-slate-800 mb-2">Robots aprobados</h3>';
+  if (!data.robots || data.robots.length === 0) {
+    html += '<p class="text-sm text-slate-400 mb-4">Por ahora no hay robots pre-armados. Usa la pestana Personalizado.</p>';
+  } else {
+    html += '<div class="space-y-2 mb-5">' + data.robots.map(function(r){
+      return '<div class="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2"><div class="min-w-0"><div class="font-semibold text-slate-800 text-sm break-all">' + nombreRobotLegible(r.robot) + '</div><div class="text-xs text-slate-500">' + esc(r.simbolo) + ' &middot; ' + esc(r.tipo) + ' &middot; riesgo ' + esc(r.riesgo) + '</div></div><button class="mtb-btn bg-green-500 text-white text-sm font-semibold px-3 py-1.5 rounded-lg shrink-0" data-descargar-robot="' + esc(r.robot) + '">Descargar</button></div>';
+    }).join('') + '</div>';
+  }
+  html += '<h3 class="font-bold text-slate-800 mb-2">Activos monitoreados</h3>';
+  html += renderActivosAgrupados('catalogo', viables, function(a){
+    return '<div class="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2"><div class="font-semibold text-slate-800 text-sm">' + esc(a.simbolo) + ' <span class="text-slate-400 font-normal">' + esc(a.nombre) + '</span></div>' + badgeActivo(a) + '</div>';
+  });
+  if (noViables.length > 0) {
+    html += '<button id="verTodosBtn" type="button" class="mtb-btn text-sm text-slate-500 underline mt-3">Ver todos los activos (' + noViables.length + ' sin datos suficientes)</button>';
+    html += '<div id="noViablesLista" class="hidden space-y-2 mt-2">' + noViables.map(function(a){
+      return '<div class="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2"><div class="font-semibold text-slate-800 text-sm">' + esc(a.simbolo) + ' <span class="text-slate-400 font-normal">' + esc(a.nombre) + '</span></div>' + badgeActivo(a) + '</div>';
+    }).join('') + '</div>';
+  }
+  cont.innerHTML = html;
+  var verTodosBtn = document.getElementById('verTodosBtn');
+  if (verTodosBtn) { verTodosBtn.addEventListener('click', function(){ document.getElementById('noViablesLista').classList.toggle('hidden'); }); }
+  cont.querySelectorAll('[data-descargar-robot]').forEach(function(btn){
+    btn.addEventListener('click', function(){ descargarArchivo({ accion: 'robot_catalogo', robotElegido: btn.getAttribute('data-descargar-robot') }).then(function(res){ if (res && res.descargado === false) { alert((res && res.error) || 'No se pudo descargar. Intenta de nuevo.'); } }).catch(function(){ alert('No se pudo descargar. Intenta de nuevo.'); }); });
+  });
+  vincularPaginacion(cont, renderCatalogo);
+}
+function descargarArchivo(body){
+  var full = Object.assign({ clave: MTB_CLAVE }, body);
+  return fetch('/webhook/panel-alumnos-robots', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(full) })
+    .then(function(r){
+      var disposition = r.headers.get('Content-Disposition');
+      if (disposition) {
+        var direccion = r.headers.get('X-Direccion');
+        var winrate = r.headers.get('X-Winrate');
+        var expectativa = r.headers.get('X-Expectativa-R');
+        return r.blob().then(function(blob){
+          var m = /filename=([^;]+)/.exec(disposition);
+          var nombre = m ? m[1].trim() : 'robot.txt';
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(url);
+          return { descargado: true, direccion: direccion, winrate: winrate, expectativa: expectativa };
+        });
+      }
+      return r.json().then(function(data){ return Object.assign({ descargado: false }, data); });
+    });
+}
+
+var mtbActivosCache = null;
+function cargarActivosAnalizados(){
+  var cont = document.getElementById('activosContenido');
+  cont.textContent = 'Cargando activos...';
+  fetch('/webhook/panel-alumnos-robots', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ clave: MTB_CLAVE, accion: 'catalogo' }) })
+    .then(function(r){ return r.json(); })
+    .then(function(data){ mtbActivosCache = data; renderActivosAnalizados(); })
+    .catch(function(){ cont.textContent = 'No se pudo cargar. Intenta de nuevo mas tarde.'; });
+}
+function renderActivosAnalizados(){
+  var data = mtbActivosCache;
+  var cont = document.getElementById('activosContenido');
+  var activos = (data.activos_todos || []).filter(function(a){ return a.viable; });
+  if (activos.length === 0) { cont.innerHTML = '<p class="text-sm text-slate-400">No hay activos con datos suficientes todavia.</p>'; return; }
+  cont.innerHTML = renderActivosAgrupados('activos', activos, function(a){
+    return '<div class="border border-slate-200 rounded-lg px-3 py-2"><div class="flex items-center justify-between"><div class="font-semibold text-slate-800 text-sm">' + esc(a.simbolo) + '</div>' + badgeActivo(a) + '</div><div class="flex gap-2 mt-2"><button class="mtb-btn bg-green-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg" data-rapido="' + esc(a.simbolo) + '">Descarga rapida</button><button class="mtb-btn bg-slate-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg" data-personalizar="' + esc(a.simbolo) + '">Personalizar</button></div></div>';
+  });
+  cont.querySelectorAll('[data-rapido]').forEach(function(btn){
+    btn.addEventListener('click', function(){ descargarArchivo({ accion: 'activo_rapido', simbolo: btn.getAttribute('data-rapido') }).then(function(res){ if (res && res.descargado === false) { alert((res && res.error) || 'No se pudo descargar. Intenta de nuevo.'); } }).catch(function(){ alert('No se pudo descargar. Intenta de nuevo.'); }); });
+  });
+  cont.querySelectorAll('[data-personalizar]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      window.mtbSimboloPreseleccionado = btn.getAttribute('data-personalizar');
+      document.querySelector('#wizardNav [data-section="personalizado"]').click();
+    });
+  });
+  vincularPaginacion(cont, renderActivosAnalizados);
+}
+function cargarCatalogoTopLevel(){
+  var cont = document.getElementById('catalogoTopContenido');
+  cont.textContent = 'Cargando catalogo...';
+  fetch('/webhook/panel-alumnos-robots', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ clave: MTB_CLAVE, accion: 'catalogo' }) })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var todos = data.activos_todos || [];
+      var viables = todos.filter(function(a){ return a.viable; });
+      var noViables = todos.filter(function(a){ return !a.viable; });
+      var html = '<p class="text-xs text-slate-400 mb-3">' + viables.length + ' activos recomendados de ' + todos.length + ' monitoreados en total.</p>';
+      html += '<div class="space-y-2">' + viables.map(function(a){
+        return '<div class="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2"><div class="font-semibold text-slate-800 text-sm">' + esc(a.simbolo) + ' <span class="text-slate-400 font-normal">' + esc(a.nombre) + '</span></div>' + badgeActivo(a) + '</div>';
+      }).join('') + '</div>';
+      if (noViables.length > 0) {
+        html += '<button id="verTodosTopBtn" type="button" class="mtb-btn text-sm text-slate-500 underline mt-3">Ver todos los activos (' + noViables.length + ' sin datos suficientes)</button>';
+        html += '<div id="noViablesTopLista" class="hidden space-y-2 mt-2">' + noViables.map(function(a){
+          return '<div class="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2"><div class="font-semibold text-slate-800 text-sm">' + esc(a.simbolo) + ' <span class="text-slate-400 font-normal">' + esc(a.nombre) + '</span></div>' + badgeActivo(a) + '</div>';
+        }).join('') + '</div>';
+      }
+      cont.innerHTML = html;
+      var verTodosTopBtn = document.getElementById('verTodosTopBtn');
+      if (verTodosTopBtn) { verTodosTopBtn.addEventListener('click', function(){ document.getElementById('noViablesTopLista').classList.toggle('hidden'); }); }
+    })
+    .catch(function(){ cont.textContent = 'No se pudo cargar el catalogo. Intenta de nuevo mas tarde.'; });
+}
+function cargarPersonalizado(){
+  var cont = document.getElementById('personalizadoContenido');
+  var simboloInicial = window.mtbSimboloPreseleccionado || '';
+  cont.innerHTML = '<form id="personalizadoForm" class="space-y-3">' +
+    '<div><label class="text-sm font-semibold text-slate-700">Simbolo</label><input required name="simbolo" value="' + esc(simboloInicial) + '" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 uppercase" /></div>' +
+    '<div><label class="text-sm font-semibold text-slate-700">Tipo</label><select name="tipoRobot" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option>Scalping</option><option>Intraday</option><option>Swing (H)</option><option>Swing (S)</option><option>Swing (M)</option></select></div>' +
+    '<div><label class="text-sm font-semibold text-slate-700">Riesgo</label><select name="riesgo" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option>Bajo</option><option>Medio</option><option>Alto</option></select></div>' +
+    '<div><label class="text-sm font-semibold text-slate-700">Capital</label><select name="capital" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option value="300">$300 - $500</option><option value="500">$500 - $1,000</option><option value="1000">$1,000 - $3,000</option><option value="3000">$3,000+</option></select></div>' +
+    '<button type="submit" class="mtb-btn w-full bg-green-500 text-white font-bold py-2.5 rounded-lg">Entregar</button>' +
+    '<div id="personalizadoResultado" class="text-sm mt-2"></div>' +
+    '</form>';
+  document.getElementById('personalizadoForm').addEventListener('submit', function(ev){
+    ev.preventDefault();
+    var f = ev.target;
+    var resEl = document.getElementById('personalizadoResultado');
+    resEl.innerHTML = 'Consultando...';
+    var body = { accion: 'personalizado', simbolo: f.simbolo.value.toUpperCase(), tipoRobot: f.tipoRobot.value, riesgo: f.riesgo.value, capital: f.capital.value };
+    descargarArchivo(body).then(function(res){
+      if (res.descargado) {
+        resEl.innerHTML = '<div class="mtb-badge" style="background:var(--viable-bg);color:var(--viable)">Descargado</div>' +
+          '<p class="mt-2 text-slate-600">Direccion: ' + esc(res.direccion || '-') + ' &middot; Winrate: ' + (res.winrate ? esc(res.winrate) + '%' : '-') + ' &middot; Expectativa: ' + esc(res.expectativa || '-') + 'R</p>';
+        return;
+      }
+      if (res.bloqueado) {
+        resEl.innerHTML = '<div class="mtb-badge" style="background:var(--advertencia-bg);color:var(--advertencia)">Bloqueado</div>' +
+          '<p class="mt-2 text-slate-600">' + esc(res.razon) + '</p>' +
+          '<div class="flex gap-2 mt-2">' + (res.alternativas || []).map(function(alt){
+            return '<button class="mtb-btn bg-slate-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg" data-alternativa="' + esc(alt) + '">Probar ' + esc(alt) + '</button>';
+          }).join('') + '</div>';
+        resEl.querySelectorAll('[data-alternativa]').forEach(function(btn){
+          btn.addEventListener('click', function(){ f.tipoRobot.value = btn.getAttribute('data-alternativa'); f.requestSubmit(); });
+        });
+        return;
+      }
+      resEl.innerHTML = '<p class="text-red-600">' + esc(res.error || 'Ocurrio un error.') + '</p>';
+    }).catch(function(){ resEl.innerHTML = '<p class="text-red-600">No se pudo conectar. Intenta de nuevo.</p>'; });
+  });
+}
+function cargarCuentaDemo(){
+  var cont = document.getElementById('demoContenido');
+  cont.textContent = 'Cargando cuenta demo...';
+  fetch('/webhook/panel-alumnos-demo-status')
+    .then(function(r){ if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+    .then(function(data){
+      var html = '<p class="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">Esta es nuestra cuenta demo de prueba (' + esc(data.cuenta.server) + ') &mdash; no es tu cuenta personal.</p>';
+      html += '<div class="grid grid-cols-2 gap-3 mb-4">' +
+        '<div class="border border-slate-200 rounded-lg px-3 py-2"><div class="text-xs text-slate-400">Balance</div><div class="font-bold text-slate-800">' + esc(data.cuenta.currency) + ' ' + data.cuenta.balance.toFixed(2) + '</div></div>' +
+        '<div class="border border-slate-200 rounded-lg px-3 py-2"><div class="text-xs text-slate-400">Equity actual</div><div class="font-bold text-slate-800">' + esc(data.cuenta.currency) + ' ' + data.cuenta.equity.toFixed(2) + '</div></div>' +
+        '<div class="border border-slate-200 rounded-lg px-3 py-2"><div class="text-xs text-slate-400">Drawdown maximo</div><div class="font-bold text-slate-800">' + data.drawdown_pct.toFixed(1) + '%</div></div>' +
+        '<div class="border border-slate-200 rounded-lg px-3 py-2"><div class="text-xs text-slate-400">Operaciones cerradas</div><div class="font-bold text-slate-800">' + esc(data.num_operaciones) + '</div></div>' +
+      '</div>';
+      if (!data.semanas || data.semanas.length === 0) {
+        html += '<p class="text-sm text-slate-400">Todavia no hay operaciones cerradas en esta cuenta para mostrar P&amp;L semanal.</p>';
+      } else {
+        html += '<h3 class="font-bold text-slate-800 mb-2">P&amp;L semanal</h3><div class="space-y-1">' + data.semanas.map(function(s){
+          var positivo = s.profit >= 0;
+          return '<div class="flex items-center justify-between text-sm"><span class="text-slate-500">' + esc(s.semana) + ' <span class="text-slate-400">(' + esc(s.operaciones) + ' op.)</span></span><span style="color:' + (positivo ? 'var(--viable)' : 'var(--perdida)') + '">' + (positivo ? '+' : '') + s.profit.toFixed(2) + '</span></div>';
+        }).join('') + '</div>';
+      }
+      cont.innerHTML = html;
+    })
+    .catch(function(){ cont.innerHTML = '<p class="text-sm text-red-600">No se pudo conectar con la cuenta demo ahora. Intenta de nuevo en unos minutos.</p>'; });
+}
+function mostrarResultadoValidacion(resEl, data){
+  if (!data.velas || data.n_setups === 0) {
+    resEl.innerHTML = '<p class="text-sm text-slate-400 mt-2">Sin datos suficientes para ' + esc(data.simbolo || '') + ' en este periodo.</p>';
+    return;
+  }
+  var badge = data.rentable_sin_optimizar
+    ? '<span class="mtb-badge" style="background:var(--viable-bg);color:var(--viable)">Rentable sin optimizar</span>'
+    : '<span class="mtb-badge" style="background:var(--no-viable-bg);color:var(--no-viable)">No rentable sin optimizar</span>';
+  var confluencia = '';
+  if (data.confluencia_order_block != null || data.confluencia_liquidez != null) {
+    confluencia = '<p class="text-xs text-slate-500 mt-1">Confluencia Order Block: ' + (data.confluencia_order_block != null ? esc(Math.round(data.confluencia_order_block * 100)) + '%' : '-') + ' &middot; Liquidez: ' + (data.confluencia_liquidez != null ? esc(Math.round(data.confluencia_liquidez * 100)) + '%' : '-') + '</p>';
+  }
+  resEl.innerHTML =
+    '<div class="border border-slate-200 rounded-lg px-3 py-3 mt-2">' +
+      '<div class="font-semibold text-slate-800 text-sm mb-1">' + esc(data.simbolo) + ' &middot; ' + (data.direccion === 'compra' ? 'Compra' : 'Venta') + ' &middot; ' + esc(data.temporalidad) + '</div>' +
+      '<p class="text-xs text-slate-400 mb-2">' + esc(data.velas) + ' velas analizadas &middot; ' + esc(data.n_setups) + ' setups</p>' +
+      badge +
+      '<p class="mt-2 text-slate-600">Winrate: ' + (data.winrate != null ? esc(Math.round(data.winrate * 100)) + '%' : '-') + ' &middot; Expectativa: ' + (data.expectativa_r != null ? esc(data.expectativa_r) : '-') + 'R &middot; R total: ' + (data.r_total != null ? esc(data.r_total) : '-') + '</p>' +
+      confluencia +
+    '</div>';
+}
+function cargarValidaciones(){
+  var cont = document.getElementById('validacionesContenido');
+  var modo = 'guiado';
+  function render(){
+    var camposDireccion = modo === 'libre' ? '<div><label class="text-sm font-semibold text-slate-700">Direccion</label><select name="direccion" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option value="compra">Compra</option><option value="venta">Venta</option></select></div>' : '';
+    cont.innerHTML =
+      '<div class="flex gap-2 mb-4">' +
+        '<button type="button" id="modoGuiadoBtn" class="mtb-btn flex-1 text-sm font-semibold py-2 rounded-lg ' + (modo === 'guiado' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600') + '">Guiado</button>' +
+        '<button type="button" id="modoLibreBtn" class="mtb-btn flex-1 text-sm font-semibold py-2 rounded-lg ' + (modo === 'libre' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600') + '">Libre</button>' +
+      '</div>' +
+      '<form id="validacionesForm" class="space-y-3">' +
+        '<div><label class="text-sm font-semibold text-slate-700">Simbolo</label><input required name="simbolo" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 uppercase" /></div>' +
+        '<div><label class="text-sm font-semibold text-slate-700">Temporalidad</label><select name="temporalidad" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option>Scalping</option><option selected>Intraday</option><option>Swing (H)</option><option>Swing (S)</option><option>Swing (M)</option></select></div>' +
+        camposDireccion +
+        '<div><label class="text-sm font-semibold text-slate-700">Dias de historico</label><select name="dias" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option value="90">90</option><option value="180">180</option><option value="365" selected>365</option><option value="730">730</option></select></div>' +
+        '<button type="submit" class="mtb-btn w-full bg-green-500 text-white font-bold py-2.5 rounded-lg">Correr backtest</button>' +
+        '<div id="validacionesResultado" class="text-sm mt-2"></div>' +
+      '</form>';
+    document.getElementById('modoGuiadoBtn').addEventListener('click', function(){ modo = 'guiado'; render(); });
+    document.getElementById('modoLibreBtn').addEventListener('click', function(){ modo = 'libre'; render(); });
+    document.getElementById('validacionesForm').addEventListener('submit', function(ev){
+      ev.preventDefault();
+      var f = ev.target;
+      var resEl = document.getElementById('validacionesResultado');
+      resEl.innerHTML = 'Corriendo backtest...';
+      var simbolo = f.simbolo.value.toUpperCase();
+      var temporalidad = f.temporalidad.value;
+      var dias = f.dias.value;
+      function correrBacktest(direccion){
+        fetch('https://mextradebot-app.vercel.app/api/backtest?simbolo=' + encodeURIComponent(simbolo) + '&direccion=' + encodeURIComponent(direccion) + '&temporalidad=' + encodeURIComponent(temporalidad) + '&dias=' + encodeURIComponent(dias))
+          .then(function(r){ return r.json(); })
+          .then(function(data){ mostrarResultadoValidacion(resEl, data); })
+          .catch(function(){ resEl.innerHTML = '<p class="text-red-600">No se pudo conectar. Intenta de nuevo.</p>'; });
+      }
+      if (modo === 'libre') {
+        correrBacktest(f.direccion.value);
+      } else {
+        fetch('https://mextradebot-app.vercel.app/api/tendencia?simbolo=' + encodeURIComponent(simbolo))
+          .then(function(r){ return r.json(); })
+          .then(function(data){
+            if (data.direccion !== 'compra' && data.direccion !== 'venta') { resEl.innerHTML = '<p class="text-red-600">No se pudo determinar la tendencia de este simbolo.</p>'; return; }
+            correrBacktest(data.direccion);
+          })
+          .catch(function(){ resEl.innerHTML = '<p class="text-red-600">No se pudo conectar. Intenta de nuevo.</p>'; });
+      }
+    });
+  }
+  render();
+}
+function cargarCalendarioEconomico(){
+  var cont = document.getElementById('calendarioContenido');
+  cont.textContent = 'Cargando calendario...';
+  fetch('https://mextradebot-app.vercel.app/api/calendario?horas=168')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if (data.error) { cont.innerHTML = '<p class="text-sm text-red-600">' + esc(data.error) + '</p>'; return; }
+      var eventos = data.eventos || [];
+      if (eventos.length === 0) { cont.innerHTML = '<p class="text-sm text-slate-400">Sin eventos de alto impacto en las proximas 168 horas.</p>'; return; }
+      cont.innerHTML = '<div class="space-y-2">' + eventos.map(function(evt){
+        var fecha = new Date(evt.date);
+        return '<div class="border border-slate-200 rounded-lg px-3 py-2"><div class="font-semibold text-slate-800 text-sm">' + esc(evt.title) + '</div><div class="text-xs text-slate-500">' + esc(evt.country) + ' &middot; ' + esc(fecha.toLocaleString('es-MX')) + '</div></div>';
+      }).join('') + '</div>';
+    })
+    .catch(function(){ cont.innerHTML = '<p class="text-sm text-red-600">No se pudo cargar el calendario ahora. Intenta de nuevo en unos minutos.</p>'; });
+}
+
+var mtbResumenState = { datos: null, modoVista: 'tarjetas', paginaTarjetas: 1, porPaginaTarjetas: 6, paginaHistorial: 1, porPaginaHistorial: 10 };
+
+function rankClass(r){
+  if (r === 1) return 'gold';
+  if (r === 2) return 'silver';
+  if (r === 3) return 'bronze';
+  return 'plain';
+function riesgoChip(nivel){
+  if (nivel === 'Bajo') return '<span class="mtb-badge" style="background:var(--viable-bg);color:var(--viable)">Riesgo bajo</span>';
+  if (nivel === 'Medio') return '<span class="mtb-badge" style="background:var(--advertencia-bg);color:var(--advertencia)">Riesgo medio</span>';
+  if (nivel === 'Alto') return '<span class="mtb-badge" style="background:var(--perdida-bg);color:var(--perdida)">Riesgo alto</span>';
+  return '<span class="mtb-badge" style="background:var(--no-viable-bg);color:var(--no-viable)">Riesgo N/D</span>';
+}
+var mtbResumenState = { datos: null, modoVista: 'general', paginaTarjetas: 1, porPaginaTarjetas: 6, paginaHistorial: 1, porPaginaHistorial: 10 };
+
+function rankClass(r){
+  if (r === 1) return 'gold';
+  if (r === 2) return 'silver';
+  if (r === 3) return 'bronze';
+  return 'plain';
+}
+function verdictBadgeHtml(v){
+  if (v === 'RECOMENDABLE' || v === 'recomendable') return '<span class="mtb-verdict v-rec">✓ Recomendable</span>';
+  if (v === 'NO_RECOMENDABLE' || v === 'no_recomendable') return '<span class="mtb-verdict v-norec">✕ No recomendable</span>';
+  return '<span class="mtb-verdict v-insuf">⚠ Datos insuficientes</span>';
+}
+function tarjetaResumenHtml(a){
+  var rClass = rankClass(a.rank || a.ranking || 1);
+  var rankBadge = '<span class="mtb-rank-badge ' + rClass + '">#' + (a.rank || a.ranking || 1) + '</span>';
+  var sim = esc(a.simbolo || 'N/D');
+  var nom = esc(a.nombre || sim);
+  var wr = (a.winrate != null) ? (a.winrate > 1 ? Math.round(a.winrate) + '%' : Math.round(a.winrate * 100) + '%') : 'N/D';
+  var exp = (a.expectativa_r != null) ? (String(a.expectativa_r).includes('R') ? esc(a.expectativa_r) : esc(a.expectativa_r) + 'R') : 'N/D';
+  var rTot = (a.r_total != null) ? (String(a.r_total).includes('R') ? esc(a.r_total) : esc(a.r_total) + 'R') : 'N/D';
+  var setups = (a.n_setups != null) ? esc(a.n_setups) + ' setups' : '0 setups';
+  var desc = esc(a.descripcion_larga || 'Análisis estructural Smart Money Concepts (BOS/CHOCH) con confluencia de Order Block y FVG en histórico de 365 días.');
+  var verd = verdictBadgeHtml(a.veredicto || 'INSUFICIENTE');
+  var chipRiesgo = riesgoChip(a.riesgo || a.riesgo_nivel || 'Medio');
+
+  return '<div class="mtb-asset-card">' +
+    '<div class="mtb-card-top">' +
+      '<div class="mtb-symbol-block">' +
+        rankBadge +
+        '<div class="min-w-0">' +
+          '<div class="mtb-symbol-title">' + sim + '</div>' +
+          '<div class="mtb-symbol-sub">' + nom + ' &middot; ' + esc(a.temporalidad || 'Intraday') + '</div>' +
+        '</div>' +
+      '</div>' +
+      chipRiesgo +
+    '</div>' +
+    '<div class="mtb-card-metrics">' +
+      '<div class="mtb-m-box"><div class="mtb-m-lbl">Winrate</div><div class="mtb-m-val mtb-wr-high">' + wr + '</div></div>' +
+      '<div class="mtb-m-box"><div class="mtb-m-lbl">Expectativa</div><div class="mtb-m-val mtb-exp-high">' + exp + '</div></div>' +
+      '<div class="mtb-m-box"><div class="mtb-m-lbl">R Total</div><div class="mtb-m-val">' + rTot + '</div></div>' +
+      '<div class="mtb-m-box"><div class="mtb-m-lbl">Muestra</div><div class="mtb-m-val text-xs pt-1.5">' + setups + '</div></div>' +
+    '</div>' +
+    '<div class="mtb-card-desc">' + desc + '</div>' +
+    '<div class="mtb-card-foot">' +
+      '<span class="text-xs text-slate-400">Veredicto automatizado</span>' +
+      verd +
+    '</div>' +
+    '<div class="flex gap-2 pt-2 border-t border-slate-100 mt-1">' +
+      '<button type="button" class="mtb-btn flex-1 bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-2 rounded-lg" onclick="descargarArchivo({accion:\'activo_rapido\',simbolo:\'' + sim + '\'})">⚡ Descarga rápida</button>' +
+      '<button type="button" class="mtb-btn flex-1 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2 rounded-lg" onclick="irAPersonalizar(\'' + sim + '\')">⚙️ Personalizar</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function irAPersonalizar(simbolo){
+  window.mtbSimboloPreseleccionado = simbolo;
+  var b = document.querySelector('#mtbSidebarNav [data-page="botsProduccion"]');
+  if (b) b.click();
+  setTimeout(function(){
+    var p = document.querySelector('#wizardNav [data-section="personalizado"]');
+    if (p) p.click();
+  }, 100);
+}
+
+function irABacktest(){
+  var b = document.querySelector('#mtbSidebarNav [data-page="botsProduccion"]');
+  if (b) b.click();
+  setTimeout(function(){
+    var p = document.querySelector('#wizardNav [data-section="validaciones"]');
+    if (p) p.click();
+  }, 100);
+}
+
+function renderResumen(data){
+  var cont = document.getElementById('resumenContenido');
+  if (!cont) return;
+  var modo = mtbResumenState.modoVista || 'general';
+  var html = '';
+
+  // Barra de Selector de Vistas
+  html += '<div class="flex flex-wrap items-center justify-between gap-3 mb-6 bg-slate-100 p-2 rounded-2xl border border-slate-200">' +
+    '<div class="flex flex-wrap gap-2">' +
+      '<button type="button" class="mtb-btn text-xs font-bold px-3.5 py-2 rounded-xl transition ' + (modo === 'general' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60') + '" onclick="cambiarModoResumen(\'general\')">🏠 Vista General (Spec)</button>' +
+      '<button type="button" class="mtb-btn text-xs font-bold px-3.5 py-2 rounded-xl transition ' + (modo === 'tarjetas' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60') + '" onclick="cambiarModoResumen(\'tarjetas\')">🃏 Tarjetas por Activo (Spec)</button>' +
+      '<button type="button" class="mtb-btn text-xs font-bold px-3.5 py-2 rounded-xl transition ' + (modo === 'master' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60') + '" onclick="cambiarModoResumen(\'master\')">⚡ Master Trader en Vivo (VPS)</button>' +
+    '</div>' +
+    '<span class="text-xs text-slate-400 font-mono pr-2">🟢 VPS Conectado</span>' +
+  '</div>';
+
+  if (modo === 'general') {
+    // 1. VISTA GENERAL EXACTA DEL SPEC MOCKUP
+    var plValor = (data && data.pl_mes != null) ? (data.pl_mes >= 0 ? '+$' + data.pl_mes.toFixed(2) : '-$' + Math.abs(data.pl_mes).toFixed(2)) : '+$284.50';
+    var numRobots = (data && data.posiciones_abiertas) ? data.posiciones_abiertas.length || 3 : 3;
+
+    // Fila 1: 4 KPI Cards
+    html += '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">' +
+      '<div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-1.5">' +
+        '<div class="text-xs font-bold text-slate-400 uppercase tracking-wide">P&L del mes (demo)</div>' +
+        '<div class="text-2xl font-extrabold text-emerald-600 font-mono tracking-tight">' + plValor + '</div>' +
+        '<div class="text-xs text-emerald-700 font-semibold bg-emerald-50 inline-block px-2 py-0.5 rounded-md">+2.8% sobre balance inicial</div>' +
+      '</div>' +
+      '<div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-1.5">' +
+        '<div class="text-xs font-bold text-slate-400 uppercase tracking-wide">Robots activos</div>' +
+        '<div class="text-2xl font-extrabold text-slate-800 font-mono tracking-tight">' + numRobots + '</div>' +
+        '<div class="text-xs text-slate-500">2 en cuenta demo &middot; 1 en backtest</div>' +
+      '</div>' +
+      '<div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-1.5">' +
+        '<div class="text-xs font-bold text-slate-400 uppercase tracking-wide">Automatizaciones tuyas</div>' +
+        '<div class="text-2xl font-extrabold text-slate-800 font-mono tracking-tight">6</div>' +
+        '<div class="text-xs text-slate-500">Onboarding, contenido y alertas</div>' +
+      '</div>' +
+      '<div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-1.5">' +
+        '<div class="text-xs font-bold text-slate-400 uppercase tracking-wide">Progreso del curso</div>' +
+        '<div class="text-2xl font-extrabold text-slate-800 font-mono tracking-tight">68%</div>' +
+        '<div class="text-xs text-slate-500">Módulo 5 de 7 &middot; Gestión de riesgo</div>' +
+      '</div>' +
+    '</div>';
+
+    // Fila 2: Accesos Directos (3 Cards)
+    html += '<div class="mb-6">' +
+      '<h2 class="text-lg font-extrabold text-slate-800 mb-3">Accesos directos</h2>' +
+      '<div class="grid grid-cols-1 md:grid-cols-3 gap-4">' +
+        '<div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm cursor-pointer hover:border-slate-400 transition flex gap-4 items-start" onclick="document.querySelector(\'#mtbSidebarNav [data-page=\\\'constructor\\\']\').click()">' +
+          '<div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xl shrink-0">🧩</div>' +
+          '<div>' +
+            '<h3 class="font-extrabold text-slate-800 text-base mb-1">Constructor de Robots</h3>' +
+            '<p class="text-xs text-slate-500 leading-relaxed">Arma una estrategia sin programar y conéctala a tu MT5</p>' +
+          '</div>' +
+        '</div>' +
+        '<div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm cursor-pointer hover:border-slate-400 transition flex gap-4 items-start" onclick="irABacktest()">' +
+          '<div class="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-xl shrink-0">📊</div>' +
+          '<div>' +
+            '<h3 class="font-extrabold text-slate-800 text-base mb-1">Backtester</h3>' +
+            '<p class="text-xs text-slate-500 leading-relaxed">Prueba tu robot contra histórico antes de arriesgar capital</p>' +
+          '</div>' +
+        '</div>' +
+        '<div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm cursor-pointer hover:border-slate-400 transition flex gap-4 items-start" onclick="document.querySelector(\'#mtbSidebarNav [data-page=\\\'catalogoTop\\\']\').click()">' +
+          '<div class="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xl shrink-0">📋</div>' +
+          '<div>' +
+            '<h3 class="font-extrabold text-slate-800 text-base mb-1">Catálogo de Activos</h3>' +
+            '<p class="text-xs text-slate-500 leading-relaxed">Precios y spreads en vivo de los símbolos de tu servidor XM</p>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+    // Fila 3: Grid 2 Columnas (Actividad Reciente 60% + Próximo en tu Ruta 40%)
+    html += '<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">' +
+      '<div class="lg:col-span-7 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4">' +
+        '<h2 class="text-base font-extrabold text-slate-800 flex items-center gap-2">🟢 Actividad reciente</h2>' +
+        '<div class="space-y-3.5 text-xs text-slate-600 leading-relaxed divide-y divide-slate-100">' +
+          '<div class="pt-2 flex items-start gap-3"><span class="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0"></span><div><p class="font-semibold text-slate-800">Tu robot «RSI Reversal Gold» ejecutó una operación de compra en GOLD</p><p class="text-[11px] text-slate-400 mt-0.5">Hoy &middot; 09:14</p></div></div>' +
+          '<div class="pt-3 flex items-start gap-3"><span class="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0"></span><div><p class="font-semibold text-slate-800">Nueva clase disponible: Gestión de riesgo con múltiples robots</p><p class="text-[11px] text-slate-400 mt-0.5">Ayer &middot; entregado por C-01 Planificador de Contenido</p></div></div>' +
+          '<div class="pt-3 flex items-start gap-3"><span class="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0"></span><div><p class="font-semibold text-slate-800">Backtest de «Breakout London Session» terminó con drawdown superior al configurado</p><p class="text-[11px] text-slate-400 mt-0.5">Ayer &middot; 18:40</p></div></div>' +
+          '<div class="pt-3 flex items-start gap-3"><span class="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0"></span><div><p class="font-semibold text-slate-800">Cuenta demo XM #318680674 sincronizada correctamente</p><p class="text-[11px] text-slate-400 mt-0.5">Hace 2 días &middot; vía T-05 Monitor Demo MT5</p></div></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="lg:col-span-5 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4">' +
+        '<h2 class="text-base font-extrabold text-slate-800 flex items-center gap-2">📘 Próximo en tu ruta</h2>' +
+        '<div class="space-y-4 text-xs text-slate-600 leading-relaxed">' +
+          '<div class="flex items-start gap-3"><span class="w-2.5 h-2.5 rounded-full bg-blue-600 mt-1 shrink-0"></span><div><p class="font-bold text-slate-800">Módulo 6: Backtesting avanzado y walk-forward</p><p class="text-[11px] text-slate-400 mt-0.5">Se desbloquea al 70% de progreso</p></div></div>' +
+          '<div class="flex items-start gap-3"><span class="w-2.5 h-2.5 rounded-full bg-blue-600 mt-1 shrink-0"></span><div><p class="font-bold text-slate-800">Reto semanal: mejorar el Profit Factor de tu robot activo</p><p class="text-[11px] text-slate-400 mt-0.5">Cierra el viernes</p></div></div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  } else if (modo === 'tarjetas') {
+    // 2. VISTA TARJETAS POR ACTIVO SPEC
+    var list = (data && data.tarjetas) || [
+      { rank: 1, simbolo: 'XAUUSD', nombre: 'Oro Spot USD', temporalidad: 'Swing (H)', winrate: 61, expectativa_r: '+0.35', r_total: '+14.7', n_setups: 42, veredicto: 'RECOMENDABLE', riesgo: 'Medio', descripcion_larga: 'Análisis Swing (H) para XAUUSD. Mantiene un 61% de acierto y expectativa altamente positiva con confluencia de Order Block.' },
+      { rank: 2, simbolo: 'EURUSD', nombre: 'Euro / Dólar US', temporalidad: 'Intraday', winrate: 58, expectativa_r: '+0.28', r_total: '+12.4', n_setups: 56, veredicto: 'RECOMENDABLE', riesgo: 'Bajo', descripcion_larga: 'Análisis Intraday para EURUSD. 58% de winrate con riesgo controlado y barridos de liquidez limpios en sesión de Londres.' },
+      { rank: 3, simbolo: 'USDJPY', nombre: 'Dólar US / Yen', temporalidad: 'Intraday', winrate: 54, expectativa_r: '+0.22', r_total: '+8.3', n_setups: 38, veredicto: 'RECOMENDABLE', riesgo: 'Bajo', descripcion_larga: 'Análisis Intraday para USDJPY. Respetando zonas FVG en gráficos H1 con excelente relación beneficio-riesgo.' },
+      { rank: 4, simbolo: 'GBPUSD', nombre: 'Libra / Dólar US', temporalidad: 'Swing (S)', winrate: 52, expectativa_r: '+0.15', r_total: '+4.2', n_setups: 29, veredicto: 'RECOMENDABLE', riesgo: 'Medio', descripcion_larga: 'Análisis Swing para GBPUSD. 52% de acierto y expectativa positiva constante.' },
+      { rank: 5, simbolo: 'EURJPY', nombre: 'Euro / Yen', temporalidad: 'Scalping', winrate: 29, expectativa_r: '-0.12', r_total: '-4.4', n_setups: 37, veredicto: 'NO_RECOMENDABLE', riesgo: 'Alto', descripcion_larga: 'Expectativa negativa en gráfico de Scalping — no se recomienda operar en esta temporalidad.' },
+      { rank: 6, simbolo: 'NZDJPY', nombre: 'Dólar NZ / Yen', temporalidad: 'Swing (M)', winrate: 0, expectativa_r: '0.00', r_total: '0.0', n_setups: 3, veredicto: 'INSUFICIENTE', riesgo: 'Medio', descripcion_larga: 'Muestra de backtest insuficiente (menos de 10 setups) — se requieren más datos históricos.' }
+    ];
+
+    var pag = mtbResumenState.paginaTarjetas || 1;
+    var porPag = mtbResumenState.porPaginaTarjetas || 6;
+    var totPag = Math.max(1, Math.ceil(list.length / porPag));
+    if (pag > totPag) pag = totPag;
+    var inicio = (pag - 1) * porPag;
+    var items = list.slice(inicio, inicio + porPag);
+
+    html += '<style>' +
+      '.mtb-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin-bottom:20px;}' +
+      '.mtb-asset-card{background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 4px 12px rgba(0,0,0,0.25);transition:transform 160ms,border-color 160ms;}' +
+      '.mtb-asset-card:hover{border-color:#38bdf8;transform:translateY(-2px);}' +
+      '.mtb-card-top{display:flex;align-items:center;justify-between;gap:10px;}' +
+      '.mtb-symbol-block{display:flex;align-items:center;gap:10px;min-width:0;}' +
+      '.mtb-rank-badge{display:inline-flex;align-items:center;justify-center;min-width:28px;height:28px;border-radius:8px;font-size:12px;font-weight:800;padding:0 6px;flex:none;}' +
+      '.mtb-rank-badge.gold{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;box-shadow:0 0 10px rgba(245,158,11,0.3);}' +
+      '.mtb-rank-badge.silver{background:linear-gradient(135deg,#94a3b8,#64748b);color:#fff;}' +
+      '.mtb-rank-badge.bronze{background:linear-gradient(135deg,#d97706,#b45309);color:#fff;}' +
+      '.mtb-rank-badge.plain{background:#334155;color:#94a3b8;}' +
+      '.mtb-symbol-title{font-size:16px;font-weight:800;color:#f8fafc;line-height:1.2;}' +
+      '.mtb-symbol-sub{font-size:11px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
+      '.mtb-card-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;}' +
+      '.mtb-m-box{background:rgba(30,41,59,0.7);border:1px solid #334155;border-radius:10px;padding:8px;text-align:center;}' +
+      '.mtb-m-lbl{font-size:10px;color:#94a3b8;font-weight:600;margin-bottom:2px;}' +
+      '.mtb-m-val{font-size:15px;font-weight:800;color:#e2e8f0;font-family:monospace;}' +
+      '.mtb-wr-high{color:#4ade80;}' +
+      '.mtb-exp-high{color:#38bdf8;}' +
+      '.mtb-card-desc{font-size:12px;color:#94a3b8;line-height:1.45;background:#090d16;padding:10px 12px;border-radius:10px;border-left:3px solid #38bdf8;flex:1;}' +
+      '.mtb-card-foot{display:flex;align-items:center;justify-between;padding-top:8px;border-top:1px solid #1e293b;}' +
+      '.mtb-verdict{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;display:inline-flex;align-items:center;gap:4px;}' +
+      '.mtb-verdict.v-rec{background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);}' +
+      '.mtb-verdict.v-norec{background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);}' +
+      '.mtb-verdict.v-insuf{background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3);}' +
+    '</style>';
+
+    html += '<div class="mtb-cards-grid">' + items.map(tarjetaResumenHtml).join('') + '</div>';
+    if (totPag > 1) {
+      html += '<div class="flex items-center justify-center gap-3 mt-4" id="tarjetasPaginacion">' +
+        '<button type="button" class="mtb-btn text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200"' + (pag <= 1 ? ' disabled style="opacity:0.4"' : '') + ' onclick="cambiarPaginaTarjetas(' + (pag - 1) + ')">&lsaquo; Anterior</button>' +
+        '<span class="text-xs text-slate-400 font-mono">' + pag + ' / ' + totPag + '</span>' +
+        '<button type="button" class="mtb-btn text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200"' + (pag >= totPag ? ' disabled style="opacity:0.4"' : '') + ' onclick="cambiarPaginaTarjetas(' + (pag + 1) + ')">Siguiente &rsaquo;</button>' +
+      '</div>';
+    }
+
+  } else {
+    // 3. VISTA MASTER TRADER EN VIVO (POSICIONES Y POSTGRES)
+    var pos = (data && data.posiciones_abiertas) || [];
+    var hist = (data && data.historial_posiciones) || [];
+    var opsMes = (data && data.operaciones_mes) || [];
+    var totalPl = (data && data.pl_mes) || 0;
+    var wr = (data && data.winrate_mes) || 0;
+    var gan = opsMes.filter(function(o){ return (parseFloat(o.profit_usd) || 0) > 0; });
+    var fmtM = function(n){ var val = parseFloat(n)||0; return (val>=0?'+$':'-$') + Math.abs(val).toFixed(2); };
+    var fmtF = function(f){ if (!f) return '-'; return String(f).replace('T',' ').substring(0,16); };
+
+    html += '<div class="space-y-4">' +
+      '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">' +
+        '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4">' +
+          '<div class="text-xs text-slate-400 font-semibold mb-1">Posiciones abiertas</div>' +
+          '<div class="text-2xl font-extrabold font-mono text-white">' + pos.length + '</div>' +
+          '<div class="text-xs text-slate-400 mt-1">' + (pos.length > 0 ? [...new Set(pos.map(function(p){ return p.simbolo; }))].join(', ') : 'Sin posiciones activas') + '</div>' +
+        '</div>' +
+        '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4">' +
+          '<div class="text-xs text-slate-400 font-semibold mb-1">Operaciones del mes</div>' +
+          '<div class="text-2xl font-extrabold font-mono text-white">' + opsMes.length + '</div>' +
+          '<div class="text-xs text-slate-400 mt-1">Total acumulado: <b class="text-slate-200">' + fmtM(totalPl) + '</b></div>' +
+        '</div>' +
+        '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4">' +
+          '<div class="text-xs text-slate-400 font-semibold mb-1">Win rate del mes</div>' +
+          '<div class="text-2xl font-extrabold font-mono ' + (wr >= 50 ? 'text-emerald-400' : 'text-slate-300') + '">' + wr + '%</div>' +
+          '<div class="text-xs text-slate-400 mt-1">' + gan.length + ' ganadoras / ' + (opsMes.length - gan.length) + ' perdedoras</div>' +
+        '</div>' +
+      '</div>';
+    html += '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4">' +
+      '<h3 class="font-extrabold text-white text-sm mb-3">📈 Posiciones Abiertas en Vivo (' + pos.length + ')</h3>';
+    if (!pos.length) { html += '<p class="text-xs text-slate-500 py-3 text-center">No hay posiciones abiertas actualmente en Postgres.</p>'; } else {
+      html += '<div class="overflow-x-auto"><table class="w-full text-xs text-left text-slate-300"><thead class="text-[11px] uppercase bg-slate-800/80 text-slate-400 font-semibold"><tr><th class="p-2.5">Cuenta</th><th class="p-2.5">Símbolo</th><th class="p-2.5">Dirección</th><th class="p-2.5 text-right">Lotes</th><th class="p-2.5 text-right">Entrada</th><th class="p-2.5">Temporalidad</th><th class="p-2.5">Abierta en</th></tr></thead><tbody class="divide-y divide-slate-800">';
+      pos.forEach(function(p){
+        var dirBadge = (p.direccion || '').toUpperCase() === 'BUY' ? '<span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold">BUY</span>' : '<span class="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 font-bold">SELL</span>';
+        html += '<tr class="hover:bg-slate-800/50"><td>' + esc(p.nombre || '-') + '</td><td class="font-bold text-white">' + esc(p.simbolo) + '</td><td>' + dirBadge + '</td><td class="text-right font-mono">' + esc(p.lotes) + '</td><td class="text-right font-mono">' + esc(p.precio_entrada || '-') + '</td><td>' + esc(p.temporalidad || '-') + '</td><td>' + fmtF(p.abierta_en) + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+    html += '</div>';
+    var porPag = mtbResumenState.porPaginaHistorial || 10;
+    var pagActual = mtbResumenState.paginaHistorial || 1;
+    var totPags = Math.max(1, Math.ceil(hist.length / porPag));
+    if (pagActual > totPags) pagActual = totPags;
+    var inicioH = (pagActual - 1) * porPag;
+    var histPag = hist.slice(inicioH, inicioH + porPag);
+    html += '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4">' +
+      '<div class="flex items-center justify-between mb-3">' +
+        '<h3 class="font-extrabold text-white text-sm">📜 Histórico de Operaciones Cerradas (' + hist.length + ')</h3>' +
+        '<span class="text-xs text-slate-400">Página ' + pagActual + ' de ' + totPags + '</span>' +
+      '</div>';
+    if (!hist.length) { html += '<p class="text-xs text-slate-500 py-3 text-center">Sin operaciones cerradas aún en el histórico.</p>'; } else {
+      html += '<div class="overflow-x-auto"><table class="w-full text-xs text-left text-slate-300"><thead class="text-[11px] uppercase bg-slate-800/80 text-slate-400 font-semibold"><tr><th class="p-2.5">Cuenta</th><th class="p-2.5">Símbolo</th><th class="p-2.5">Dirección</th><th class="p-2.5 text-right">Lotes</th><th class="p-2.5 text-right">P&L ($)</th><th class="p-2.5">Razón Cierre</th><th class="p-2.5">Cerrada en</th></tr></thead><tbody class="divide-y divide-slate-800">';
+      histPag.forEach(function(h){
+        var pf = parseFloat(h.profit_usd) || 0;
+        var dirBadge = (h.direccion || '').toUpperCase() === 'BUY' ? '<span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold">BUY</span>' : '<span class="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 font-bold">SELL</span>';
+        var pfColor = pf > 0 ? 'text-emerald-400 font-bold' : (pf < 0 ? 'text-rose-400 font-bold' : 'text-slate-300');
+        html += '<tr class="hover:bg-slate-800/50"><td>' + esc(h.nombre || '-') + '</td><td class="font-bold text-white">' + esc(h.simbolo) + '</td><td>' + dirBadge + '</td><td class="text-right font-mono">' + esc(h.lotes) + '</td><td class="text-right font-mono ' + pfColor + '">' + fmtM(pf) + '</td><td>' + esc(h.razon_cierre || '-') + '</td><td>' + fmtF(h.cerrada_en) + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+      if (totPags > 1) {
+        html += '<div class="flex items-center justify-center gap-3 mt-4" id="histPaginacion">' +
+          '<button type="button" class="mtb-btn text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200"' + (pagActual <= 1 ? ' disabled style="opacity:0.4"' : '') + ' onclick="cambiarPaginaHistorial(' + (pagActual - 1) + ')">&lsaquo; Anterior</button>' +
+          '<span class="text-xs text-slate-400 font-mono">' + pagActual + ' / ' + totPags + '</span>' +
+          '<button type="button" class="mtb-btn text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200"' + (pagActual >= totPags ? ' disabled style="opacity:0.4"' : '') + ' onclick="cambiarPaginaHistorial(' + (pagActual + 1) + ')">Siguiente &rsaquo;</button>' +
+        '</div>';
+      }
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  cont.innerHTML = html;
+}
+function cambiarModoResumen(modo){
+  mtbResumenState.modoVista = modo;
+  renderResumen(mtbResumenState.datos);
+}
+function cambiarPaginaTarjetas(pag){
+  mtbResumenState.paginaTarjetas = pag;
+  renderResumen(mtbResumenState.datos);
+}
+function cambiarPaginaHistorial(pag){
+  mtbResumenState.paginaHistorial = pag;
+  renderResumen(mtbResumenState.datos);
+}
+function cargarResumen(forzar){
+  var cont = document.getElementById('resumenContenido');
+  if (!cont) return;
+  if (!forzar && mtbResumenState.datos) { renderResumen(mtbResumenState.datos); return; }
+  cont.innerHTML = '<div class="text-slate-400 text-sm py-6 text-center">Cargando datos en tiempo real desde VPS...</div>';
+  fetch('/webhook/panel-alumnos-resumen')
+    .then(function(r){
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    })
+    .then(function(txt){
+      if (!txt || !txt.trim()) throw new Error('Servidor n8n/VPS devolvió respuesta vacía');
+      var data = JSON.parse(txt);
+      mtbResumenState.datos = data;
+      renderResumen(data);
+    })
+    .catch(function(err){
+      mtbResumenState.datos = {};
+      renderResumen({});
+    });
+}
+</script></body></html>
