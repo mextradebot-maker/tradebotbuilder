@@ -975,8 +975,12 @@ function cargarResumen(forzar){
     if(value===null||value===undefined)return null;
     const normalized=String(value).trim().toLowerCase().replace(/[._-]+/g,' ').replace(/\s+/g,' ').trim();
     const compact=normalized.replace(/\s+/g,'');
-    const aliases={scalping:'Scalping',m15:'Scalping','15m':'Scalping','15min':'Scalping','15mins':'Scalping',intraday:'Intraday',h1:'Intraday','1h':'Intraday','60m':'Intraday','60min':'Intraday','swing (h)':'Swing (H)',swingh:'Swing (H)',h4:'Swing (H)','4h':'Swing (H)','240m':'Swing (H)','swing (s)':'Swing (S)',swings:'Swing (S)',w1:'Swing (S)','1w':'Swing (S)',weekly:'Swing (S)',semanal:'Swing (S)','swing (m)':'Swing (M)',swingm:'Swing (M)',mn1:'Swing (M)','1mo':'Swing (M)',monthly:'Swing (M)',mensual:'Swing (M)'};
-    return aliases[normalized]||aliases[compact]||periods.find(([name,label])=>name.toLowerCase()===normalized||label.toLowerCase()===normalized)?.[0]||null;
+    if(/scalp|m15|15\s*(m|min|minuto)/.test(normalized)||['15','900'].includes(compact))return 'Scalping';
+    if(/intraday|h1|1\s*(h|hora)|60\s*(m|min|minuto)/.test(normalized)||['60','3600'].includes(compact))return 'Intraday';
+    if(/swing\s*\(?h\)?|h4|4\s*(h|hora)|240\s*(m|min|minuto)/.test(normalized)||['240','14400'].includes(compact))return 'Swing (H)';
+    if(/swing\s*\(?s\)?|w1|1\s*(w|week|semana)|weekly|semanal/.test(normalized)||['10080','604800'].includes(compact))return 'Swing (S)';
+    if(/swing\s*\(?m\)?|mn1|1\s*(mo|month|mes)|monthly|mensual/.test(normalized)||['43200','2592000'].includes(compact))return 'Swing (M)';
+    return periods.find(([name,label])=>name.toLowerCase()===normalized||label.toLowerCase()===normalized)?.[0]||null;
   }
   function current(symbol,period=activePeriod){const record=market.get(symbol);return record?.periods[period]||{};}
   function metrics(row){const stats=row.estadisticas||row.backtest||row.stats||row;return `<div class="ag-metrics"><div><small>Acierto histórico</small><strong>${percentage(pick(stats,['winrate','win_rate','tasa_acierto','porcentaje_acierto']))}</strong></div><div><small>Expectativa</small><strong>${number(pick(stats,['expectativa_r','expectativa','expectancy','expectancy_r']),'R')}</strong></div><div><small>Muestra · setups</small><strong>${number(pick(stats,['n_setups','muestra','setups','sample_size','operaciones']))}</strong></div></div>`;}
@@ -987,9 +991,9 @@ function cargarResumen(forzar){
     for(const raw of data.activos_todos){
       const symbol=String(raw.simbolo||'').toUpperCase();if(!known(symbol))continue;
       const record=next.get(symbol)||{periods:{},summary:raw};
-      const p=periodKey(pick(raw,['temporalidad','timeframe','intervalo','periodo','temporalidad_recomendada']));
+      const p=periodKey(pick(raw,['temporalidad','timeframe','time_frame','tf','intervalo','interval','periodo','period','tipo','tipo_robot','temporalidad_recomendada']));
       if(p)record.periods[p]={...raw};
-      if(Array.isArray(raw.temporalidades)){for(const row of raw.temporalidades){const key=periodKey(pick(row,['temporalidad','timeframe','intervalo','periodo']));if(key)record.periods[key]={...row};}}
+      if(Array.isArray(raw.temporalidades)){for(const row of raw.temporalidades){const key=periodKey(pick(row,['temporalidad','timeframe','time_frame','tf','intervalo','interval','periodo','period','tipo','tipo_robot']));if(key)record.periods[key]={...row};}}
       else if(raw.temporalidades&&typeof raw.temporalidades==='object'){for(const [key,row]of Object.entries(raw.temporalidades)){const p=periodKey(key);if(p&&row&&typeof row==='object')record.periods[p]={...row};}}
       next.set(symbol,record);
     }
