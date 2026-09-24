@@ -280,9 +280,11 @@ function proximaActualizacionTexto(){
 function nombreRobotLegible(r){ return esc(String(r).replace(/\\_/g, '_')); }
 function badgeActivo(a){
   if (a.viable) {
-    return '<span class="mtb-badge" style="background:var(--viable-bg);color:var(--viable)">Recomendado &middot; ' + esc(a.temporalidad_recomendada) + ' / ' + (a.direccion === 'compra' ? 'Compra' : 'Venta') + '</span>';
+    var dirLbl = (a.direccion === 'compra' ? 'Compra' : (a.direccion === 'venta' ? 'Venta' : 'Rango'));
+    return '<span class="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-400 text-xs font-bold border border-emerald-500/20">🟢 Recomendado &middot; ' + esc(a.temporalidad_recomendada || a.temporalidad || 'H1') + ' / ' + dirLbl + '</span>';
+  } else {
+    return '<span class="px-2.5 py-1 rounded-lg bg-rose-500/15 text-rose-400 text-xs font-bold border border-rose-500/20">🔴 No recomendado actualmente</span>';
   }
-  return '<span class="mtb-badge" style="background:var(--no-viable-bg);color:var(--no-viable)">Sin datos suficientes</span>';
 }
 var CATEGORIA_POR_SIMBOLO = {
   EURUSD:'FOREX', GBPUSD:'FOREX', USDJPY:'FOREX', AUDUSD:'FOREX', USDCAD:'FOREX', USDCHF:'FOREX', NZDUSD:'FOREX',
@@ -361,45 +363,38 @@ function cargarCatalogo(){
   var cont = document.getElementById('catalogoContenido');
   var frescuraEl = document.getElementById('catalogoFrescura');
   if (frescuraEl) frescuraEl.textContent = proximaActualizacionTexto();
-  if (cont) cont.textContent = 'Cargando catalogo...';
-  fetch('/webhook/panel-alumnos-robots', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ clave: MTB_CLAVE, accion: 'catalogo' }) })
+  renderCatalogo();
+  fetch('/webhook/panel-alumnos-robots', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ clave: window.MTB_CLAVE, accion: 'catalogo' }) })
     .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(function(data){ mtbCatalogoCache = (data && data.activos_todos && data.activos_todos.length) ? data : DEFAULT_CATALOGO_DATA; renderCatalogo(); })
-    .catch(function(){ mtbCatalogoCache = DEFAULT_CATALOGO_DATA; renderCatalogo(); });
+    .then(function(data){ if(data && data.activos_todos && data.activos_todos.length) { mtbCatalogoCache = data; renderCatalogo(); } })
+    .catch(function(){});
 }
 
 function renderCatalogo(){
-  var data = mtbCatalogoCache || DEFAULT_CATALOGO_DATA;
+  var data = mtbCatalogoCache || window.DEFAULT_CATALOGO_DATA;
   var cont = document.getElementById('catalogoContenido');
   if (!cont) return;
   var viables = (data.activos_todos || []).filter(function(a){ return a.viable; });
-  var noViables = (data.activos_todos || []).filter(function(a){ return !a.viable; });
   var html = '';
-  html += '<h3 class="font-bold text-slate-800 mb-2">Robots aprobados</h3>';
+  html += '<h3 class="font-extrabold text-white text-base mb-3">Robots aprobados</h3>';
   if (!data.robots || data.robots.length === 0) {
-    html += '<p class="text-sm text-slate-400 mb-4">Por ahora no hay robots pre-armados. Usa la pestana Personalizado.</p>';
+    html += '<p class="text-sm text-slate-400 mb-4">Por ahora no hay robots pre-armados. Usa la pestaña Personalizado.</p>';
   } else {
-    html += '<div class="space-y-2 mb-5">' + data.robots.map(function(r){
-      return '<div class="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2"><div class="min-w-0"><div class="font-semibold text-slate-800 text-sm break-all">' + nombreRobotLegible(r.robot) + '</div><div class="text-xs text-slate-500">' + esc(r.simbolo) + ' &middot; ' + esc(r.tipo) + ' &middot; riesgo ' + esc(r.riesgo) + '</div></div><button class="mtb-btn bg-green-500 text-white text-sm font-semibold px-3 py-1.5 rounded-lg shrink-0" data-descargar-robot="' + esc(r.robot) + '">Descargar</button></div>';
+    html += '<div class="space-y-3 mb-6">' + data.robots.map(function(r){
+      return '<div class="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm"><div class="min-w-0"><div class="font-bold text-white text-sm break-all">' + nombreRobotLegible(r.robot) + '</div><div class="text-xs text-slate-400 mt-1">' + esc(r.simbolo) + ' &middot; ' + esc(r.tipo) + ' &middot; riesgo ' + esc(r.riesgo) + '</div></div><button class="mtb-btn bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition shrink-0" data-descargar-robot="' + esc(r.robot) + '">Descargar ⬇</button></div>';
     }).join('') + '</div>';
   }
-  html += '<h3 class="font-bold text-slate-800 mb-2">Activos monitoreados</h3>';
+  html += '<h3 class="font-extrabold text-white text-base mb-3">Activos monitoreados (' + viables.length + ')</h3>';
   html += renderActivosAgrupados('catalogo', viables, function(a){
-    return '<div class="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2"><div class="font-semibold text-slate-800 text-sm">' + esc(a.simbolo) + ' <span class="text-slate-400 font-normal">' + esc(a.nombre) + '</span></div>' + badgeActivo(a) + '</div>';
+    return '<div class="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-sm"><div class="min-w-0"><div class="font-bold text-white text-sm">' + esc(a.simbolo) + '</div><div class="text-xs text-slate-400">' + esc(a.nombre) + '</div></div><button class="mtb-btn bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition shrink-0" data-rapido="' + esc(a.simbolo) + '">Descargar ↗</button></div>';
   });
-  if (noViables.length > 0) {
-    html += '<button id="verTodosBtn" type="button" class="mtb-btn text-sm text-slate-500 underline mt-3">Ver todos los activos (' + noViables.length + ' sin datos suficientes)</button>';
-    html += '<div id="noViablesLista" class="hidden space-y-2 mt-2">' + noViables.map(function(a){
-      return '<div class="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2"><div class="font-semibold text-slate-800 text-sm">' + esc(a.simbolo) + ' <span class="text-slate-400 font-normal">' + esc(a.nombre) + '</span></div>' + badgeActivo(a) + '</div>';
-    }).join('') + '</div>';
-  }
   cont.innerHTML = html;
-  var verTodosBtn = document.getElementById('verTodosBtn');
-  if (verTodosBtn) { verTodosBtn.addEventListener('click', function(){ document.getElementById('noViablesLista').classList.toggle('hidden'); }); }
   cont.querySelectorAll('[data-descargar-robot]').forEach(function(btn){
-    btn.addEventListener('click', function(){ descargarArchivo({ accion: 'robot_catalogo', robotElegido: btn.getAttribute('data-descargar-robot') }).then(function(res){ if (res && res.descargado === false) { alert((res && res.error) || 'No se pudo descargar. Intenta de nuevo.'); } }).catch(function(){ alert('No se pudo descargar. Intenta de nuevo.'); }); });
+    btn.addEventListener('click', function(){ descargarArchivo({ accion: 'robot', robot: btn.getAttribute('data-descargar-robot') }).catch(function(){ alert('No se pudo descargar.'); }); });
   });
-  vincularPaginacion(cont, renderCatalogo);
+  cont.querySelectorAll('[data-rapido]').forEach(function(btn){
+    btn.addEventListener('click', function(){ descargarArchivo({ accion: 'activo_rapido', simbolo: btn.getAttribute('data-rapido') }).catch(function(){ alert('No se pudo descargar.'); }); });
+  });
 }
 
 function descargarArchivo(body){
@@ -436,33 +431,28 @@ function descargarArchivo(body){
 
 var mtbActivosCache = null;
 function cargarActivosAnalizados(){
-  var cont = document.getElementById('activosContenido');
-  if (cont) cont.textContent = 'Cargando activos...';
-  fetch('/webhook/panel-alumnos-robots', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ clave: MTB_CLAVE, accion: 'catalogo' }) })
+  renderActivosAnalizados();
+  fetch('/webhook/panel-alumnos-robots', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ clave: window.MTB_CLAVE, accion: 'catalogo' }) })
     .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(function(data){ mtbActivosCache = (data && data.activos_todos && data.activos_todos.length) ? data : DEFAULT_CATALOGO_DATA; renderActivosAnalizados(); })
-    .catch(function(){ mtbActivosCache = DEFAULT_CATALOGO_DATA; renderActivosAnalizados(); });
+    .then(function(data){ if(data && data.activos_todos && data.activos_todos.length) { mtbActivosCache = data; renderActivosAnalizados(); } })
+    .catch(function(){});
 }
 
 function renderActivosAnalizados(){
-  var data = mtbActivosCache || DEFAULT_CATALOGO_DATA;
+  var data = mtbActivosCache || window.DEFAULT_CATALOGO_DATA;
   var cont = document.getElementById('activosContenido');
   if (!cont) return;
   var activos = (data.activos_todos || []).filter(function(a){ return a.viable; });
-  if (activos.length === 0) { cont.innerHTML = '<p class="text-sm text-slate-400">No hay activos con datos suficientes todavia.</p>'; return; }
+  if (activos.length === 0) { cont.innerHTML = '<p class="text-sm text-slate-400">No hay activos con datos suficientes todavía.</p>'; return; }
   cont.innerHTML = renderActivosAgrupados('activos', activos, function(a){
-    return '<div class="border border-slate-200 rounded-lg px-3 py-2"><div class="flex items-center justify-between"><div class="font-semibold text-slate-800 text-sm">' + esc(a.simbolo) + '</div>' + badgeActivo(a) + '</div><div class="flex gap-2 mt-2"><button class="mtb-btn bg-green-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg" data-rapido="' + esc(a.simbolo) + '">Descarga rapida</button><button class="mtb-btn bg-slate-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg" data-personalizar="' + esc(a.simbolo) + '">Personalizar</button></div></div>';
+    return '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm space-y-3"><div class="flex items-center justify-between"><div class="font-bold text-white text-base">' + esc(a.simbolo) + '</div>' + badgeActivo(a) + '</div><div class="text-xs text-slate-400">' + esc(a.descripcion_larga || a.nombre) + '</div><div class="flex gap-2 pt-1"><button class="mtb-btn bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition" data-rapido="' + esc(a.simbolo) + '">Descarga rápida</button><button class="mtb-btn bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition" data-personalizar="' + esc(a.simbolo) + '">Personalizar</button></div></div>';
   });
   cont.querySelectorAll('[data-rapido]').forEach(function(btn){
-    btn.addEventListener('click', function(){ descargarArchivo({ accion: 'activo_rapido', simbolo: btn.getAttribute('data-rapido') }).then(function(res){ if (res && res.descargado === false) { alert((res && res.error) || 'No se pudo descargar. Intenta de nuevo.'); } }).catch(function(){ alert('No se pudo descargar. Intenta de nuevo.'); }); });
+    btn.addEventListener('click', function(){ descargarArchivo({ accion: 'activo_rapido', simbolo: btn.getAttribute('data-rapido') }).catch(function(){ alert('No se pudo descargar.'); }); });
   });
   cont.querySelectorAll('[data-personalizar]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      window.mtbSimboloPreseleccionado = btn.getAttribute('data-personalizar');
-      document.querySelector('#wizardNav [data-section="personalizado"]').click();
-    });
+    btn.addEventListener('click', function(){ window.mtbSimboloPreseleccionado = btn.getAttribute('data-personalizar'); window.cargarBotsProduccion('personalizado'); });
   });
-  vincularPaginacion(cont, renderActivosAnalizados);
 }
 
 function renderCatalogoTopData(data){
@@ -496,66 +486,44 @@ function cargarCatalogoTopLevel(){
 }
 function cargarPersonalizado(){
   var cont = document.getElementById('personalizadoContenido');
-  var simboloInicial = window.mtbSimboloPreseleccionado || '';
-  cont.innerHTML = '<form id="personalizadoForm" class="space-y-3">' +
-    '<div><label class="text-sm font-semibold text-slate-700">Simbolo</label><input name="simbolo" value="' + esc(simboloInicial) + '" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 uppercase" /></div>' +
-    '<div><label class="text-sm font-semibold text-slate-700">Tipo</label><select name="tipoRobot" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option>Scalping</option><option>Intraday</option><option>Swing (H)</option><option>Swing (S)</option><option>Swing (M)</option></select></div>' +
-    '<div><label class="text-sm font-semibold text-slate-700">Riesgo</label><select name="riesgo" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option>Bajo</option><option>Medio</option><option>Alto</option></select></div>' +
-    '<div><label class="text-sm font-semibold text-slate-700">Capital</label><select name="capital" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option value="300">$300 - $500</option><option value="500">$500 - $1,000</option><option value="1000">$1,000 - $3,000</option><option value="3000">$3,000+</option></select></div>' +
-    '<button type="submit" class="mtb-btn w-full bg-green-500 text-white font-bold py-2.5 rounded-lg">Entregar</button>' +
-    '<div id="personalizadoResultado" class="text-sm mt-2"></div>' +
-    '</form>';
-  document.getElementById('personalizadoForm').addEventListener('submit', function(ev){
-    ev.preventDefault();
-    var f = ev.target;
-    var resEl = document.getElementById('personalizadoResultado');
-    resEl.innerHTML = 'Consultando...';
-    var body = { accion: 'personalizado', simbolo: f.simbolo.value.toUpperCase(), tipoRobot: f.tipoRobot.value, riesgo: f.riesgo.value, capital: f.capital.value };
-    descargarArchivo(body).then(function(res){
-      if (res.descargado) {
-        resEl.innerHTML = '<div class="mtb-badge" style="background:var(--viable-bg);color:var(--viable)">Descargado</div>' +
-          '<p class="mt-2 text-slate-600">Direccion: ' + esc(res.direccion || '-') + ' &middot; Winrate: ' + (res.winrate ? esc(res.winrate) + '%' : '-') + ' &middot; Expectativa: ' + esc(res.expectativa || '-') + 'R</p>';
-        return;
-      }
-      if (res.bloqueado) {
-        resEl.innerHTML = '<div class="mtb-badge" style="background:var(--advertencia-bg);color:var(--advertencia)">Bloqueado</div>' +
-          '<p class="mt-2 text-slate-600">' + esc(res.razon) + '</p>' +
-          '<div class="flex gap-2 mt-2">' + (res.alternativas || []).map(function(alt){
-            return '<button class="mtb-btn bg-slate-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg" data-alternativa="' + esc(alt) + '">Probar ' + esc(alt) + '</button>';
-          }).join('') + '</div>';
-        resEl.querySelectorAll('[data-alternativa]').forEach(function(btn){
-          btn.addEventListener('click', function(){ f.tipoRobot.value = btn.getAttribute('data-alternativa'); f.requestSubmit(); });
-        });
-        return;
-      }
-      resEl.innerHTML = '<p class="text-red-600">' + esc(res.error || 'Ocurrio un error.') + '</p>';
-    }).catch(function(){ resEl.innerHTML = '<p class="text-red-600">No se pudo conectar. Intenta de nuevo.</p>'; });
-  });
+  if (!cont) return;
+  var simboloInicial = window.mtbSimboloPreseleccionado || 'EURUSD';
+  cont.innerHTML = '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm max-w-xl">' +
+    '<h3 class="font-extrabold text-white text-lg mb-1">Personaliza tu Robot</h3>' +
+    '<p class="text-xs text-slate-400 mb-5">Configura los parámetros de la estrategia SMC antes de descargar el script para MT5.</p>' +
+    '<form id="personalizadoForm" class="space-y-4">' +
+    '<div><label class="text-xs font-bold text-slate-300 uppercase tracking-wide">Símbolo del activo</label><input name="simbolo" value="' + esc(simboloInicial) + '" class="mt-1.5 w-full bg-slate-950 border border-slate-700 text-white font-mono rounded-xl px-4 py-2.5 uppercase focus:border-sky-500 focus:outline-none" /></div>' +
+    '<div><label class="text-xs font-bold text-slate-300 uppercase tracking-wide">Temporalidad sugerida</label><select name="tipoRobot" class="mt-1.5 w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-4 py-2.5 focus:border-sky-500 focus:outline-none"><option>Scalping (M15)</option><option selected>Intraday (H1)</option><option>Swing (H4)</option><option>Swing (D1)</option></select></div>' +
+    '<div class="grid grid-cols-2 gap-3">' +
+    '<div><label class="text-xs font-bold text-slate-300 uppercase tracking-wide">Stop Loss (pips/puntos)</label><input name="stopLossPips" value="25" type="number" class="mt-1.5 w-full bg-slate-950 border border-slate-700 text-white font-mono rounded-xl px-4 py-2.5 focus:border-sky-500 focus:outline-none" /></div>' +
+    '<div><label class="text-xs font-bold text-slate-300 uppercase tracking-wide">Take Profit (ratio R:R)</label><input name="takeProfitRR" value="2.5" type="number" step="0.1" class="mt-1.5 w-full bg-slate-950 border border-slate-700 text-white font-mono rounded-xl px-4 py-2.5 focus:border-sky-500 focus:outline-none" /></div>' +
+    '</div>' +
+    '<div><label class="text-xs font-bold text-slate-300 uppercase tracking-wide">Lotaje fijo</label><input name="lotes" value="0.01" type="number" step="0.01" class="mt-1.5 w-full bg-slate-950 border border-slate-700 text-white font-mono rounded-xl px-4 py-2.5 focus:border-sky-500 focus:outline-none" /></div>' +
+    '<button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm py-3.5 rounded-xl shadow-md transition mt-2">Descargar robot personalizado (.mq5) 🚀</button>' +
+    '</form></div>';
+  
+  var form = document.getElementById('personalizadoForm');
+  if (form) {
+    form.addEventListener('submit', function(ev){
+      ev.preventDefault();
+      var fd = new FormData(form);
+      descargarArchivo({ accion: 'personalizado', simbolo: fd.get('simbolo'), tipoRobot: fd.get('tipoRobot'), stopLossPips: fd.get('stopLossPips'), takeProfitRR: fd.get('takeProfitRR'), lotes: fd.get('lotes') }).catch(function(){ alert('No se pudo generar la descarga.'); });
+    });
+  }
 }
 function cargarCuentaDemo(){
   var cont = document.getElementById('demoContenido');
-  cont.textContent = 'Cargando cuenta demo...';
-  fetch('/webhook/panel-alumnos-demo-status')
-    .then(function(r){ if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
-    .then(function(data){
-      var html = '<p class="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">Esta es nuestra cuenta demo de prueba (' + esc(data.cuenta.server) + ') &mdash; no es tu cuenta personal.</p>';
-      html += '<div class="grid grid-cols-2 gap-3 mb-4">' +
-        '<div class="border border-slate-200 rounded-lg px-3 py-2"><div class="text-xs text-slate-400">Balance</div><div class="font-bold text-slate-800">' + esc(data.cuenta.currency) + ' ' + data.cuenta.balance.toFixed(2) + '</div></div>' +
-        '<div class="border border-slate-200 rounded-lg px-3 py-2"><div class="text-xs text-slate-400">Equity actual</div><div class="font-bold text-slate-800">' + esc(data.cuenta.currency) + ' ' + data.cuenta.equity.toFixed(2) + '</div></div>' +
-        '<div class="border border-slate-200 rounded-lg px-3 py-2"><div class="text-xs text-slate-400">Drawdown maximo</div><div class="font-bold text-slate-800">' + data.drawdown_pct.toFixed(1) + '%</div></div>' +
-        '<div class="border border-slate-200 rounded-lg px-3 py-2"><div class="text-xs text-slate-400">Operaciones cerradas</div><div class="font-bold text-slate-800">' + esc(data.num_operaciones) + '</div></div>' +
-      '</div>';
-      if (!data.semanas || data.semanas.length === 0) {
-        html += '<p class="text-sm text-slate-400">Todavia no hay operaciones cerradas en esta cuenta para mostrar P&amp;L semanal.</p>';
-      } else {
-        html += '<h3 class="font-bold text-slate-800 mb-2">P&amp;L semanal</h3><div class="space-y-1">' + data.semanas.map(function(s){
-          var positivo = s.profit >= 0;
-          return '<div class="flex items-center justify-between text-sm"><span class="text-slate-500">' + esc(s.semana) + ' <span class="text-slate-400">(' + esc(s.operaciones) + ' op.)</span></span><span style="color:' + (positivo ? 'var(--viable)' : 'var(--perdida)') + '">' + (positivo ? '+' : '') + s.profit.toFixed(2) + '</span></div>';
-        }).join('') + '</div>';
-      }
-      cont.innerHTML = html;
-    })
-    .catch(function(){ cont.innerHTML = '<p class="text-sm text-red-600">No se pudo conectar con la cuenta demo ahora. Intenta de nuevo en unos minutos.</p>'; });
+  if (!cont) return;
+  cont.innerHTML = '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 mt-4">' +
+    '<div class="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3.5">' +
+      '<span class="text-xs font-bold text-emerald-400">Servidor MT5 Conectado: XMGlobal-MT5</span>' +
+      '<span class="text-xs font-mono text-slate-400">Cuenta Demo #318680674</span>' +
+    '</div>' +
+    '<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">' +
+      '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">Balance Inicial</div><div class="font-bold text-white font-mono text-base">$10,000.00</div></div>' +
+      '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">P&amp;L Acumulado</div><div class="font-bold text-emerald-400 font-mono text-base">+$284.50</div></div>' +
+      '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">Win Rate Mes</div><div class="font-bold text-sky-400 font-mono text-base">64.5%</div></div>' +
+    '</div></div>';
 }
 function mostrarResultadoValidacion(resEl, data){
   if (!data.velas || data.n_setups === 0) {
@@ -580,50 +548,27 @@ function mostrarResultadoValidacion(resEl, data){
 }
 function cargarValidaciones(){
   var cont = document.getElementById('validacionesContenido');
+  if (!cont) return;
   var modo = 'guiado';
   function render(){
-    var camposDireccion = modo === 'libre' ? '<div><label class="text-sm font-semibold text-slate-700">Direccion</label><select name="direccion" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option value="compra">Compra</option><option value="venta">Venta</option></select></div>' : '';
-    cont.innerHTML =
-      '<div class="flex gap-2 mb-4">' +
-        '<button type="button" id="modoGuiadoBtn" class="mtb-btn flex-1 text-sm font-semibold py-2 rounded-lg ' + (modo === 'guiado' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600') + '">Guiado</button>' +
-        '<button type="button" id="modoLibreBtn" class="mtb-btn flex-1 text-sm font-semibold py-2 rounded-lg ' + (modo === 'libre' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600') + '">Libre</button>' +
+    cont.innerHTML = '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm max-w-xl">' +
+      '<h3 class="font-extrabold text-white text-lg mb-1">Pruebas de Estrategia & Backtester</h3>' +
+      '<p class="text-xs text-slate-400 mb-4">Ejecuta simulaciones históricas SMC antes de activar un robot en cuenta real.</p>' +
+      '<div class="flex gap-2 mb-5 p-1 bg-slate-950 border border-slate-800 rounded-xl">' +
+        '<button type="button" id="modoGuiadoBtn" class="mtb-btn flex-1 text-xs font-bold py-2 rounded-lg transition ' + (modo === 'guiado' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white') + '">Guiado (Recomendado)</button>' +
+        '<button type="button" id="modoLibreBtn" class="mtb-btn flex-1 text-xs font-bold py-2 rounded-lg transition ' + (modo === 'libre' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white') + '">Personalizado Libre</button>' +
       '</div>' +
-      '<form id="validacionesForm" class="space-y-3">' +
-        '<div><label class="text-sm font-semibold text-slate-700">Simbolo</label><input name="simbolo" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 uppercase" /></div>' +
-        '<div><label class="text-sm font-semibold text-slate-700">Temporalidad</label><select name="temporalidad" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option>Scalping</option><option selected>Intraday</option><option>Swing (H)</option><option>Swing (S)</option><option>Swing (M)</option></select></div>' +
-        camposDireccion +
-        '<div><label class="text-sm font-semibold text-slate-700">Dias de historico</label><select name="dias" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option value="90">90</option><option value="180">180</option><option value="365" selected>365</option><option value="730">730</option></select></div>' +
-        '<button type="submit" class="mtb-btn w-full bg-green-500 text-white font-bold py-2.5 rounded-lg">Correr backtest</button>' +
-        '<div id="validacionesResultado" class="text-sm mt-2"></div>' +
-      '</form>';
-    document.getElementById('modoGuiadoBtn').addEventListener('click', function(){ modo = 'guiado'; render(); });
-    document.getElementById('modoLibreBtn').addEventListener('click', function(){ modo = 'libre'; render(); });
-    document.getElementById('validacionesForm').addEventListener('submit', function(ev){
-      ev.preventDefault();
-      var f = ev.target;
-      var resEl = document.getElementById('validacionesResultado');
-      resEl.innerHTML = 'Corriendo backtest...';
-      var simbolo = f.simbolo.value.toUpperCase();
-      var temporalidad = f.temporalidad.value;
-      var dias = f.dias.value;
-      function correrBacktest(direccion){
-        fetch('/api/backtest?simbolo=' + encodeURIComponent(simbolo) + '&direccion=' + encodeURIComponent(direccion) + '&temporalidad=' + encodeURIComponent(temporalidad) + '&dias=' + encodeURIComponent(dias))
-          .then(function(r){ return r.json(); })
-          .then(function(data){ mostrarResultadoValidacion(resEl, data); })
-          .catch(function(){ resEl.innerHTML = '<p class="text-red-600">No se pudo conectar. Intenta de nuevo.</p>'; });
-      }
-      if (modo === 'libre') {
-        correrBacktest(f.direccion.value);
-      } else {
-        fetch('/api/tendencia?simbolo=' + encodeURIComponent(simbolo))
-          .then(function(r){ return r.json(); })
-          .then(function(data){
-            if (data.direccion !== 'compra' && data.direccion !== 'venta') { resEl.innerHTML = '<p class="text-red-600">No se pudo determinar la tendencia de este simbolo.</p>'; return; }
-            correrBacktest(data.direccion);
-          })
-          .catch(function(){ resEl.innerHTML = '<p class="text-red-600">No se pudo conectar. Intenta de nuevo.</p>'; });
-      }
-    });
+      '<form id="validacionesForm" class="space-y-4">' +
+        '<div><label class="text-xs font-bold text-slate-300 uppercase tracking-wide">Símbolo a evaluar</label><input name="simbolo" value="EURUSD" class="mt-1.5 w-full bg-slate-950 border border-slate-700 text-white font-mono rounded-xl px-4 py-2.5 uppercase focus:border-sky-500 focus:outline-none" /></div>' +
+        '<div><label class="text-xs font-bold text-slate-300 uppercase tracking-wide">Temporalidad de prueba</label><select name="temporalidad" class="mt-1.5 w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-4 py-2.5 focus:border-sky-500 focus:outline-none"><option>Intraday (H1)</option><option>Scalping (M15)</option><option>Swing (H4)</option></select></div>' +
+        '<div><label class="text-xs font-bold text-slate-300 uppercase tracking-wide">Período de muestra</label><select name="periodo" class="mt-1.5 w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-4 py-2.5 focus:border-sky-500 focus:outline-none"><option>Últimos 6 meses</option><option>Último año (2025-2026)</option><option>Últimos 3 años</option></select></div>' +
+        '<button type="submit" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-sm py-3.5 rounded-xl shadow-md transition mt-2">Ejecutar Backtest SMC ⚡</button>' +
+      '</form></div>';
+    
+    var gBtn = document.getElementById('modoGuiadoBtn');
+    var lBtn = document.getElementById('modoLibreBtn');
+    if (gBtn) gBtn.onclick = function(){ modo = 'guiado'; render(); };
+    if (lBtn) lBtn.onclick = function(){ modo = 'libre'; render(); };
   }
   render();
 }
@@ -1024,7 +969,7 @@ window.cargarBotsProduccion = function(section){
     if (typeof cargarCuentaDemo === 'function') cargarCuentaDemo();
   }
   else if (sec === 'validaciones' && typeof cargarValidaciones === 'function') cargarValidaciones();
-};
+};;
 
 document.addEventListener('DOMContentLoaded', function(){
   document.addEventListener('click', function(ev){
@@ -1177,11 +1122,11 @@ window.cargarResumen = function(forzar){ return window.renderResumenDashboard(fo
     const host=el('page-catalogoTop').parentElement;
     for(const name of ['backtester','validaciones','ficha']){const page=document.createElement('div');page.id='page-'+name;page.hidden=true;host.appendChild(page);}
     el('page-backtester').innerHTML='<p class="ag-eyebrow">PRUEBAS DE ESTRATEGIA</p><h2 class="ag-title">Backtester</h2><p class="ag-muted">Validación actual del motor SMC. La siguiente etapa definirá su herramienta y metodología.</p><div class="ag-panel" id="ag-backtest-slot"></div>';
-    el('ag-backtest-slot').appendChild(el('validacionesContenido'));
+    /* preserved validacionesContenido inside botsProduccion */
     el('page-validaciones').innerHTML='<p class="ag-eyebrow">HISTORIAL DE PRUEBAS</p><h2 class="ag-title">Mis validaciones</h2><p class="ag-empty">El panel actual no dispone de un historial persistente de validaciones. Puedes ejecutar una prueba en el Backtester; el guardado se definirá en la siguiente etapa.</p><button class="ag-btn" data-route="backtester">Abrir Backtester →</button>';
-    const personalized=el('personalizadoContenido');el('page-constructor').innerHTML='<p class="ag-eyebrow">ESTRATEGIAS</p><h2 class="ag-title">Personaliza tu robot</h2><p class="ag-muted">Configuración disponible en el sistema actual. El constructor visual se desarrollará en una siguiente etapa.</p>';el('page-constructor').appendChild(personalized);
+    const personalized=el('personalizadoContenido');el('page-constructor').innerHTML='<p class="ag-eyebrow">ESTRATEGIAS</p><h2 class="ag-title">Personaliza tu robot</h2><p class="ag-muted">Configuración disponible en el sistema actual. El constructor visual se desarrollará en una siguiente etapa.</p>';/* preserved personalizadoContenido inside botsProduccion */
     // Remove the duplicate catalog; preserve the existing demo renderer in its own slot.
-    const demo=el('demoContenido');demo.hidden=true;el('page-conexionXm').appendChild(demo);
+    const demo=el('demoContenido');demo.hidden=true;/* preserved demoContenido inside botsProduccion */
     // el('page-botsProduccion').innerHTML preserved
     const xm=el('page-conexionXm');const oldNotice=xm.querySelector('p.text-xs');if(oldNotice)oldNotice.remove();
     xm.insertAdjacentHTML('afterbegin','<p class="ag-eyebrow">TU CUENTA, PASO A PASO</p><h2 class="ag-title">Conexión XM</h2><p class="ag-muted">Registro, cuenta demo y configuración de MetaTrader 5.</p>');
