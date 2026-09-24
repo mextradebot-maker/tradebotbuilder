@@ -926,27 +926,29 @@ function cambiarPaginaHistorial(pag){
   mtbResumenState.paginaHistorial = pag;
   renderResumen(mtbResumenState.datos);
 }
-function cargarResumen(forzar){
+window.renderResumenDashboard = function(forzar){
   var cont = document.getElementById('resumenContenido');
   if (!cont) return;
-  if (!forzar && mtbResumenState.datos) { renderResumen(mtbResumenState.datos); return; }
-  cont.innerHTML = '<div class="text-slate-400 text-sm py-6 text-center">Cargando datos en tiempo real desde VPS...</div>';
+  
+  // Render instant default or cached view immediately
+  if (!mtbResumenState.datos) mtbResumenState.datos = {};
+  renderResumen(mtbResumenState.datos);
+  
+  // Asynchronously query live data from webhook to update if available
   fetch('/webhook/panel-alumnos-resumen')
     .then(function(r){
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.text();
+      return r.json();
     })
-    .then(function(txt){
-      if (!txt || !txt.trim()) throw new Error('Servidor n8n/VPS devolvió respuesta vacía');
-      var data = JSON.parse(txt);
-      mtbResumenState.datos = data;
-      renderResumen(data);
+    .then(function(data){
+      if (data && typeof data === 'object') {
+        mtbResumenState.datos = data;
+        renderResumen(data);
+      }
     })
-    .catch(function(err){
-      mtbResumenState.datos = {};
-      renderResumen({});
-    });
-}
+    .catch(function(){});
+};
+window.cargarResumen = function(forzar){ return window.renderResumenDashboard(forzar); };
 </script><script>/* UI revision: read-only market catalogue, independent from trading accounts. */
 (function () {
   'use strict';
@@ -1067,8 +1069,9 @@ function cargarResumen(forzar){
     else if(page==='constructor'){if(selected)window.mtbSimboloPreseleccionado=selected;window.cargarPersonalizado();}
     else if(page==='backtester'){window.cargarValidaciones();const input=el('validacionesContenido').querySelector('[name=simbolo]');if(input&&selected)input.value=selected;const period=el('validacionesContenido').querySelector('[name=temporalidad]');if(period)period.value=activePeriod;}
     else if(page==='botsProduccion')loadOperations('ag-operations');
-    else if(page==='resumen')loadOperations('resumenContenido');
+    else if(page==='resumen')window.cargarResumen();
     else if(page==='calendario')window.cargarCalendarioEconomico();
+    else if(page==='resumen')window.renderResumenDashboard();
   }
   async function loadOperations(id){
     const container=el(id);if(!container)return;
@@ -1122,7 +1125,7 @@ function cargarResumen(forzar){
   // Replace obsolete entry points as well as direct links from legacy components.
   window.cargarCatalogo=()=>loadMarket();window.cargarCatalogoTopLevel=()=>loadMarket();window.cargarActivosAnalizados=()=>loadMarket();
   window.irAPersonalizar=s=>{if(known(s))selected=s;window.mtbSimboloPreseleccionado=s;route('constructor');};
-  window.irABacktest=()=>route('backtester');window.cargarResumen=()=>loadOperations('resumenContenido');
+  window.irABacktest=()=>route('backtester');window.cargarResumen=()=>window.renderResumenDashboard();
   document.addEventListener('DOMContentLoaded',init);
 })();
 </script></body></html>
