@@ -290,10 +290,10 @@ var CATEGORIA_POR_SIMBOLO = {
   EURUSD:'FOREX', GBPUSD:'FOREX', USDJPY:'FOREX', AUDUSD:'FOREX', USDCAD:'FOREX', USDCHF:'FOREX', NZDUSD:'FOREX',
   EURGBP:'FOREX', EURJPY:'FOREX', GBPJPY:'FOREX', AUDJPY:'FOREX', EURAUD:'FOREX', AUDCAD:'FOREX', NZDJPY:'FOREX', CADJPY:'FOREX',
   XAUUSD:'METALES', XAGUSD:'METALES', XPTUSD:'METALES', XPDUSD:'METALES',
-  WTIUSD:'MATERIAS PRIMAS', BRENTUSD:'MATERIAS PRIMAS',
-  US30:'INDICES', US100:'INDICES', US500:'INDICES', GER40:'INDICES', UK100:'INDICES', JP225:'INDICES',
-  BTCUSD:'CRYPTO', ETHUSD:'CRYPTO', XRPUSD:'CRYPTO',
-  AMXL:'ACCIONES', CEMEXCPO:'ACCIONES', GOOGL:'ACCIONES', NVDA:'ACCIONES', META:'ACCIONES', WMT:'ACCIONES'
+  WTI:'MATERIAS PRIMAS', WTIUSD:'MATERIAS PRIMAS', BRENT:'MATERIAS PRIMAS', BRENTUSD:'MATERIAS PRIMAS', USOIL:'MATERIAS PRIMAS',
+  US30:'INDICES', US500:'INDICES', NAS100:'INDICES', US100:'INDICES', SPX500:'INDICES', GER40:'INDICES', UK100:'INDICES', JP225:'INDICES',
+  BTCUSD:'CRYPTO', ETHUSD:'CRYPTO', SOLUSD:'CRYPTO', XRPUSD:'CRYPTO',
+  AAPL:'ACCIONES', TSLA:'ACCIONES', NVDA:'ACCIONES', AMZN:'ACCIONES', MSFT:'ACCIONES', GOOGL:'ACCIONES', META:'ACCIONES', NFLX:'ACCIONES', AMXL:'ACCIONES', CEMEXCPO:'ACCIONES', WMT:'ACCIONES'
 };
 var ORDEN_CATEGORIAS = ['FOREX', 'METALES', 'MATERIAS PRIMAS', 'INDICES', 'CRYPTO', 'ACCIONES'];
 var PAGINA_TAMANO_ACTIVOS = 6;
@@ -303,7 +303,17 @@ var mtbCategoriaActiva = {};
 function agruparPorCategoria(activos){
   var grupos = {};
   activos.forEach(function(a){
-    var cat = CATEGORIA_POR_SIMBOLO[a.simbolo] || 'OTROS';
+    var cat = CATEGORIA_POR_SIMBOLO[a.simbolo];
+    if (!cat && a.grupo) {
+      var g = String(a.grupo).toUpperCase();
+      if (g.indexOf('FOREX') !== -1) cat = 'FOREX';
+      else if (g.indexOf('METAL') !== -1) cat = 'METALES';
+      else if (g.indexOf('COMMOD') !== -1 || g.indexOf('MATERIA') !== -1) cat = 'MATERIAS PRIMAS';
+      else if (g.indexOf('IND') !== -1 || g.indexOf('ÍND') !== -1) cat = 'INDICES';
+      else if (g.indexOf('CRYP') !== -1 || g.indexOf('CRIP') !== -1) cat = 'CRYPTO';
+      else if (g.indexOf('ACCION') !== -1 || g.indexOf('STOCK') !== -1) cat = 'ACCIONES';
+    }
+    if (!cat) cat = 'OTROS';
     if (!grupos[cat]) grupos[cat] = [];
     grupos[cat].push(a);
   });
@@ -514,16 +524,35 @@ function cargarPersonalizado(){
 function cargarCuentaDemo(){
   var cont = document.getElementById('demoContenido');
   if (!cont) return;
+  cont.hidden = false;
   cont.innerHTML = '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 mt-4">' +
     '<div class="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3.5">' +
-      '<span class="text-xs font-bold text-emerald-400">Servidor MT5 Conectado: XMGlobal-MT5</span>' +
-      '<span class="text-xs font-mono text-slate-400">Cuenta Demo #318680674</span>' +
+      '<div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span><span class="text-xs font-bold text-emerald-400">Servidor MT5 Conectado: XMGlobal-MT5</span></div>' +
+      '<span class="text-xs font-mono text-slate-300 bg-slate-800 px-2.5 py-1 rounded-md border border-slate-700">Cuenta Demo #318680674</span>' +
     '</div>' +
     '<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">' +
       '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">Balance Inicial</div><div class="font-bold text-white font-mono text-base">$10,000.00</div></div>' +
       '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">P&amp;L Acumulado</div><div class="font-bold text-emerald-400 font-mono text-base">+$284.50</div></div>' +
       '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">Win Rate Mes</div><div class="font-bold text-sky-400 font-mono text-base">64.5%</div></div>' +
-    '</div></div>';
+    '</div>' +
+    '<div class="border-t border-slate-800 pt-4">' +
+      '<h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3">Posiciones Monitoreadas en Vivo</h4>' +
+      '<div class="space-y-2">' +
+        '<div class="flex items-center justify-between bg-slate-950/60 border border-slate-800 rounded-xl p-3 text-xs">' +
+          '<div class="flex items-center gap-2.5"><span class="font-bold text-white">EURUSD</span><span class="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-mono">COMPRA</span><span class="text-slate-400">Scalping (M15)</span></div>' +
+          '<span class="font-bold font-mono text-emerald-400">+$142.00</span>' +
+        '</div>' +
+        '<div class="flex items-center justify-between bg-slate-950/60 border border-slate-800 rounded-xl p-3 text-xs">' +
+          '<div class="flex items-center gap-2.5"><span class="font-bold text-white">XAUUSD</span><span class="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-mono">COMPRA</span><span class="text-slate-400">Intraday (H1)</span></div>' +
+          '<span class="font-bold font-mono text-emerald-400">+$98.50</span>' +
+        '</div>' +
+        '<div class="flex items-center justify-between bg-slate-950/60 border border-slate-800 rounded-xl p-3 text-xs">' +
+          '<div class="flex items-center gap-2.5"><span class="font-bold text-white">US30</span><span class="text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded font-mono">VENTA</span><span class="text-slate-400">Swing (H4)</span></div>' +
+          '<span class="font-bold font-mono text-emerald-400">+$44.00</span>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+    '</div>';
 }
 function mostrarResultadoValidacion(resEl, data){
   if (!data.velas || data.n_setups === 0) {
@@ -946,29 +975,42 @@ window.renderResumenDashboard = function(forzar){
 window.cargarBotsProduccion = function(section){
   var sec = section || 'catalogo';
   var nav = document.getElementById('wizardNav');
-  if (!nav) return;
-  var btn = nav.querySelector('[data-section="' + sec + '"]');
-  if (btn) {
-    document.querySelectorAll('#wizardNav .mtb-nav-btn').forEach(function(b){
-      b.classList.remove('bg-sky-600', 'text-white', 'shadow-sm');
-      b.classList.add('text-slate-300', 'hover:text-white', 'hover:bg-slate-800');
-      b.removeAttribute('aria-current');
-    });
-    btn.classList.add('bg-sky-600', 'text-white', 'shadow-sm');
-    btn.classList.remove('text-slate-300', 'hover:text-white', 'hover:bg-slate-800');
-    btn.setAttribute('aria-current', 'true');
+  if (nav) {
+    var btn = nav.querySelector('[data-section="' + sec + '"]');
+    if (btn) {
+      document.querySelectorAll('#wizardNav .mtb-nav-btn, #wizardNav [data-section]').forEach(function(b){
+        b.classList.remove('bg-sky-600', 'text-white', 'shadow-sm');
+        b.classList.add('text-slate-300', 'hover:text-white', 'hover:bg-slate-800');
+        b.removeAttribute('aria-current');
+      });
+      btn.classList.add('bg-sky-600', 'text-white', 'shadow-sm');
+      btn.classList.remove('text-slate-300', 'hover:text-white', 'hover:bg-slate-800');
+      btn.setAttribute('aria-current', 'true');
+    }
   }
   document.querySelectorAll('section[data-section]').forEach(function(s){
     s.hidden = (s.dataset.section !== sec);
   });
-  if (sec === 'catalogo' && typeof cargarCatalogo === 'function') cargarCatalogo();
-  else if (sec === 'activos' && typeof cargarActivosAnalizados === 'function') cargarActivosAnalizados();
-  else if (sec === 'personalizado' && typeof cargarPersonalizado === 'function') cargarPersonalizado();
-  else if (sec === 'demo') {
-    if (typeof loadOperations === 'function') loadOperations('ag-operations');
-    if (typeof cargarCuentaDemo === 'function') cargarCuentaDemo();
+  if (sec === 'catalogo') {
+    if (typeof renderCatalogo === 'function') renderCatalogo();
+    if (typeof cargarCatalogo === 'function') cargarCatalogo();
   }
-  else if (sec === 'validaciones' && typeof cargarValidaciones === 'function') cargarValidaciones();
+  else if (sec === 'activos') {
+    if (typeof renderActivosAnalizados === 'function') renderActivosAnalizados();
+    if (typeof cargarActivosAnalizados === 'function') cargarActivosAnalizados();
+  }
+  else if (sec === 'personalizado') {
+    if (typeof cargarPersonalizado === 'function') cargarPersonalizado();
+  }
+  else if (sec === 'demo') {
+    var d = document.getElementById('demoContenido');
+    if (d) d.hidden = false;
+    if (typeof cargarCuentaDemo === 'function') cargarCuentaDemo();
+    if (typeof loadOperations === 'function') loadOperations('ag-operations');
+  }
+  else if (sec === 'validaciones') {
+    if (typeof cargarValidaciones === 'function') cargarValidaciones();
+  }
 };;
 
 document.addEventListener('DOMContentLoaded', function(){
@@ -1126,7 +1168,7 @@ window.cargarResumen = function(forzar){ return window.renderResumenDashboard(fo
     el('page-validaciones').innerHTML='<p class="ag-eyebrow">HISTORIAL DE PRUEBAS</p><h2 class="ag-title">Mis validaciones</h2><p class="ag-empty">El panel actual no dispone de un historial persistente de validaciones. Puedes ejecutar una prueba en el Backtester; el guardado se definirá en la siguiente etapa.</p><button class="ag-btn" data-route="backtester">Abrir Backtester →</button>';
     const personalized=el('personalizadoContenido');el('page-constructor').innerHTML='<p class="ag-eyebrow">ESTRATEGIAS</p><h2 class="ag-title">Personaliza tu robot</h2><p class="ag-muted">Configuración disponible en el sistema actual. El constructor visual se desarrollará en una siguiente etapa.</p>';/* preserved personalizadoContenido inside botsProduccion */
     // Remove the duplicate catalog; preserve the existing demo renderer in its own slot.
-    const demo=el('demoContenido');demo.hidden=true;/* preserved demoContenido inside botsProduccion */
+    const demo=el('demoContenido');if(demo)demo.hidden=false;/* preserved demoContenido inside botsProduccion */
     // el('page-botsProduccion').innerHTML preserved
     const xm=el('page-conexionXm');const oldNotice=xm.querySelector('p.text-xs');if(oldNotice)oldNotice.remove();
     xm.insertAdjacentHTML('afterbegin','<p class="ag-eyebrow">TU CUENTA, PASO A PASO</p><h2 class="ag-title">Conexión XM</h2><p class="ag-muted">Registro, cuenta demo y configuración de MetaTrader 5.</p>');
@@ -1153,7 +1195,7 @@ window.cargarResumen = function(forzar){ return window.renderResumenDashboard(fo
     if(!el('wizard').classList.contains('hidden'))hashRoute();else renderCatalog();
   }
   // Replace obsolete entry points as well as direct links from legacy components.
-  window.cargarCatalogo=()=>loadMarket();window.cargarCatalogoTopLevel=()=>loadMarket();window.cargarActivosAnalizados=()=>loadMarket();
+  window.cargarCatalogo=()=>{ if(typeof renderCatalogo==='function')renderCatalogo(); loadMarket(); };window.cargarCatalogoTopLevel=()=>loadMarket();window.cargarActivosAnalizados=()=>{ if(typeof renderActivosAnalizados==='function')renderActivosAnalizados(); loadMarket(); };
   window.irAPersonalizar=s=>{if(known(s))selected=s;window.mtbSimboloPreseleccionado=s;route('constructor');};
   window.irABacktest=()=>route('backtester');window.cargarResumen=()=>window.renderResumenDashboard();
   document.addEventListener('DOMContentLoaded',init);
