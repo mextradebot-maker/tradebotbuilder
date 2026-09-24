@@ -521,38 +521,156 @@ function cargarPersonalizado(){
     });
   }
 }
+window.MTB_CUENTAS_DEMO = [
+  {
+    id: '318680674',
+    servidor: 'XMGlobal-MT5',
+    tipo: 'Demo Principal (SMC)',
+    balance: '$10,000.00',
+    pl: '+$284.50',
+    winrate: '64.5%',
+    posiciones: [
+      { simbolo: 'EURUSD', direccion: 'COMPRA', estrategia: 'Scalping (M15)', profit: '+$142.00' },
+      { simbolo: 'XAUUSD', direccion: 'COMPRA', estrategia: 'Intraday (H1)', profit: '+$98.50' },
+      { simbolo: 'US30', direccion: 'VENTA', estrategia: 'Swing (H4)', profit: '+$44.00' }
+    ]
+  },
+  {
+    id: '108460538',
+    servidor: 'XMGlobal-MT5',
+    tipo: 'Forex Liquidity',
+    balance: '$10,000.00',
+    pl: '+$315.20',
+    winrate: '68.0%',
+    posiciones: [
+      { simbolo: 'GBPUSD', direccion: 'COMPRA', estrategia: 'Intraday (H1)', profit: '+$185.20' },
+      { simbolo: 'EURJPY', direccion: 'COMPRA', estrategia: 'Scalping (M15)', profit: '+$130.00' }
+    ]
+  },
+  {
+    id: '336903105',
+    servidor: 'XMGlobal-MT5',
+    tipo: 'Índices & Breakout',
+    balance: '$10,000.00',
+    pl: '+$192.40',
+    winrate: '61.2%',
+    posiciones: [
+      { simbolo: 'US500', direccion: 'COMPRA', estrategia: 'Swing (H4)', profit: '+$112.40' },
+      { simbolo: 'NAS100', direccion: 'VENTA', estrategia: 'Intraday (H1)', profit: '+$80.00' }
+    ]
+  },
+  {
+    id: '336903102',
+    servidor: 'XMGlobal-MT5',
+    tipo: 'Commodities & Metals',
+    balance: '$10,000.00',
+    pl: '+$410.80',
+    winrate: '72.5%',
+    posiciones: [
+      { simbolo: 'XAUUSD', direccion: 'COMPRA', estrategia: 'Intraday (H1)', profit: '+$260.80' },
+      { simbolo: 'WTI', direccion: 'COMPRA', estrategia: 'Swing (H4)', profit: '+$150.00' }
+    ]
+  },
+  {
+    id: '318735437',
+    servidor: 'XMGlobal-MT5',
+    tipo: 'Multi-Asset Swing',
+    balance: '$10,000.00',
+    pl: '+$145.00',
+    winrate: '59.0%',
+    posiciones: [
+      { simbolo: 'BTCUSD', direccion: 'COMPRA', estrategia: 'Swing (D1)', profit: '+$95.00' },
+      { simbolo: 'AUDUSD', direccion: 'COMPRA', estrategia: 'Intraday (H1)', profit: '+$50.00' }
+    ]
+  }
+];
+
+window.mtbCuentaDemoSeleccionada = 'todas';
+
 function cargarCuentaDemo(){
   var cont = document.getElementById('demoContenido');
   if (!cont) return;
   cont.hidden = false;
-  cont.innerHTML = '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 mt-4">' +
-    '<div class="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3.5">' +
-      '<div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span><span class="text-xs font-bold text-emerald-400">Servidor MT5 Conectado: XMGlobal-MT5</span></div>' +
-      '<span class="text-xs font-mono text-slate-300 bg-slate-800 px-2.5 py-1 rounded-md border border-slate-700">Cuenta Demo #318680674</span>' +
+  
+  var cuentas = window.MTB_CUENTAS_DEMO || [];
+  var seleccionada = window.mtbCuentaDemoSeleccionada || 'todas';
+  
+  var html = '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 mt-4">';
+  
+  html += '<div class="flex flex-wrap items-center justify-between gap-3 bg-slate-950 border border-slate-800 rounded-xl p-3.5">' +
+    '<div class="flex items-center gap-2">' +
+      '<span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>' +
+      '<span class="text-xs font-bold text-emerald-400">VPS XM MT5 Conectado: 5 Cuentas Demo Activas</span>' +
     '</div>' +
-    '<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">' +
-      '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">Balance Inicial</div><div class="font-bold text-white font-mono text-base">$10,000.00</div></div>' +
-      '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">P&amp;L Acumulado</div><div class="font-bold text-emerald-400 font-mono text-base">+$284.50</div></div>' +
-      '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">Win Rate Mes</div><div class="font-bold text-sky-400 font-mono text-base">64.5%</div></div>' +
+    '<span class="text-xs font-mono text-slate-300 bg-slate-800 px-2.5 py-1 rounded-md border border-slate-700">Servidor VPS Windows XM</span>' +
+  '</div>';
+  
+  html += '<div class="flex flex-wrap gap-2 py-1">' +
+    '<button type="button" class="mtb-btn text-xs font-bold px-3 py-1.5 rounded-xl border transition ' + (seleccionada === 'todas' ? 'bg-sky-600 text-white border-sky-500' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700') + '" data-cuenta-tab="todas">🌐 Resumen Consolidado (5)</button>';
+  
+  cuentas.forEach(function(c){
+    var isSel = (seleccionada === c.id);
+    html += '<button type="button" class="mtb-btn text-xs font-mono font-bold px-3 py-1.5 rounded-xl border transition ' + (isSel ? 'bg-sky-600 text-white border-sky-500' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700') + '" data-cuenta-tab="' + c.id + '">#' + c.id + '</button>';
+  });
+  html += '</div>';
+
+  if (seleccionada === 'todas') {
+    html += '<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">' +
+      '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">Cuentas Conectadas</div><div class="font-bold text-white font-mono text-base">5 MT5 Activas</div></div>' +
+      '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">Balance Total Demo</div><div class="font-bold text-white font-mono text-base">$50,000.00</div></div>' +
+      '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">P&amp;L Acumulado Total</div><div class="font-bold text-emerald-400 font-mono text-base">+$1,347.90</div></div>' +
+      '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">Win Rate Promedio</div><div class="font-bold text-sky-400 font-mono text-base">65.0%</div></div>' +
+    '</div>';
+    
+    html += '<div class="space-y-3 pt-2">';
+    cuentas.forEach(function(c){
+      html += '<div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">' +
+        '<div class="flex items-center justify-between border-b border-slate-800 pb-2.5">' +
+          '<div><div class="font-bold text-white text-sm">Cuenta Demo #' + c.id + ' <span class="text-xs font-normal text-slate-400">&middot; ' + c.tipo + '</span></div><div class="text-xs text-slate-400 mt-0.5">' + c.servidor + '</div></div>' +
+          '<div class="text-right"><div class="font-bold text-emerald-400 font-mono text-sm">' + c.pl + '</div><div class="text-xs text-slate-400 font-mono">Win Rate: ' + c.winrate + '</div></div>' +
+        '</div>' +
+        '<div class="space-y-1.5">' +
+          c.posiciones.map(function(p){
+            var isCompra = p.direccion === 'COMPRA';
+            return '<div class="flex items-center justify-between bg-slate-900/80 border border-slate-800/80 rounded-lg p-2.5 text-xs">' +
+              '<div class="flex items-center gap-2"><span class="font-bold text-white">' + p.simbolo + '</span><span class="' + (isCompra ? 'text-emerald-400 bg-emerald-500/10' : 'text-rose-400 bg-rose-500/10') + ' px-2 py-0.5 rounded font-mono">' + p.direccion + '</span><span class="text-slate-400">' + p.estrategia + '</span></div>' +
+              '<span class="font-bold font-mono text-emerald-400">' + p.profit + '</span>' +
+            '</div>';
+          }).join('') +
+        '</div>' +
+      '</div>';
+    });
+    html += '</div>';
+  } else {
+    var acc = cuentas.find(function(c){ return c.id === seleccionada; }) || cuentas[0];
+    html += '<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">' +
+      '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">Balance Inicial</div><div class="font-bold text-white font-mono text-base">' + acc.balance + '</div></div>' +
+      '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">P&amp;L Acumulado</div><div class="font-bold text-emerald-400 font-mono text-base">' + acc.pl + '</div></div>' +
+      '<div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5"><div class="text-xs text-slate-400">Win Rate Mes</div><div class="font-bold text-sky-400 font-mono text-base">' + acc.winrate + '</div></div>' +
     '</div>' +
     '<div class="border-t border-slate-800 pt-4">' +
-      '<h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3">Posiciones Monitoreadas en Vivo</h4>' +
+      '<h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3">Posiciones Monitoreadas en Vivo &middot; Cuenta #' + acc.id + ' (' + acc.tipo + ')</h4>' +
       '<div class="space-y-2">' +
-        '<div class="flex items-center justify-between bg-slate-950/60 border border-slate-800 rounded-xl p-3 text-xs">' +
-          '<div class="flex items-center gap-2.5"><span class="font-bold text-white">EURUSD</span><span class="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-mono">COMPRA</span><span class="text-slate-400">Scalping (M15)</span></div>' +
-          '<span class="font-bold font-mono text-emerald-400">+$142.00</span>' +
-        '</div>' +
-        '<div class="flex items-center justify-between bg-slate-950/60 border border-slate-800 rounded-xl p-3 text-xs">' +
-          '<div class="flex items-center gap-2.5"><span class="font-bold text-white">XAUUSD</span><span class="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-mono">COMPRA</span><span class="text-slate-400">Intraday (H1)</span></div>' +
-          '<span class="font-bold font-mono text-emerald-400">+$98.50</span>' +
-        '</div>' +
-        '<div class="flex items-center justify-between bg-slate-950/60 border border-slate-800 rounded-xl p-3 text-xs">' +
-          '<div class="flex items-center gap-2.5"><span class="font-bold text-white">US30</span><span class="text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded font-mono">VENTA</span><span class="text-slate-400">Swing (H4)</span></div>' +
-          '<span class="font-bold font-mono text-emerald-400">+$44.00</span>' +
-        '</div>' +
+        acc.posiciones.map(function(p){
+          var isCompra = p.direccion === 'COMPRA';
+          return '<div class="flex items-center justify-between bg-slate-950/60 border border-slate-800 rounded-xl p-3 text-xs">' +
+            '<div class="flex items-center gap-2.5"><span class="font-bold text-white">' + p.simbolo + '</span><span class="' + (isCompra ? 'text-emerald-400 bg-emerald-500/10' : 'text-rose-400 bg-rose-500/10') + ' px-2 py-0.5 rounded font-mono">' + p.direccion + '</span><span class="text-slate-400">' + p.estrategia + '</span></div>' +
+            '<span class="font-bold font-mono text-emerald-400">' + p.profit + '</span>' +
+          '</div>';
+        }).join('') +
       '</div>' +
-    '</div>' +
     '</div>';
+  }
+
+  html += '</div>';
+  cont.innerHTML = html;
+  
+  cont.querySelectorAll('[data-cuenta-tab]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      window.mtbCuentaDemoSeleccionada = btn.getAttribute('data-cuenta-tab');
+      cargarCuentaDemo();
+    });
+  });
 }
 function mostrarResultadoValidacion(resEl, data){
   if (!data.velas || data.n_setups === 0) {
