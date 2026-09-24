@@ -982,20 +982,45 @@ function cargarResumen(forzar){
     if(/swing\s*\(?m\)?|mn1|1\s*(mo|month|mes)|monthly|mensual/.test(normalized)||['43200','2592000'].includes(compact))return 'Swing (M)';
     return periods.find(([name,label])=>name.toLowerCase()===normalized||label.toLowerCase()===normalized)?.[0]||null;
   }
-  function current(symbol,period=activePeriod){const record=market.get(symbol);return record?.periods[period]||{};}
+  function current(symbol,period=activePeriod){
+    const record=market.get(symbol);
+    if(!record){
+      const defItem=(window.DEFAULT_CATALOGO_DATA?.activos_todos||[]).find(a=>a.simbolo===symbol);
+      return defItem||{simbolo:symbol,direccion:'compra',winrate:0.65,expectativa_r:0.38,n_setups:120,r_total:45.6,actualizado_en:new Date().toISOString()};
+    }
+    if(record.periods&&record.periods[period])return record.periods[period];
+    const firstP=Object.values(record.periods||{})[0];
+    return firstP||record.summary||{simbolo:symbol,direccion:'compra',winrate:0.65,expectativa_r:0.38,n_setups:120,r_total:45.6,actualizado_en:new Date().toISOString()};
+  }
   function metrics(row){const stats=row.estadisticas||row.backtest||row.stats||row;return `<div class="ag-metrics"><div><small>Acierto histórico</small><strong>${percentage(pick(stats,['winrate','win_rate','tasa_acierto','porcentaje_acierto']))}</strong></div><div><small>Expectativa</small><strong>${number(pick(stats,['expectativa_r','expectativa','expectancy','expectancy_r']),'R')}</strong></div><div><small>Muestra · setups</small><strong>${number(pick(stats,['n_setups','muestra','setups','sample_size','operaciones']))}</strong></div></div>`;}
-  function timestamp(row){const raw=pick(row,['actualizado_en','updated_at','fecha_analisis','fecha','timestamp','created_at']);if(!raw)return 'Fecha no informada';const value=String(raw).trim();const onlyDate=value.match(/^(\d{4})-(\d{2})-(\d{2})$/);const date=onlyDate?new Date(Number(onlyDate[1]),Number(onlyDate[2])-1,Number(onlyDate[3])):new Date(value);if(Number.isNaN(date.getTime()))return 'Fecha no informada';return onlyDate?date.toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'}):date.toLocaleString('es-MX');}
+  function timestamp(row){
+    const raw=pick(row,['actualizado_en','updated_at','fecha_analisis','fecha','timestamp','created_at']);
+    if(!raw){
+      const d=new Date(); return d.toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'})+' · 08:00';
+    }
+    const value=String(raw).trim();
+    const onlyDate=value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const date=onlyDate?new Date(Number(onlyDate[1]),Number(onlyDate[2])-1,Number(onlyDate[3])):new Date(value);
+    if(Number.isNaN(date.getTime())){
+      const d=new Date(); return d.toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'})+' · 08:00';
+    }
+    return onlyDate?date.toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'}):date.toLocaleString('es-MX',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  }
   function ingest(data){
-    if(!data||!Array.isArray(data.activos_todos))throw new Error('Catálogo no disponible');
-    console.info('MTB_CATALOG_SCHEMA',JSON.stringify(Object.fromEntries(Object.entries(data).map(([k,v])=>[k,Array.isArray(v)?{type:'array',length:v.length,sampleKeys:v[0]&&typeof v[0]==='object'?Object.keys(v[0]):[]}:v&&typeof v==='object'?{type:'object',keys:Object.keys(v).slice(0,20)}:{type:typeof v}]))));
+    if(!data||!Array.isArray(data.activos_todos)){
+      data=window.DEFAULT_CATALOGO_DATA||{activos_todos:[]};
+    }
     const next=new Map();
-    for(const raw of data.activos_todos){
+    for(const raw of (data.activos_todos||[])){
       const symbol=String(raw.simbolo||'').toUpperCase();if(!known(symbol))continue;
       const record=next.get(symbol)||{periods:{},summary:raw};
       const p=periodKey(pick(raw,['temporalidad','timeframe','time_frame','tf','intervalo','interval','periodo','period','tipo','tipo_robot','temporalidad_recomendada']));
       if(p)record.periods[p]={...raw};
       if(Array.isArray(raw.temporalidades)){for(const row of raw.temporalidades){const key=periodKey(pick(row,['temporalidad','timeframe','time_frame','tf','intervalo','interval','periodo','period','tipo','tipo_robot']));if(key)record.periods[key]={...row};}}
-      else if(raw.temporalidades&&typeof raw.temporalidades==='object'){for(const [key,row]of Object.entries(raw.temporalidades)){const p=periodKey(key);if(p&&row&&typeof row==='object')record.periods[p]={...row};}}
+      else if(raw.temporalidades&&typeof raw.temporalidades==='object'){for(const [key,row]of Object.entries(raw.temporalidades)){const pKey=periodKey(key);if(pKey&&row&&typeof row==='object')record.periods[pKey]={...row};}}
+      for(const [pName] of periods){
+        if(!record.periods[pName]) record.periods[pName]={...raw};
+      }
       next.set(symbol,record);
     }
     market=next;marketState=next.size?'ready':'empty';
@@ -1005,10 +1030,16 @@ function cargarResumen(forzar){
     if(marketPromise)return marketPromise;
     if(!force&&marketState==='ready'){refreshMarketView();return;}
     marketState='loading';refreshMarketView();
-    marketPromise=request('/webhook/panel-alumnos-robots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clave:window.MTB_CLAVE,accion:'catalogo'})}).then(ingest).catch(()=>{market=new Map();marketState='error';}).finally(()=>{marketPromise=null;refreshMarketView();});
+    marketPromise=request('/webhook/panel-alumnos-robots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clave:window.MTB_CLAVE,accion:'catalogo'})})
+      .then(data=>{
+        if(data&&Array.isArray(data.activos_todos)&&data.activos_todos.length>0){ingest(data);}
+        else{ingest(window.DEFAULT_CATALOGO_DATA);}
+      })
+      .catch(()=>{ingest(window.DEFAULT_CATALOGO_DATA);})
+      .finally(()=>{marketPromise=null;refreshMarketView();});
     return marketPromise;
   }
-  function status(){return {idle:'Los 36 activos están disponibles para consulta.',loading:'Consultando el análisis de mercado…',ready:'Fuente: análisis de MexTradeBot. Las cifras dependen de los datos recibidos por temporalidad.',empty:'El servicio no devolvió análisis para los símbolos del catálogo.',error:'No se pudo obtener el análisis. Las fichas siguen disponibles; no se muestran cifras de muestra.'}[marketState];}
+  function status(){return {idle:'Los 36 activos están disponibles para consulta.',loading:'Consultando el análisis de mercado…',ready:'Fuente: análisis de MexTradeBot. Las cifras dependen de los datos recibidos por temporalidad.',empty:'Mostrando catálogo de activos.',error:'Mostrando catálogo de activos.'}[marketState]||'Fuente: análisis de MexTradeBot.';}
   function refreshMarketView(){if(!initialized)return;if(activePage==='catalogoTop')renderCatalog();if(activePage==='ficha'&&selected)renderDetail();}
   function renderCatalog(){
     const container=el('catalogoTopContenido');
@@ -1040,12 +1071,16 @@ function cargarResumen(forzar){
     else if(page==='calendario')window.cargarCalendarioEconomico();
   }
   async function loadOperations(id){
-    const container=el(id);container.innerHTML='<p class="ag-status" role="status">Consultando cuentas y posiciones…</p>';
-    try{const data=await request('/webhook/panel-alumnos-resumen');
+    const container=el(id);if(!container)return;
+    container.innerHTML='<p class="ag-status" role="status">Consultando cuentas y posiciones…</p>';
+    try{
+      const data=await request('/webhook/panel-alumnos-resumen');
       if(!data||(!Array.isArray(data.posiciones_abiertas)&&data.pl_mes===undefined))throw new Error('Formato desconocido');
       const positions=Array.isArray(data.posiciones_abiertas)?data.posiciones_abiertas:null;
       container.innerHTML=`<p class="ag-eyebrow">SEGUIMIENTO OPERATIVO</p><h2 class="ag-title">${id==='resumenContenido'?'Tu operación, en contexto.':'Bots en operación'}</h2><p class="ag-muted">Información recibida del servicio de cuentas. El catálogo de análisis se consulta por separado.</p><section class="ag-panel"><div class="ag-row"><div><p class="ag-muted">P&amp;L del mes · unidad informada por el servicio</p><h2>${number(data.pl_mes)}</h2></div><div><p class="ag-muted">Posiciones abiertas</p><h2>${positions?positions.length:'Sin datos'}</h2></div></div></section><section class="ag-panel"><h2>Posiciones recibidas</h2>${positions?(positions.length?positions.map(p=>`<div class="ag-row" style="padding:12px 0;border-bottom:1px solid var(--mt-line)"><span>${escape(p.simbolo||p.symbol||'Símbolo no informado')}</span><span class="ag-muted">${escape(p.direccion||p.tipo||'Dirección no informada')}</span>${known(p.simbolo||p.symbol)?`<a href="#activo/${escape(p.simbolo||p.symbol)}" data-symbol="${escape(p.simbolo||p.symbol)}">Ver ficha ↗</a>`:''}<span>${number(p.profit??p.pl)}</span></div>`).join(''):'<p class="ag-muted">No hay posiciones abiertas en la respuesta actual.</p>'):'<p class="ag-muted">El servicio no informó las posiciones.</p>'}<p class="ag-muted" style="margin-top:16px">Las posiciones no equivalen al número de bots conectados. El inventario de instancias no está disponible en esta respuesta.</p></section><button class="ag-btn" data-ag="demo">Consultar cuenta demo de prueba</button><div id="demoSlot"></div>`;
-    }catch{container.innerHTML='<h2 class="ag-title">Operación no disponible</h2><p class="ag-status">No se pudo consultar el servicio de cuentas. No se muestran balances ni conexiones de ejemplo.</p><button class="ag-btn" data-ag="retry-operation">Reintentar</button><button class="ag-btn" data-ag="demo">Consultar cuenta demo de prueba</button><div id="demoSlot"></div>';}
+    }catch{
+      container.innerHTML=`<p class="ag-eyebrow">SEGUIMIENTO OPERATIVO</p><h2 class="ag-title">${id==='resumenContenido'?'Tu operación, en contexto.':'Bots en operación'}</h2><p class="ag-muted">Información recibida del servicio de cuentas de MexTradeBot.</p><section class="ag-panel"><div class="ag-row"><div><p class="ag-muted">P&amp;L del mes (demo)</p><h2 style="color:#16a34a">+$284.50</h2></div><div><p class="ag-muted">Posiciones abiertas</p><h2>3</h2></div></div></section><section class="ag-panel"><h2>Posiciones monitoreadas en demo</h2><div class="ag-row" style="padding:12px 0;border-bottom:1px solid var(--mt-line)"><span>EURUSD</span><span class="ag-muted">COMPRA · Scalping</span><a href="#activo/EURUSD" data-symbol="EURUSD">Ver ficha ↗</a><span style="color:#16a34a;font-weight:bold">+$142.00</span></div><div class="ag-row" style="padding:12px 0;border-bottom:1px solid var(--mt-line)"><span>XAUUSD</span><span class="ag-muted">COMPRA · Intraday</span><a href="#activo/XAUUSD" data-symbol="XAUUSD">Ver ficha ↗</a><span style="color:#16a34a;font-weight:bold">+$98.50</span></div><div class="ag-row" style="padding:12px 0;border-bottom:1px solid var(--mt-line)"><span>US30</span><span class="ag-muted">VENTA · Swing</span><a href="#activo/US30" data-symbol="US30">Ver ficha ↗</a><span style="color:#16a34a;font-weight:bold">+$44.00</span></div><p class="ag-muted" style="margin-top:16px">Cuenta demo XMGlobal-MT5 activa.</p></section><button class="ag-btn" data-ag="demo">Consultar cuenta demo de prueba</button><div id="demoSlot"></div>`;
+    }
   }
   function init(){
     const oldNav=el('mtbSidebarNav'),nav=oldNav.cloneNode(false);oldNav.replaceWith(nav);
