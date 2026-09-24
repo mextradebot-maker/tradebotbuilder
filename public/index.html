@@ -971,19 +971,25 @@ function cargarResumen(forzar){
   function number(v,suffix=''){const n=numeric(v);return n===null?'Sin datos':n.toLocaleString('es-MX',{maximumFractionDigits:2})+suffix;}
   function trend(value){const t=String(value||'').toLowerCase();if(['compra','alcista','buy','bullish'].includes(t))return ['up','↗ Alcista'];if(['venta','bajista','sell','bearish'].includes(t))return ['down','↘ Bajista'];if(['lateral','neutral','rango'].includes(t))return ['flat','→ Lateral'];return ['unknown','— Sin datos'];}
   function badge(value){const [c,t]=trend(value);return `<span class="ag-trend ag-${c}">${t}</span>`;}
-  function periodKey(value){return periods.find(([name,label])=>name===value||label===String(value).toUpperCase())?.[0]||null;}
+  function periodKey(value){
+    if(value===null||value===undefined)return null;
+    const normalized=String(value).trim().toLowerCase().replace(/[._-]+/g,' ').replace(/\s+/g,' ').trim();
+    const compact=normalized.replace(/\s+/g,'');
+    const aliases={scalping:'Scalping',m15:'Scalping','15m':'Scalping','15min':'Scalping','15mins':'Scalping',intraday:'Intraday',h1:'Intraday','1h':'Intraday','60m':'Intraday','60min':'Intraday','swing (h)':'Swing (H)',swingh:'Swing (H)',h4:'Swing (H)','4h':'Swing (H)','240m':'Swing (H)','swing (s)':'Swing (S)',swings:'Swing (S)',w1:'Swing (S)','1w':'Swing (S)',weekly:'Swing (S)',semanal:'Swing (S)','swing (m)':'Swing (M)',swingm:'Swing (M)',mn1:'Swing (M)','1mo':'Swing (M)',monthly:'Swing (M)',mensual:'Swing (M)'};
+    return aliases[normalized]||aliases[compact]||periods.find(([name,label])=>name.toLowerCase()===normalized||label.toLowerCase()===normalized)?.[0]||null;
+  }
   function current(symbol,period=activePeriod){const record=market.get(symbol);return record?.periods[period]||{};}
-  function metrics(row){const stats=row.estadisticas||row.backtest||row;return `<div class="ag-metrics"><div><small>Acierto histórico</small><strong>${percentage(stats.winrate)}</strong></div><div><small>Expectativa</small><strong>${number(pick(stats,['expectativa_r','expectativa']),'R')}</strong></div><div><small>Muestra · setups</small><strong>${number(pick(stats,['n_setups','muestra']))}</strong></div></div>`;}
-  function timestamp(row){const raw=pick(row,['actualizado_en','updated_at','fecha_analisis','timestamp']);if(!raw)return 'Fecha no informada';const value=String(raw).trim();const onlyDate=value.match(/^(\d{4})-(\d{2})-(\d{2})$/);const date=onlyDate?new Date(Number(onlyDate[1]),Number(onlyDate[2])-1,Number(onlyDate[3])):new Date(value);if(Number.isNaN(date.getTime()))return 'Fecha no informada';return onlyDate?date.toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'}):date.toLocaleString('es-MX');}
+  function metrics(row){const stats=row.estadisticas||row.backtest||row.stats||row;return `<div class="ag-metrics"><div><small>Acierto histórico</small><strong>${percentage(pick(stats,['winrate','win_rate','tasa_acierto','porcentaje_acierto']))}</strong></div><div><small>Expectativa</small><strong>${number(pick(stats,['expectativa_r','expectativa','expectancy','expectancy_r']),'R')}</strong></div><div><small>Muestra · setups</small><strong>${number(pick(stats,['n_setups','muestra','setups','sample_size','operaciones']))}</strong></div></div>`;}
+  function timestamp(row){const raw=pick(row,['actualizado_en','updated_at','fecha_analisis','fecha','timestamp','created_at']);if(!raw)return 'Fecha no informada';const value=String(raw).trim();const onlyDate=value.match(/^(\d{4})-(\d{2})-(\d{2})$/);const date=onlyDate?new Date(Number(onlyDate[1]),Number(onlyDate[2])-1,Number(onlyDate[3])):new Date(value);if(Number.isNaN(date.getTime()))return 'Fecha no informada';return onlyDate?date.toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'}):date.toLocaleString('es-MX');}
   function ingest(data){
     if(!data||!Array.isArray(data.activos_todos))throw new Error('Catálogo no disponible');
     const next=new Map();
     for(const raw of data.activos_todos){
       const symbol=String(raw.simbolo||'').toUpperCase();if(!known(symbol))continue;
       const record=next.get(symbol)||{periods:{},summary:raw};
-      const p=periodKey(raw.temporalidad)||periodKey(raw.temporalidad_recomendada);
+      const p=periodKey(pick(raw,['temporalidad','timeframe','intervalo','periodo','temporalidad_recomendada']));
       if(p)record.periods[p]={...raw};
-      if(Array.isArray(raw.temporalidades)){for(const row of raw.temporalidades){const key=periodKey(row.temporalidad);if(key)record.periods[key]={...row};}}
+      if(Array.isArray(raw.temporalidades)){for(const row of raw.temporalidades){const key=periodKey(pick(row,['temporalidad','timeframe','intervalo','periodo']));if(key)record.periods[key]={...row};}}
       else if(raw.temporalidades&&typeof raw.temporalidades==='object'){for(const [key,row]of Object.entries(raw.temporalidades)){const p=periodKey(key);if(p&&row&&typeof row==='object')record.periods[p]={...row};}}
       next.set(symbol,record);
     }
