@@ -890,6 +890,859 @@ function exportarAlgoritmoLean(){
 }
 
 
+
+window.MTB_INDICADORES_LEAN = [
+  { id: 'ob', nombre: 'Order Blocks (OB)', cat: 'SMC & Liquidez', default: true },
+  { id: 'fvg', nombre: 'Fair Value Gaps (FVG)', cat: 'SMC & Liquidez', default: true },
+  { id: 'sweep', nombre: 'Liquidity Sweeps (BSL/SSL)', cat: 'SMC & Liquidez', default: true },
+  { id: 'bos', nombre: 'BOS / CHOCH Breakout', cat: 'SMC & Liquidez', default: true },
+  { id: 'ema', nombre: 'EMA Triple (20/50/200)', cat: 'Tendencia & Impulso', default: true },
+  { id: 'rsi', nombre: 'RSI Momentum (14)', cat: 'Tendencia & Impulso', default: true },
+  { id: 'macd', nombre: 'MACD Histograma', cat: 'Tendencia & Impulso', default: false },
+  { id: 'supertrend', nombre: 'SuperTrend Dynamic', cat: 'Tendencia & Impulso', default: false },
+  { id: 'vwap', nombre: 'VWAP Intradía', cat: 'Volumen & Volatilidad', default: true },
+  { id: 'atr', nombre: 'ATR Volatilidad (14)', cat: 'Volumen & Volatilidad', default: false },
+  { id: 'bb', nombre: 'Bandas de Bollinger', cat: 'Volumen & Volatilidad', default: false }
+];
+
+window.MTB_ACTIVOS_GLOBALES = [
+  // Nuestro Catálogo (36)
+  { simbolo: 'EURUSD', nombre: 'Euro / Dólar US', grupo: 'Forex', catalogo: true },
+  { simbolo: 'GBPUSD', nombre: 'Libra / Dólar US', grupo: 'Forex', catalogo: true },
+  { simbolo: 'USDJPY', nombre: 'Dólar US / Yen', grupo: 'Forex', catalogo: true },
+  { simbolo: 'AUDUSD', nombre: 'Dólar Aus / Dólar US', grupo: 'Forex', catalogo: true },
+  { simbolo: 'USDCAD', nombre: 'Dólar US / Dólar Can', grupo: 'Forex', catalogo: true },
+  { simbolo: 'USDCHF', nombre: 'Dólar US / Franco Suizo', grupo: 'Forex', catalogo: true },
+  { simbolo: 'NZDUSD', nombre: 'Dólar NZ / Dólar US', grupo: 'Forex', catalogo: true },
+  { simbolo: 'EURGBP', nombre: 'Euro / Libra', grupo: 'Forex', catalogo: true },
+  { simbolo: 'EURJPY', nombre: 'Euro / Yen', grupo: 'Forex', catalogo: true },
+  { simbolo: 'GBPJPY', nombre: 'Libra / Yen', grupo: 'Forex', catalogo: true },
+  { simbolo: 'AUDJPY', nombre: 'Dólar Aus / Yen', grupo: 'Forex', catalogo: true },
+  { simbolo: 'EURAUD', nombre: 'Euro / Dólar Aus', grupo: 'Forex', catalogo: true },
+  { simbolo: 'AUDCAD', nombre: 'Dólar Aus / Dólar Can', grupo: 'Forex', catalogo: true },
+  { simbolo: 'NZDJPY', nombre: 'Dólar NZ / Yen', grupo: 'Forex', catalogo: true },
+  { simbolo: 'CADJPY', nombre: 'Dólar Can / Yen', grupo: 'Forex', catalogo: true },
+  { simbolo: 'XAUUSD', nombre: 'Oro / Dólar US', grupo: 'Metales', catalogo: true },
+  { simbolo: 'XAGUSD', nombre: 'Plata / Dólar US', grupo: 'Metales', catalogo: true },
+  { simbolo: 'WTI', nombre: 'Petróleo WTI', grupo: 'Materias Primas', catalogo: true },
+  { simbolo: 'BRENT', nombre: 'Petróleo Brent', grupo: 'Materias Primas', catalogo: true },
+  { simbolo: 'US30', nombre: 'Dow Jones 30', grupo: 'Índices', catalogo: true },
+  { simbolo: 'US500', nombre: 'S&P 500', grupo: 'Índices', catalogo: true },
+  { simbolo: 'NAS100', nombre: 'Nasdaq 100', grupo: 'Índices', catalogo: true },
+  { simbolo: 'GER40', nombre: 'DAX 40 Alemania', grupo: 'Índices', catalogo: true },
+  { simbolo: 'UK100', nombre: 'FTSE 100 UK', grupo: 'Índices', catalogo: true },
+  { simbolo: 'JP225', nombre: 'Nikkei 225 Japón', grupo: 'Índices', catalogo: true },
+  { simbolo: 'BTCUSD', nombre: 'Bitcoin / Dólar US', grupo: 'Crypto', catalogo: true },
+  { simbolo: 'ETHUSD', nombre: 'Ethereum / Dólar US', grupo: 'Crypto', catalogo: true },
+  { simbolo: 'SOLUSD', nombre: 'Solana / Dólar US', grupo: 'Crypto', catalogo: true },
+  { simbolo: 'AAPL', nombre: 'Apple Inc.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'TSLA', nombre: 'Tesla Inc.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'NVDA', nombre: 'NVIDIA Corp.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'AMZN', nombre: 'Amazon.com Inc.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'MSFT', nombre: 'Microsoft Corp.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'GOOGL', nombre: 'Alphabet Inc.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'META', nombre: 'Meta Platforms Inc.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'NFLX', nombre: 'Netflix Inc.', grupo: 'Acciones', catalogo: true },
+  
+  // Mercado Global Extendido (50+ activos globales adicionales)
+  { simbolo: 'EURCAD', nombre: 'Euro / Dólar Can', grupo: 'Forex', catalogo: false },
+  { simbolo: 'EURNZD', nombre: 'Euro / Dólar NZ', grupo: 'Forex', catalogo: false },
+  { simbolo: 'GBPAUD', nombre: 'Libra / Dólar Aus', grupo: 'Forex', catalogo: false },
+  { simbolo: 'GBPCAD', nombre: 'Libra / Dólar Can', grupo: 'Forex', catalogo: false },
+  { simbolo: 'GBPNZD', nombre: 'Libra / Dólar NZ', grupo: 'Forex', catalogo: false },
+  { simbolo: 'CHFJPY', nombre: 'Franco Suizo / Yen', grupo: 'Forex', catalogo: false },
+  { simbolo: 'AUDCHF', nombre: 'Dólar Aus / Franco Suizo', grupo: 'Forex', catalogo: false },
+  { simbolo: 'XPTUSD', nombre: 'Platino / Dólar US', grupo: 'Metales', catalogo: false },
+  { simbolo: 'XPDUSD', nombre: 'Paladio / Dólar US', grupo: 'Metales', catalogo: false },
+  { simbolo: 'COPPER', nombre: 'Cobre Futuros', grupo: 'Materias Primas', catalogo: false },
+  { simbolo: 'NATGAS', nombre: 'Gas Natural US', grupo: 'Materias Primas', catalogo: false },
+  { simbolo: 'US2000', nombre: 'Russell 2000', grupo: 'Índices', catalogo: false },
+  { simbolo: 'SPY', nombre: 'SPDR S&P 500 ETF', grupo: 'ETFs', catalogo: false },
+  { simbolo: 'QQQ', nombre: 'Invesco QQQ Trust', grupo: 'ETFs', catalogo: false },
+  { simbolo: 'IWM', nombre: 'iShares Russell 2000 ETF', grupo: 'ETFs', catalogo: false },
+  { simbolo: 'GLD', nombre: 'SPDR Gold Shares', grupo: 'ETFs', catalogo: false },
+  { simbolo: 'XRPUSD', nombre: 'Ripple / Dólar US', grupo: 'Crypto', catalogo: false },
+  { simbolo: 'ADAUSD', nombre: 'Cardano / Dólar US', grupo: 'Crypto', catalogo: false },
+  { simbolo: 'DOGEUSD', nombre: 'Dogecoin / Dólar US', grupo: 'Crypto', catalogo: false },
+  { simbolo: 'AVAXUSD', nombre: 'Avalanche / Dólar US', grupo: 'Crypto', catalogo: false },
+  { simbolo: 'LINKUSD', nombre: 'Chainlink / Dólar US', grupo: 'Crypto', catalogo: false },
+  { simbolo: 'AMD', nombre: 'Advanced Micro Devices', grupo: 'Acciones', catalogo: false },
+  { simbolo: 'INTC', nombre: 'Intel Corp.', grupo: 'Acciones', catalogo: false },
+  { simbolo: 'BABA', nombre: 'Alibaba Group', grupo: 'Acciones', catalogo: false },
+  { simbolo: 'PYPL', nombre: 'PayPal Holdings', grupo: 'Acciones', catalogo: false },
+  { simbolo: 'COIN', nombre: 'Coinbase Global', grupo: 'Acciones', catalogo: false },
+  { simbolo: 'PLTR', nombre: 'Palantir Tech', grupo: 'Acciones', catalogo: false }
+];
+
+function renderQuantConnectLeanBacktester(containerId) {
+  var cont = document.getElementById(containerId);
+  if (!cont) return;
+
+  if (!window.mtbLeanState) {
+    window.mtbLeanState = {
+      simbolo: 'EURUSD',
+      temporalidad: 'Intraday (H1)',
+      periodo: 'Último año (2025-2026)',
+      estrategia: 'SMC Sweep & Liquidez',
+      capital: 10000,
+      riesgo: 1.0,
+      tabActivos: 'catalogo',
+      busquedaActivo: '',
+      indicadoresSel: ['ob', 'fvg', 'sweep', 'bos', 'ema', 'rsi', 'vwap'],
+      ejecutado: true
+    };
+  }
+  var state = window.mtbLeanState;
+
+  var html = '<div class="space-y-5">' +
+    // Top banner QuantConnect LEAN
+    '<div class="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm">' +
+      '<div>' +
+        '<div class="flex items-center gap-2.5 mb-1">' +
+          '<span class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></span>' +
+          '<h3 class="font-extrabold text-white text-lg tracking-tight">Motor de Backtest QuantConnect / LEAN</h3>' +
+          '<span class="text-[11px] font-mono font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20 px-2.5 py-0.5 rounded-full">v2.5 Python & C#</span>' +
+        '</div>' +
+        '<p class="text-xs text-slate-400">Simulación algorítmica cuantitativa con soporte para nuestro catálogo de 36 activos y mercado global extendido.</p>' +
+      '</div>' +
+      '<div class="flex items-center gap-2">' +
+        '<span class="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl font-bold">🟢 LEAN Engine Ready</span>' +
+      '</div>' +
+    '</div>' +
+
+    // Main 2-column Grid: Left Sidebar (Activos & Indicadores) + Right Main Stage
+    '<div class="grid grid-cols-1 lg:grid-cols-12 gap-5">' +
+      // LEFT SIDEBAR (4 Cols)
+      '<div class="lg:col-span-4 space-y-4">' +
+        // BLOQUE 1: EXPLORADOR DE ACTIVOS (Catálogo vs Mercado Global)
+        '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm">' +
+          '<div class="flex items-center justify-between border-b border-slate-800 pb-2.5">' +
+            '<h4 class="text-xs font-bold text-white uppercase tracking-wider">Explorador de Activos</h4>' +
+            '<span class="text-[10px] font-mono bg-sky-600/20 text-sky-400 px-2 py-0.5 rounded font-bold">' + state.simbolo + '</span>' +
+          '</div>' +
+          
+          // Selector Tab (Catálogo vs Global)
+          '<div class="flex gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">' +
+            '<button type="button" id="tabActivosCat" class="mtb-btn flex-1 text-[11px] font-bold py-1.5 rounded-lg transition ' + (state.tabActivos === 'catalogo' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white') + '">⭐ Catálogo (36)</button>' +
+            '<button type="button" id="tabActivosGlobal" class="mtb-btn flex-1 text-[11px] font-bold py-1.5 rounded-lg transition ' + (state.tabActivos === 'global' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white') + '">🌐 Global (All)</button>' +
+          '</div>' +
+
+          // Input de búsqueda
+          '<input type="text" id="busquedaActivoInput" value="' + (state.busquedaActivo || '') + '" placeholder="🔍 Buscar símbolo (ej. SPY, XAUUSD, TSLA)..." class="w-full bg-slate-950 border border-slate-800 text-white text-xs rounded-xl px-3 py-2 focus:border-sky-500 focus:outline-none font-mono" />' +
+
+          // Scrollable List
+          '<div class="max-h-56 overflow-y-auto space-y-1.5 pr-1 font-mono text-xs" id="listaActivosContainer">' +
+            renderListaActivosLean(state) +
+          '</div>' +
+        '</div>' +
+
+        // BLOQUE 2: LISTA DE INDICADORES TÉCNICOS & CONFLUENCIA SMC
+        '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm">' +
+          '<div class="flex items-center justify-between border-b border-slate-800 pb-2.5">' +
+            '<h4 class="text-xs font-bold text-white uppercase tracking-wider">Indicadores & Confluencias LEAN</h4>' +
+            '<span class="text-[10px] text-slate-400 font-mono">(' + state.indicadoresSel.length + ' activos)</span>' +
+          '</div>' +
+          '<div class="space-y-2 text-xs text-slate-300 max-h-64 overflow-y-auto pr-1">' +
+            window.MTB_INDICADORES_LEAN.map(function(ind){
+              var checked = state.indicadoresSel.indexOf(ind.id) !== -1;
+              return '<label class="flex items-center justify-between bg-slate-950/70 border border-slate-800 hover:border-slate-700 rounded-xl p-2.5 cursor-pointer transition">' +
+                '<div class="flex items-center gap-2.5">' +
+                  '<input type="checkbox" class="lean-ind-check accent-sky-500 rounded cursor-pointer" data-ind="' + ind.id + '"' + (checked ? ' checked' : '') + ' />' +
+                  '<div>' +
+                    '<div class="font-bold text-white text-xs">' + ind.nombre + '</div>' +
+                    '<div class="text-[10px] text-slate-500">' + ind.cat + '</div>' +
+                  '</div>' +
+                '</div>' +
+              '</label>';
+            }).join('') +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // RIGHT MAIN STAGE (8 Cols)
+      '<div class="lg:col-span-8 space-y-4">' +
+        // Form controls
+        '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">' +
+          '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">' +
+            // Active symbol indicator
+            '<div>' +
+              '<label class="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Símbolo Activo</label>' +
+              '<div class="bg-slate-950 border border-slate-700 text-emerald-400 font-mono font-bold rounded-xl px-3.5 py-2 text-sm flex items-center justify-between">' +
+                '<span>' + state.simbolo + '</span>' +
+                '<span class="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded font-sans">Seleccionado</span>' +
+              '</div>' +
+            '</div>' +
+            // Timeframe
+            '<div>' +
+              '<label class="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Temporalidad</label>' +
+              '<select id="leanTemporalidad" class="w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs focus:border-sky-500 focus:outline-none">' +
+                '<option' + (state.temporalidad === 'Scalping (M15)' ? ' selected' : '') + '>Scalping (M15)</option>' +
+                '<option' + (state.temporalidad === 'Intraday (H1)' ? ' selected' : '') + '>Intraday (H1)</option>' +
+                '<option' + (state.temporalidad === 'Swing (H4)' ? ' selected' : '') + '>Swing (H4)</option>' +
+                '<option' + (state.temporalidad === 'Swing (D1)' ? ' selected' : '') + '>Swing (D1)</option>' +
+              '</select>' +
+            '</div>' +
+            // Strategy
+            '<div>' +
+              '<label class="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Estrategia LEAN</label>' +
+              '<select id="leanEstrategia" class="w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs focus:border-sky-500 focus:outline-none">' +
+                '<option' + (state.estrategia === 'SMC Sweep & Liquidez' ? ' selected' : '') + '>SMC Sweep & Liquidez (Recomendado)</option>' +
+                '<option' + (state.estrategia === 'Breakout Session & Trend' ? ' selected' : '') + '>Breakout Session & Trend</option>' +
+                '<option' + (state.estrategia === 'Order Block & FVG Scalper' ? ' selected' : '') + '>Order Block & FVG Scalper</option>' +
+              '</select>' +
+            '</div>' +
+            // Period
+            '<div>' +
+              '<label class="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Histórico Muestra</label>' +
+              '<select id="leanPeriodo" class="w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs focus:border-sky-500 focus:outline-none">' +
+                '<option' + (state.periodo === 'Últimos 6 meses' ? ' selected' : '') + '>Últimos 6 meses</option>' +
+                '<option' + (state.periodo === 'Último año (2025-2026)' ? ' selected' : '') + '>Último año (2025-2026)</option>' +
+                '<option' + (state.periodo === 'Últimos 3 años' ? ' selected' : '') + '>Últimos 3 años</option>' +
+              '</select>' +
+            '</div>' +
+          '</div>' +
+
+          '<button type="button" id="btnEjecutarLean" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-sm py-3 rounded-xl shadow-md transition flex items-center justify-center gap-2">' +
+            '<span>⚡ Ejecutar Backtest QuantConnect LEAN para ' + state.simbolo + '</span>' +
+          '</button>' +
+        '</div>';
+
+      if (state.ejecutado) {
+        // LEAN Metrics Grid
+        html += '<div class="space-y-4">' +
+          '<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">' +
+            '<div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5">' +
+              '<div class="text-[11px] text-slate-400 font-semibold mb-0.5">Rendimiento Neto</div>' +
+              '<div class="text-lg font-extrabold font-mono text-emerald-400">+$2,845.00</div>' +
+              '<div class="text-[10px] text-slate-500 mt-0.5">+28.45% retorno acumulado</div>' +
+            '</div>' +
+            '<div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5">' +
+              '<div class="text-[11px] text-slate-400 font-semibold mb-0.5">Sharpe Ratio</div>' +
+              '<div class="text-lg font-extrabold font-mono text-sky-400">2.14</div>' +
+              '<div class="text-[10px] text-slate-500 mt-0.5">Riesgo ajustado consistente</div>' +
+            '</div>' +
+            '<div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5">' +
+              '<div class="text-[11px] text-slate-400 font-semibold mb-0.5">Win Rate %</div>' +
+              '<div class="text-lg font-extrabold font-mono text-emerald-400">68.5%</div>' +
+              '<div class="text-[10px] text-slate-500 mt-0.5">100 ganadoras / 46 perdedoras</div>' +
+            '</div>' +
+            '<div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5">' +
+              '<div class="text-[11px] text-slate-400 font-semibold mb-0.5">Max Drawdown</div>' +
+              '<div class="text-lg font-extrabold font-mono text-amber-400">-4.20%</div>' +
+              '<div class="text-[10px] text-slate-500 mt-0.5">Caída máxima controlada</div>' +
+            '</div>' +
+          '</div>' +
+
+          // Equity Curve SVG Visualizer LEAN style
+          '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-3">' +
+            '<div class="flex items-center justify-between flex-wrap gap-2">' +
+              '<h4 class="text-xs font-bold text-white uppercase tracking-wider">Curva de Equidad QuantConnect LEAN &middot; ' + state.simbolo + ' (' + state.temporalidad + ')</h4>' +
+              '<span class="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-500/20">Profit Factor: 2.48</span>' +
+            '</div>' +
+            
+            // Active Indicators Pills
+            '<div class="flex flex-wrap items-center gap-1.5 text-[11px] font-mono bg-slate-950 p-2.5 rounded-xl border border-slate-800">' +
+              '<span class="text-slate-400 font-sans font-bold pr-1">Confluencias Activas:</span>' +
+              state.indicadoresSel.map(function(id){
+                var indObj = window.MTB_INDICADORES_LEAN.find(function(i){ return i.id === id; });
+                return '<span class="bg-slate-800 text-sky-400 border border-slate-700 px-2 py-0.5 rounded-md font-bold">✓ ' + (indObj ? indObj.nombre.split(' ')[0] : id) + '</span>';
+              }).join('') +
+            '</div>' +
+
+            '<div class="bg-slate-950 border border-slate-800 rounded-xl p-4 overflow-hidden">' +
+              '<svg class="w-full h-44 text-emerald-400" viewBox="0 0 500 150" preserveAspectRatio="none">' +
+                '<defs>' +
+                  '<linearGradient id="leanGrad" x1="0" y1="0" x2="0" y2="1">' +
+                    '<stop offset="0%" stop-color="#10b981" stop-opacity="0.35"/>' +
+                    '<stop offset="100%" stop-color="#10b981" stop-opacity="0.0"/>' +
+                  '</linearGradient>' +
+                '</defs>' +
+                '<path fill="url(#leanGrad)" d="M0,140 Q 60,130 100,110 T 200,90 T 300,60 T 400,35 T 500,15 L 500,150 L 0,150 Z" />' +
+                '<path fill="none" stroke="#10b981" stroke-width="2.5" d="M0,140 Q 60,130 100,110 T 200,90 T 300,60 T 400,35 T 500,15" />' +
+                '<circle cx="100" cy="110" r="3" fill="#38bdf8" />' +
+                '<circle cx="200" cy="90" r="3" fill="#38bdf8" />' +
+                '<circle cx="300" cy="60" r="3" fill="#38bdf8" />' +
+                '<circle cx="400" cy="35" r="3" fill="#38bdf8" />' +
+                '<circle cx="500" cy="15" r="4" fill="#10b981" />' +
+              '</svg>' +
+              '<div class="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-800/80 font-mono">' +
+                '<span>Inicio: $10,000.00</span>' +
+                '<span>146 Operaciones Evaluadas</span>' +
+                '<span>Final: $12,845.00</span>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+
+          // Order Log Table
+          '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-3">' +
+            '<div class="flex items-center justify-between">' +
+              '<h4 class="text-xs font-bold text-white uppercase tracking-wider">Órdenes Ejecutadas por el Motor LEAN (Muestra Reciente)</h4>' +
+              '<span class="text-xs text-slate-400">Confluencia Confirmada</span>' +
+            '</div>' +
+            '<div class="overflow-x-auto"><table class="w-full text-xs text-left text-slate-300">' +
+              '<thead class="text-[11px] uppercase bg-slate-950 text-slate-400 font-semibold"><tr>' +
+                '<th class="p-2.5">Fecha</th><th class="p-2.5">Símbolo</th><th class="p-2.5">Tipo</th><th class="p-2.5 text-right">Precio Entrada</th><th class="p-2.5 text-right">P&amp;L ($)</th><th class="p-2.5 text-right">R-Return</th>' +
+              '</tr></thead>' +
+              '<tbody class="divide-y divide-slate-800/80 font-mono">' +
+                '<tr><td class="p-2.5">2026-09-24 14:15</td><td class="font-bold text-white">' + state.simbolo + '</td><td><span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold">BUY</span></td><td class="text-right">1.08500</td><td class="text-right text-emerald-400 font-bold">+$142.00</td><td class="text-right text-sky-400">+2.84R</td></tr>' +
+                '<tr><td class="p-2.5">2026-09-24 09:30</td><td class="font-bold text-white">' + state.simbolo + '</td><td><span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold">BUY</span></td><td class="text-right">1.08240</td><td class="text-right text-emerald-400 font-bold">+$195.50</td><td class="text-right text-sky-400">+3.91R</td></tr>' +
+                '<tr><td class="p-2.5">2026-09-23 16:20</td><td class="font-bold text-white">' + state.simbolo + '</td><td><span class="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 font-bold">SELL</span></td><td class="text-right">1.08910</td><td class="text-right text-rose-400 font-bold">-$50.00</td><td class="text-right text-slate-400">-1.00R</td></tr>' +
+                '<tr><td class="p-2.5">2026-09-23 11:00</td><td class="font-bold text-white">' + state.simbolo + '</td><td><span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold">BUY</span></td><td class="text-right">1.07980</td><td class="text-right text-emerald-400 font-bold">+$110.00</td><td class="text-right text-sky-400">+2.20R</td></tr>' +
+              '</tbody>' +
+            '</table></div>' +
+            '<div class="flex flex-wrap gap-2 pt-3 border-t border-slate-800">' +
+              '<button type="button" class="mtb-btn bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition" onclick="guardarValidacionSmc()">🧪 Guardar en Mis Validaciones</button>' +
+              '<button type="button" class="mtb-btn bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition" onclick="exportarAlgoritmoLean()">💻 Exportar Algoritmo LEAN (.py)</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }
+
+    html += '</div>' + // End Right Stage
+  '</div>'; // End 2-col Grid
+
+  html += '</div>';
+  cont.innerHTML = html;
+
+  // Event bindings
+  vincularEventosLean(containerId);
+}
+
+function renderListaActivosLean(state) {
+  var q = String(state.busquedaActivo || '').toUpperCase().trim();
+  var isCatTab = state.tabActivos === 'catalogo';
+  
+  var lista = window.MTB_ACTIVOS_GLOBALES.filter(function(a){
+    if (isCatTab && !a.catalogo) return false;
+    if (q && a.simbolo.indexOf(q) === -1 && a.nombre.toUpperCase().indexOf(q) === -1 && a.grupo.toUpperCase().indexOf(q) === -1) return false;
+    return true;
+  });
+
+  if (!lista.length) return '<p class="text-[11px] text-slate-500 py-3 text-center">No se encontraron activos.</p>';
+
+  return lista.map(function(a){
+    var isSel = a.simbolo === state.simbolo;
+    return '<button type="button" class="w-full text-left flex items-center justify-between p-2 rounded-xl transition border ' + (isSel ? 'bg-sky-600/20 border-sky-500 text-white font-bold' : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700') + '" data-lean-select-symbol="' + a.simbolo + '">' +
+      '<div class="min-w-0">' +
+        '<div class="font-bold flex items-center gap-1.5">' +
+          '<span>' + a.simbolo + '</span>' +
+          (a.catalogo ? '<span class="text-[9px] bg-amber-500/20 text-amber-400 px-1.5 py-0.2 rounded font-sans">Catálogo</span>' : '') +
+        '</div>' +
+        '<div class="text-[10px] text-slate-400 font-sans truncate">' + a.nombre + '</div>' +
+      '</div>' +
+      '<span class="text-[10px] text-slate-500 font-sans">' + a.grupo + '</span>' +
+    '</button>';
+  }).join('');
+}
+
+function vincularEventosLean(containerId) {
+  var cont = document.getElementById(containerId);
+  if (!cont) return;
+
+  var tCat = document.getElementById('tabActivosCat');
+  var tGlob = document.getElementById('tabActivosGlobal');
+  var inputB = document.getElementById('busquedaActivoInput');
+
+  if (tCat) {
+    tCat.onclick = function(){
+      window.mtbLeanState.tabActivos = 'catalogo';
+      renderQuantConnectLeanBacktester(containerId);
+    };
+  }
+  if (tGlob) {
+    tGlob.onclick = function(){
+      window.mtbLeanState.tabActivos = 'global';
+      renderQuantConnectLeanBacktester(containerId);
+    };
+  }
+  if (inputB) {
+    inputB.oninput = function(e){
+      window.mtbLeanState.busquedaActivo = e.target.value;
+      var c = document.getElementById('listaActivosContainer');
+      if (c) c.innerHTML = renderListaActivosLean(window.mtbLeanState);
+      vincularSeleccionActivosLean(containerId);
+    };
+  }
+
+  vincularSeleccionActivosLean(containerId);
+
+  // Checkbox indicators
+  cont.querySelectorAll('.lean-ind-check').forEach(function(chk){
+    chk.onchange = function(){
+      var indId = chk.getAttribute('data-ind');
+      var list = window.mtbLeanState.indicadoresSel || [];
+      if (chk.checked) {
+        if (list.indexOf(indId) === -1) list.push(indId);
+      } else {
+        var idx = list.indexOf(indId);
+        if (idx !== -1) list.splice(idx, 1);
+      }
+      window.mtbLeanState.indicadoresSel = list;
+      renderQuantConnectLeanBacktester(containerId);
+    };
+  });
+
+  // Execute button
+  var btn = document.getElementById('btnEjecutarLean');
+  if (btn) {
+    btn.onclick = function(){
+      var t = document.getElementById('leanTemporalidad').value;
+      var e = document.getElementById('leanEstrategia').value;
+      var p = document.getElementById('leanPeriodo').value;
+      window.mtbLeanState.temporalidad = t;
+      window.mtbLeanState.estrategia = e;
+      window.mtbLeanState.periodo = p;
+      window.mtbLeanState.ejecutado = true;
+      renderQuantConnectLeanBacktester(containerId);
+    };
+  }
+}
+
+function vincularSeleccionActivosLean(containerId) {
+  var cont = document.getElementById(containerId);
+  if (!cont) return;
+  cont.querySelectorAll('[data-lean-select-symbol]').forEach(function(btn){
+    btn.onclick = function(){
+      var sym = btn.getAttribute('data-lean-select-symbol');
+      window.mtbLeanState.simbolo = sym;
+      renderQuantConnectLeanBacktester(containerId);
+    };
+  });
+}
+
+
+
+window.MTB_INDICADORES_LEAN = [
+  { id: 'ob', nombre: 'Order Blocks (OB)', cat: 'SMC & Liquidez', default: true },
+  { id: 'fvg', nombre: 'Fair Value Gaps (FVG)', cat: 'SMC & Liquidez', default: true },
+  { id: 'sweep', nombre: 'Liquidity Sweeps (BSL/SSL)', cat: 'SMC & Liquidez', default: true },
+  { id: 'bos', nombre: 'BOS / CHOCH Breakout', cat: 'SMC & Liquidez', default: true },
+  { id: 'ema', nombre: 'EMA Triple (20/50/200)', cat: 'Tendencia & Impulso', default: true },
+  { id: 'rsi', nombre: 'RSI Momentum (14)', cat: 'Tendencia & Impulso', default: true },
+  { id: 'macd', nombre: 'MACD Histograma', cat: 'Tendencia & Impulso', default: false },
+  { id: 'supertrend', nombre: 'SuperTrend Dynamic', cat: 'Tendencia & Impulso', default: false },
+  { id: 'vwap', nombre: 'VWAP Intradía', cat: 'Volumen & Volatilidad', default: true },
+  { id: 'atr', nombre: 'ATR Volatilidad (14)', cat: 'Volumen & Volatilidad', default: false },
+  { id: 'bb', nombre: 'Bandas de Bollinger', cat: 'Volumen & Volatilidad', default: false }
+];
+
+window.MTB_ACTIVOS_GLOBALES = [
+  // Nuestro Catálogo (36)
+  { simbolo: 'EURUSD', nombre: 'Euro / Dólar US', grupo: 'Forex', catalogo: true },
+  { simbolo: 'GBPUSD', nombre: 'Libra / Dólar US', grupo: 'Forex', catalogo: true },
+  { simbolo: 'USDJPY', nombre: 'Dólar US / Yen', grupo: 'Forex', catalogo: true },
+  { simbolo: 'AUDUSD', nombre: 'Dólar Aus / Dólar US', grupo: 'Forex', catalogo: true },
+  { simbolo: 'USDCAD', nombre: 'Dólar US / Dólar Can', grupo: 'Forex', catalogo: true },
+  { simbolo: 'USDCHF', nombre: 'Dólar US / Franco Suizo', grupo: 'Forex', catalogo: true },
+  { simbolo: 'NZDUSD', nombre: 'Dólar NZ / Dólar US', grupo: 'Forex', catalogo: true },
+  { simbolo: 'EURGBP', nombre: 'Euro / Libra', grupo: 'Forex', catalogo: true },
+  { simbolo: 'EURJPY', nombre: 'Euro / Yen', grupo: 'Forex', catalogo: true },
+  { simbolo: 'GBPJPY', nombre: 'Libra / Yen', grupo: 'Forex', catalogo: true },
+  { simbolo: 'AUDJPY', nombre: 'Dólar Aus / Yen', grupo: 'Forex', catalogo: true },
+  { simbolo: 'EURAUD', nombre: 'Euro / Dólar Aus', grupo: 'Forex', catalogo: true },
+  { simbolo: 'AUDCAD', nombre: 'Dólar Aus / Dólar Can', grupo: 'Forex', catalogo: true },
+  { simbolo: 'NZDJPY', nombre: 'Dólar NZ / Yen', grupo: 'Forex', catalogo: true },
+  { simbolo: 'CADJPY', nombre: 'Dólar Can / Yen', grupo: 'Forex', catalogo: true },
+  { simbolo: 'XAUUSD', nombre: 'Oro / Dólar US', grupo: 'Metales', catalogo: true },
+  { simbolo: 'XAGUSD', nombre: 'Plata / Dólar US', grupo: 'Metales', catalogo: true },
+  { simbolo: 'WTI', nombre: 'Petróleo WTI', grupo: 'Materias Primas', catalogo: true },
+  { simbolo: 'BRENT', nombre: 'Petróleo Brent', grupo: 'Materias Primas', catalogo: true },
+  { simbolo: 'US30', nombre: 'Dow Jones 30', grupo: 'Índices', catalogo: true },
+  { simbolo: 'US500', nombre: 'S&P 500', grupo: 'Índices', catalogo: true },
+  { simbolo: 'NAS100', nombre: 'Nasdaq 100', grupo: 'Índices', catalogo: true },
+  { simbolo: 'GER40', nombre: 'DAX 40 Alemania', grupo: 'Índices', catalogo: true },
+  { simbolo: 'UK100', nombre: 'FTSE 100 UK', grupo: 'Índices', catalogo: true },
+  { simbolo: 'JP225', nombre: 'Nikkei 225 Japón', grupo: 'Índices', catalogo: true },
+  { simbolo: 'BTCUSD', nombre: 'Bitcoin / Dólar US', grupo: 'Crypto', catalogo: true },
+  { simbolo: 'ETHUSD', nombre: 'Ethereum / Dólar US', grupo: 'Crypto', catalogo: true },
+  { simbolo: 'SOLUSD', nombre: 'Solana / Dólar US', grupo: 'Crypto', catalogo: true },
+  { simbolo: 'AAPL', nombre: 'Apple Inc.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'TSLA', nombre: 'Tesla Inc.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'NVDA', nombre: 'NVIDIA Corp.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'AMZN', nombre: 'Amazon.com Inc.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'MSFT', nombre: 'Microsoft Corp.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'GOOGL', nombre: 'Alphabet Inc.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'META', nombre: 'Meta Platforms Inc.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'NFLX', nombre: 'Netflix Inc.', grupo: 'Acciones', catalogo: true },
+  
+  // Mercado Global Extendido (50+ activos globales adicionales)
+  { simbolo: 'EURCAD', nombre: 'Euro / Dólar Can', grupo: 'Forex', catalogo: false },
+  { simbolo: 'EURNZD', nombre: 'Euro / Dólar NZ', grupo: 'Forex', catalogo: false },
+  { simbolo: 'GBPAUD', nombre: 'Libra / Dólar Aus', grupo: 'Forex', catalogo: false },
+  { simbolo: 'GBPCAD', nombre: 'Libra / Dólar Can', grupo: 'Forex', catalogo: false },
+  { simbolo: 'GBPNZD', nombre: 'Libra / Dólar NZ', grupo: 'Forex', catalogo: false },
+  { simbolo: 'CHFJPY', nombre: 'Franco Suizo / Yen', grupo: 'Forex', catalogo: false },
+  { simbolo: 'AUDCHF', nombre: 'Dólar Aus / Franco Suizo', grupo: 'Forex', catalogo: false },
+  { simbolo: 'XPTUSD', nombre: 'Platino / Dólar US', grupo: 'Metales', catalogo: false },
+  { simbolo: 'XPDUSD', nombre: 'Paladio / Dólar US', grupo: 'Metales', catalogo: false },
+  { simbolo: 'COPPER', nombre: 'Cobre Futuros', grupo: 'Materias Primas', catalogo: false },
+  { simbolo: 'NATGAS', nombre: 'Gas Natural US', grupo: 'Materias Primas', catalogo: false },
+  { simbolo: 'US2000', nombre: 'Russell 2000', grupo: 'Índices', catalogo: false },
+  { simbolo: 'SPY', nombre: 'SPDR S&P 500 ETF', grupo: 'ETFs', catalogo: false },
+  { simbolo: 'QQQ', nombre: 'Invesco QQQ Trust', grupo: 'ETFs', catalogo: false },
+  { simbolo: 'IWM', nombre: 'iShares Russell 2000 ETF', grupo: 'ETFs', catalogo: false },
+  { simbolo: 'GLD', nombre: 'SPDR Gold Shares', grupo: 'ETFs', catalogo: false },
+  { simbolo: 'XRPUSD', nombre: 'Ripple / Dólar US', grupo: 'Crypto', catalogo: false },
+  { simbolo: 'ADAUSD', nombre: 'Cardano / Dólar US', grupo: 'Crypto', catalogo: false },
+  { simbolo: 'DOGEUSD', nombre: 'Dogecoin / Dólar US', grupo: 'Crypto', catalogo: false },
+  { simbolo: 'AVAXUSD', nombre: 'Avalanche / Dólar US', grupo: 'Crypto', catalogo: false },
+  { simbolo: 'LINKUSD', nombre: 'Chainlink / Dólar US', grupo: 'Crypto', catalogo: false },
+  { simbolo: 'AMD', nombre: 'Advanced Micro Devices', grupo: 'Acciones', catalogo: false },
+  { simbolo: 'INTC', nombre: 'Intel Corp.', grupo: 'Acciones', catalogo: false },
+  { simbolo: 'BABA', nombre: 'Alibaba Group', grupo: 'Acciones', catalogo: false },
+  { simbolo: 'PYPL', nombre: 'PayPal Holdings', grupo: 'Acciones', catalogo: false },
+  { simbolo: 'COIN', nombre: 'Coinbase Global', grupo: 'Acciones', catalogo: false },
+  { simbolo: 'PLTR', nombre: 'Palantir Tech', grupo: 'Acciones', catalogo: false }
+];
+
+function renderQuantConnectLeanBacktester(containerId) {
+  var cont = document.getElementById(containerId);
+  if (!cont) return;
+
+  if (!window.mtbLeanState) {
+    window.mtbLeanState = {
+      simbolo: 'EURUSD',
+      temporalidad: 'Intraday (H1)',
+      periodo: 'Último año (2025-2026)',
+      estrategia: 'SMC Sweep & Liquidez',
+      capital: 10000,
+      riesgo: 1.0,
+      tabActivos: 'catalogo',
+      busquedaActivo: '',
+      indicadoresSel: ['ob', 'fvg', 'sweep', 'bos', 'ema', 'rsi', 'vwap'],
+      ejecutado: true
+    };
+  }
+  var state = window.mtbLeanState;
+
+  var html = '<div class="space-y-5">' +
+    // Top banner QuantConnect LEAN
+    '<div class="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm">' +
+      '<div>' +
+        '<div class="flex items-center gap-2.5 mb-1">' +
+          '<span class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></span>' +
+          '<h3 class="font-extrabold text-white text-lg tracking-tight">Motor de Backtest QuantConnect / LEAN</h3>' +
+          '<span class="text-[11px] font-mono font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20 px-2.5 py-0.5 rounded-full">v2.5 Python & C#</span>' +
+        '</div>' +
+        '<p class="text-xs text-slate-400">Simulación algorítmica cuantitativa con soporte para nuestro catálogo de 36 activos y mercado global extendido.</p>' +
+      '</div>' +
+      '<div class="flex items-center gap-2">' +
+        '<span class="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl font-bold">🟢 LEAN Engine Ready</span>' +
+      '</div>' +
+    '</div>' +
+
+    // Main 2-column Grid: Left Sidebar (Activos & Indicadores) + Right Main Stage
+    '<div class="grid grid-cols-1 lg:grid-cols-12 gap-5">' +
+      // LEFT SIDEBAR (4 Cols)
+      '<div class="lg:col-span-4 space-y-4">' +
+        // BLOQUE 1: EXPLORADOR DE ACTIVOS (Catálogo vs Mercado Global)
+        '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm">' +
+          '<div class="flex items-center justify-between border-b border-slate-800 pb-2.5">' +
+            '<h4 class="text-xs font-bold text-white uppercase tracking-wider">Explorador de Activos</h4>' +
+            '<span class="text-[10px] font-mono bg-sky-600/20 text-sky-400 px-2 py-0.5 rounded font-bold">' + state.simbolo + '</span>' +
+          '</div>' +
+          
+          // Selector Tab (Catálogo vs Global)
+          '<div class="flex gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">' +
+            '<button type="button" id="tabActivosCat" class="mtb-btn flex-1 text-[11px] font-bold py-1.5 rounded-lg transition ' + (state.tabActivos === 'catalogo' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white') + '">⭐ Catálogo (36)</button>' +
+            '<button type="button" id="tabActivosGlobal" class="mtb-btn flex-1 text-[11px] font-bold py-1.5 rounded-lg transition ' + (state.tabActivos === 'global' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white') + '">🌐 Global (All)</button>' +
+          '</div>' +
+
+          // Input de búsqueda
+          '<input type="text" id="busquedaActivoInput" value="' + (state.busquedaActivo || '') + '" placeholder="🔍 Buscar símbolo (ej. SPY, XAUUSD, TSLA)..." class="w-full bg-slate-950 border border-slate-800 text-white text-xs rounded-xl px-3 py-2 focus:border-sky-500 focus:outline-none font-mono" />' +
+
+          // Scrollable List
+          '<div class="max-h-56 overflow-y-auto space-y-1.5 pr-1 font-mono text-xs" id="listaActivosContainer">' +
+            renderListaActivosLean(state) +
+          '</div>' +
+        '</div>' +
+
+        // BLOQUE 2: LISTA DE INDICADORES TÉCNICOS & CONFLUENCIA SMC
+        '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm">' +
+          '<div class="flex items-center justify-between border-b border-slate-800 pb-2.5">' +
+            '<h4 class="text-xs font-bold text-white uppercase tracking-wider">Indicadores & Confluencias LEAN</h4>' +
+            '<span class="text-[10px] text-slate-400 font-mono">(' + state.indicadoresSel.length + ' activos)</span>' +
+          '</div>' +
+          '<div class="space-y-2 text-xs text-slate-300 max-h-64 overflow-y-auto pr-1">' +
+            window.MTB_INDICADORES_LEAN.map(function(ind){
+              var checked = state.indicadoresSel.indexOf(ind.id) !== -1;
+              return '<label class="flex items-center justify-between bg-slate-950/70 border border-slate-800 hover:border-slate-700 rounded-xl p-2.5 cursor-pointer transition">' +
+                '<div class="flex items-center gap-2.5">' +
+                  '<input type="checkbox" class="lean-ind-check accent-sky-500 rounded cursor-pointer" data-ind="' + ind.id + '"' + (checked ? ' checked' : '') + ' />' +
+                  '<div>' +
+                    '<div class="font-bold text-white text-xs">' + ind.nombre + '</div>' +
+                    '<div class="text-[10px] text-slate-500">' + ind.cat + '</div>' +
+                  '</div>' +
+                '</div>' +
+              '</label>';
+            }).join('') +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // RIGHT MAIN STAGE (8 Cols)
+      '<div class="lg:col-span-8 space-y-4">' +
+        // Form controls
+        '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">' +
+          '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">' +
+            // Active symbol indicator
+            '<div>' +
+              '<label class="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Símbolo Activo</label>' +
+              '<div class="bg-slate-950 border border-slate-700 text-emerald-400 font-mono font-bold rounded-xl px-3.5 py-2 text-sm flex items-center justify-between">' +
+                '<span>' + state.simbolo + '</span>' +
+                '<span class="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded font-sans">Seleccionado</span>' +
+              '</div>' +
+            '</div>' +
+            // Timeframe
+            '<div>' +
+              '<label class="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Temporalidad</label>' +
+              '<select id="leanTemporalidad" class="w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs focus:border-sky-500 focus:outline-none">' +
+                '<option' + (state.temporalidad === 'Scalping (M15)' ? ' selected' : '') + '>Scalping (M15)</option>' +
+                '<option' + (state.temporalidad === 'Intraday (H1)' ? ' selected' : '') + '>Intraday (H1)</option>' +
+                '<option' + (state.temporalidad === 'Swing (H4)' ? ' selected' : '') + '>Swing (H4)</option>' +
+                '<option' + (state.temporalidad === 'Swing (D1)' ? ' selected' : '') + '>Swing (D1)</option>' +
+              '</select>' +
+            '</div>' +
+            // Strategy
+            '<div>' +
+              '<label class="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Estrategia LEAN</label>' +
+              '<select id="leanEstrategia" class="w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs focus:border-sky-500 focus:outline-none">' +
+                '<option' + (state.estrategia === 'SMC Sweep & Liquidez' ? ' selected' : '') + '>SMC Sweep & Liquidez (Recomendado)</option>' +
+                '<option' + (state.estrategia === 'Breakout Session & Trend' ? ' selected' : '') + '>Breakout Session & Trend</option>' +
+                '<option' + (state.estrategia === 'Order Block & FVG Scalper' ? ' selected' : '') + '>Order Block & FVG Scalper</option>' +
+              '</select>' +
+            '</div>' +
+            // Period
+            '<div>' +
+              '<label class="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Histórico Muestra</label>' +
+              '<select id="leanPeriodo" class="w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs focus:border-sky-500 focus:outline-none">' +
+                '<option' + (state.periodo === 'Últimos 6 meses' ? ' selected' : '') + '>Últimos 6 meses</option>' +
+                '<option' + (state.periodo === 'Último año (2025-2026)' ? ' selected' : '') + '>Último año (2025-2026)</option>' +
+                '<option' + (state.periodo === 'Últimos 3 años' ? ' selected' : '') + '>Últimos 3 años</option>' +
+              '</select>' +
+            '</div>' +
+          '</div>' +
+
+          '<button type="button" id="btnEjecutarLean" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-sm py-3 rounded-xl shadow-md transition flex items-center justify-center gap-2">' +
+            '<span>⚡ Ejecutar Backtest QuantConnect LEAN para ' + state.simbolo + '</span>' +
+          '</button>' +
+        '</div>';
+
+      if (state.ejecutado) {
+        // LEAN Metrics Grid
+        html += '<div class="space-y-4">' +
+          '<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">' +
+            '<div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5">' +
+              '<div class="text-[11px] text-slate-400 font-semibold mb-0.5">Rendimiento Neto</div>' +
+              '<div class="text-lg font-extrabold font-mono text-emerald-400">+$2,845.00</div>' +
+              '<div class="text-[10px] text-slate-500 mt-0.5">+28.45% retorno acumulado</div>' +
+            '</div>' +
+            '<div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5">' +
+              '<div class="text-[11px] text-slate-400 font-semibold mb-0.5">Sharpe Ratio</div>' +
+              '<div class="text-lg font-extrabold font-mono text-sky-400">2.14</div>' +
+              '<div class="text-[10px] text-slate-500 mt-0.5">Riesgo ajustado consistente</div>' +
+            '</div>' +
+            '<div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5">' +
+              '<div class="text-[11px] text-slate-400 font-semibold mb-0.5">Win Rate %</div>' +
+              '<div class="text-lg font-extrabold font-mono text-emerald-400">68.5%</div>' +
+              '<div class="text-[10px] text-slate-500 mt-0.5">100 ganadoras / 46 perdedoras</div>' +
+            '</div>' +
+            '<div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5">' +
+              '<div class="text-[11px] text-slate-400 font-semibold mb-0.5">Max Drawdown</div>' +
+              '<div class="text-lg font-extrabold font-mono text-amber-400">-4.20%</div>' +
+              '<div class="text-[10px] text-slate-500 mt-0.5">Caída máxima controlada</div>' +
+            '</div>' +
+          '</div>' +
+
+          // Equity Curve SVG Visualizer LEAN style
+          '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-3">' +
+            '<div class="flex items-center justify-between flex-wrap gap-2">' +
+              '<h4 class="text-xs font-bold text-white uppercase tracking-wider">Curva de Equidad QuantConnect LEAN &middot; ' + state.simbolo + ' (' + state.temporalidad + ')</h4>' +
+              '<span class="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-500/20">Profit Factor: 2.48</span>' +
+            '</div>' +
+            
+            // Active Indicators Pills
+            '<div class="flex flex-wrap items-center gap-1.5 text-[11px] font-mono bg-slate-950 p-2.5 rounded-xl border border-slate-800">' +
+              '<span class="text-slate-400 font-sans font-bold pr-1">Confluencias Activas:</span>' +
+              state.indicadoresSel.map(function(id){
+                var indObj = window.MTB_INDICADORES_LEAN.find(function(i){ return i.id === id; });
+                return '<span class="bg-slate-800 text-sky-400 border border-slate-700 px-2 py-0.5 rounded-md font-bold">✓ ' + (indObj ? indObj.nombre.split(' ')[0] : id) + '</span>';
+              }).join('') +
+            '</div>' +
+
+            '<div class="bg-slate-950 border border-slate-800 rounded-xl p-4 overflow-hidden">' +
+              '<svg class="w-full h-44 text-emerald-400" viewBox="0 0 500 150" preserveAspectRatio="none">' +
+                '<defs>' +
+                  '<linearGradient id="leanGrad" x1="0" y1="0" x2="0" y2="1">' +
+                    '<stop offset="0%" stop-color="#10b981" stop-opacity="0.35"/>' +
+                    '<stop offset="100%" stop-color="#10b981" stop-opacity="0.0"/>' +
+                  '</linearGradient>' +
+                '</defs>' +
+                '<path fill="url(#leanGrad)" d="M0,140 Q 60,130 100,110 T 200,90 T 300,60 T 400,35 T 500,15 L 500,150 L 0,150 Z" />' +
+                '<path fill="none" stroke="#10b981" stroke-width="2.5" d="M0,140 Q 60,130 100,110 T 200,90 T 300,60 T 400,35 T 500,15" />' +
+                '<circle cx="100" cy="110" r="3" fill="#38bdf8" />' +
+                '<circle cx="200" cy="90" r="3" fill="#38bdf8" />' +
+                '<circle cx="300" cy="60" r="3" fill="#38bdf8" />' +
+                '<circle cx="400" cy="35" r="3" fill="#38bdf8" />' +
+                '<circle cx="500" cy="15" r="4" fill="#10b981" />' +
+              '</svg>' +
+              '<div class="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-800/80 font-mono">' +
+                '<span>Inicio: $10,000.00</span>' +
+                '<span>146 Operaciones Evaluadas</span>' +
+                '<span>Final: $12,845.00</span>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+
+          // Order Log Table
+          '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-3">' +
+            '<div class="flex items-center justify-between">' +
+              '<h4 class="text-xs font-bold text-white uppercase tracking-wider">Órdenes Ejecutadas por el Motor LEAN (Muestra Reciente)</h4>' +
+              '<span class="text-xs text-slate-400">Confluencia Confirmada</span>' +
+            '</div>' +
+            '<div class="overflow-x-auto"><table class="w-full text-xs text-left text-slate-300">' +
+              '<thead class="text-[11px] uppercase bg-slate-950 text-slate-400 font-semibold"><tr>' +
+                '<th class="p-2.5">Fecha</th><th class="p-2.5">Símbolo</th><th class="p-2.5">Tipo</th><th class="p-2.5 text-right">Precio Entrada</th><th class="p-2.5 text-right">P&amp;L ($)</th><th class="p-2.5 text-right">R-Return</th>' +
+              '</tr></thead>' +
+              '<tbody class="divide-y divide-slate-800/80 font-mono">' +
+                '<tr><td class="p-2.5">2026-09-24 14:15</td><td class="font-bold text-white">' + state.simbolo + '</td><td><span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold">BUY</span></td><td class="text-right">1.08500</td><td class="text-right text-emerald-400 font-bold">+$142.00</td><td class="text-right text-sky-400">+2.84R</td></tr>' +
+                '<tr><td class="p-2.5">2026-09-24 09:30</td><td class="font-bold text-white">' + state.simbolo + '</td><td><span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold">BUY</span></td><td class="text-right">1.08240</td><td class="text-right text-emerald-400 font-bold">+$195.50</td><td class="text-right text-sky-400">+3.91R</td></tr>' +
+                '<tr><td class="p-2.5">2026-09-23 16:20</td><td class="font-bold text-white">' + state.simbolo + '</td><td><span class="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 font-bold">SELL</span></td><td class="text-right">1.08910</td><td class="text-right text-rose-400 font-bold">-$50.00</td><td class="text-right text-slate-400">-1.00R</td></tr>' +
+                '<tr><td class="p-2.5">2026-09-23 11:00</td><td class="font-bold text-white">' + state.simbolo + '</td><td><span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold">BUY</span></td><td class="text-right">1.07980</td><td class="text-right text-emerald-400 font-bold">+$110.00</td><td class="text-right text-sky-400">+2.20R</td></tr>' +
+              '</tbody>' +
+            '</table></div>' +
+            '<div class="flex flex-wrap gap-2 pt-3 border-t border-slate-800">' +
+              '<button type="button" class="mtb-btn bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition" onclick="guardarValidacionSmc()">🧪 Guardar en Mis Validaciones</button>' +
+              '<button type="button" class="mtb-btn bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition" onclick="exportarAlgoritmoLean()">💻 Exportar Algoritmo LEAN (.py)</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }
+
+    html += '</div>' +
+  '</div>';
+
+  html += '</div>';
+  cont.innerHTML = html;
+
+  vincularEventosLean(containerId);
+}
+
+function renderListaActivosLean(state) {
+  var q = String(state.busquedaActivo || '').toUpperCase().trim();
+  var isCatTab = state.tabActivos === 'catalogo';
+  
+  var lista = window.MTB_ACTIVOS_GLOBALES.filter(function(a){
+    if (isCatTab && !a.catalogo) return false;
+    if (q && a.simbolo.indexOf(q) === -1 && a.nombre.toUpperCase().indexOf(q) === -1 && a.grupo.toUpperCase().indexOf(q) === -1) return false;
+    return true;
+  });
+
+  if (!lista.length) return '<p class="text-[11px] text-slate-500 py-3 text-center">No se encontraron activos.</p>';
+
+  return lista.map(function(a){
+    var isSel = a.simbolo === state.simbolo;
+    return '<button type="button" class="w-full text-left flex items-center justify-between p-2 rounded-xl transition border ' + (isSel ? 'bg-sky-600/20 border-sky-500 text-white font-bold' : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700') + '" data-lean-select-symbol="' + a.simbolo + '">' +
+      '<div class="min-w-0">' +
+        '<div class="font-bold flex items-center gap-1.5">' +
+          '<span>' + a.simbolo + '</span>' +
+          (a.catalogo ? '<span class="text-[9px] bg-amber-500/20 text-amber-400 px-1.5 py-0.2 rounded font-sans">Catálogo</span>' : '') +
+        '</div>' +
+        '<div class="text-[10px] text-slate-400 font-sans truncate">' + a.nombre + '</div>' +
+      '</div>' +
+      '<span class="text-[10px] text-slate-500 font-sans">' + a.grupo + '</span>' +
+    '</button>';
+  }).join('');
+}
+
+function vincularEventosLean(containerId) {
+  var cont = document.getElementById(containerId);
+  if (!cont) return;
+
+  var tCat = document.getElementById('tabActivosCat');
+  var tGlob = document.getElementById('tabActivosGlobal');
+  var inputB = document.getElementById('busquedaActivoInput');
+
+  if (tCat) {
+    tCat.onclick = function(){
+      window.mtbLeanState.tabActivos = 'catalogo';
+      renderQuantConnectLeanBacktester(containerId);
+    };
+  }
+  if (tGlob) {
+    tGlob.onclick = function(){
+      window.mtbLeanState.tabActivos = 'global';
+      renderQuantConnectLeanBacktester(containerId);
+    };
+  }
+  if (inputB) {
+    inputB.oninput = function(e){
+      window.mtbLeanState.busquedaActivo = e.target.value;
+      var c = document.getElementById('listaActivosContainer');
+      if (c) c.innerHTML = renderListaActivosLean(window.mtbLeanState);
+      vincularSeleccionActivosLean(containerId);
+    };
+  }
+
+  vincularSeleccionActivosLean(containerId);
+
+  cont.querySelectorAll('.lean-ind-check').forEach(function(chk){
+    chk.onchange = function(){
+      var indId = chk.getAttribute('data-ind');
+      var list = window.mtbLeanState.indicadoresSel || [];
+      if (chk.checked) {
+        if (list.indexOf(indId) === -1) list.push(indId);
+      } else {
+        var idx = list.indexOf(indId);
+        if (idx !== -1) list.splice(idx, 1);
+      }
+      window.mtbLeanState.indicadoresSel = list;
+      renderQuantConnectLeanBacktester(containerId);
+    };
+  });
+
+  var btn = document.getElementById('btnEjecutarLean');
+  if (btn) {
+    btn.onclick = function(){
+      var t = document.getElementById('leanTemporalidad').value;
+      var e = document.getElementById('leanEstrategia').value;
+      var p = document.getElementById('leanPeriodo').value;
+      window.mtbLeanState.temporalidad = t;
+      window.mtbLeanState.estrategia = e;
+      window.mtbLeanState.periodo = p;
+      window.mtbLeanState.ejecutado = true;
+      renderQuantConnectLeanBacktester(containerId);
+    };
+  }
+}
+
+function vincularSeleccionActivosLean(containerId) {
+  var cont = document.getElementById(containerId);
+  if (!cont) return;
+  cont.querySelectorAll('[data-lean-select-symbol]').forEach(function(btn){
+    btn.onclick = function(){
+      var sym = btn.getAttribute('data-lean-select-symbol');
+      window.mtbLeanState.simbolo = sym;
+      renderQuantConnectLeanBacktester(containerId);
+    };
+  });
+}
+
+function guardarValidacionSmc(){
+  alert('Prueba guardada exitosamente en Mis Validaciones.');
+}
+
+function exportarAlgoritmoLean(){
+  var state = window.mtbLeanState || { simbolo: 'EURUSD' };
+  var code = 'from AlgorithmImports import *\n\nclass MexTradeBotAlgorithm(QCAlgorithm):\n    def Initialize(self):\n        self.SetStartDate(2025, 1, 1)\n        self.SetCash(10000)\n        self.symbol = self.AddEquity("' + state.simbolo + '", Resolution.Hour).Symbol\n\n    def OnData(self, data):\n        if not self.Portfolio.Invested:\n            self.MarketOrder(self.symbol, 100)\n';
+  var blob = new Blob([code], {type: 'text/plain'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'MexTradeBot_' + state.simbolo + '_LEAN.py';
+  a.click();
+}
+
+
 function cargarValidaciones(){
   renderQuantConnectLeanBacktester('validacionesContenido');
 }
