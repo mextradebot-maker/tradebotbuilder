@@ -8,7 +8,7 @@
 @media(max-width:1200px){.ag-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:800px){body{padding:10px}#wizard>div{display:block}#wizard aside{width:auto;border-right:0;border-bottom:1px solid var(--mt-line);padding:15px}#wizard aside>div{padding-bottom:10px}#mtbSidebarNav{flex-direction:row;flex-wrap:wrap;gap:3px}.mtb-side-btn{width:auto;font-size:11px;padding:8px}.ag-nav-group{display:none}#wizard aside+div>div:first-child,#wizard aside+div>div:last-child{padding:20px}#app{gap:25px;grid-template-columns:1fr;min-height:0}#app>.text-center{grid-row:auto;margin-top:20px}#regBlock,#loginBlock{grid-column:1;grid-row:auto}#app h1{font-size:32px}#app>.text-center p{font-size:14px;max-width:none}.ag-title{font-size:27px}}@media(max-width:480px){.ag-grid{grid-template-columns:1fr}.ag-toolbar input{width:100%}.ag-controls{width:100%}#wizard aside+div>div:first-child,#wizard aside+div>div:last-child{padding:16px}.ag-panel{padding:16px}.ag-metrics{gap:6px}.ag-metrics strong{font-size:15px}.ag-table th,.ag-table td{padding:10px 6px}.ag-title{font-size:25px}#app form{padding:20px}}
 .ag-btn[aria-pressed=true]{border-color:var(--mt-accent);box-shadow:inset 3px 0 var(--mt-accent)}
 .ag-toolbar input,.ag-toolbar select{padding:10px 12px;border:1px solid var(--mt-line);border-radius:8px;min-height:42px;background:var(--mt-panel);color:var(--mt-text)}
-</style></head><body class='min-h-screen flex items-center justify-center p-4'><div id='app' class='w-full max-w-md'><div class='text-center mb-6'><div class='inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-slate-800 to-green-500 rounded-2xl mb-3'><span class='text-white text-3xl'>&#129302;</span></div><h1 class='text-2xl font-extrabold text-slate-800'>Panel de Alumnos MexTradeBot</h1><p class='text-slate-500 text-sm mt-1'>Registrate o inicia sesion para conectar tu cuenta XM y recibir tus robots</p></div><div id='regBlock'><form id='regForm' onsubmit='event.preventDefault(); handleRegSubmit(); return false;' class='bg-white rounded-2xl shadow-xl p-6 space-y-4'><div><label class='text-sm font-semibold text-slate-700'>Nombre completo</label><input required name='nombre_completo' class='mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /></div><div><label class='text-sm font-semibold text-slate-700'>Correo electronico</label><input required type='email' name='correo' class='mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /></div><div><label class='text-sm font-semibold text-slate-700'>Telefono de recuperacion</label><input required name='telefono_recuperacion' class='mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /></div><div><label class='text-sm font-semibold text-slate-700'>Contrasena para el panel</label><div class='flex gap-2 mt-1'><input required id='password' name='password' type='text' class='flex-1 border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /><button type='button' id='genBtn' class='px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-semibold text-slate-700'>Generar</button></div><p class='text-xs text-slate-400 mt-1'>Puedes escribir la tuya o generar una automatica. Guardala, no la volveremos a mostrar.</p></div><button id='regSubmitBtn' type='submit'  class='mtb-btn w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg transition'>Crear mi cuenta</button><p id='errMsg' class='text-red-600 text-sm hidden'></p></form><p class='text-center text-sm text-slate-500 mt-4'>&#191;Ya tienes cuenta? <button type='button' id='irALogin' onclick="mostrar('loginBlock')" class='text-green-600 font-semibold underline cursor-pointer'>Inicia sesion</button></p></div><div id='loginBlock' class='hidden'><form id='loginForm' onsubmit='event.preventDefault(); handleLoginSubmit(); return false;' class='bg-white rounded-2xl shadow-xl p-6 space-y-4'><div><label class='text-sm font-semibold text-slate-700'>Correo electronico</label><input required type='email' name='correo' class='mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /></div><div><label class='text-sm font-semibold text-slate-700'>Contrasena</label><input required name='password' type='password' class='mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /></div><button id='loginSubmitBtn' type='submit'  class='mtb-btn w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-lg transition'>Iniciar sesion</button><p id='loginErrMsg' class='text-red-600 text-sm hidden'></p></form><p class='text-center text-sm text-slate-500 mt-4'>&#191;No tienes cuenta? <button type='button' id='irARegistro' onclick="mostrar('regBlock')" class='text-green-600 font-semibold underline cursor-pointer'>Registrate</button></p></div></div><div id='wizard' class='hidden w-full' style='max-width:1120px'><div class='bg-white rounded-2xl shadow-xl overflow-hidden flex' style='min-height:560px'><aside class='w-56 shrink-0 border-r border-slate-200 flex flex-col p-3'><div class='mb-3 px-1'><div class='font-extrabold text-slate-800 text-sm'>MexTradeBot</div><div class='text-xs text-slate-400'>Panel de Alumnos</div></div><nav id='mtbSidebarNav' class='flex flex-col gap-1 flex-1'><button type='button' class='mtb-side-btn mtb-btn' data-page='master'>Master Trader<span class='mtb-side-pill'>Pronto</span></button><button type='button' class='mtb-side-btn mtb-btn' data-page='resumen'>Resumen</button><button type='button' class='mtb-side-btn mtb-btn' data-page='catalogoTop'>Catalogo de Activos</button><button type='button' class='mtb-side-btn mtb-btn' data-page='botsProduccion' aria-current='true'>Bots en Produccion</button><button type='button' class='mtb-side-btn mtb-btn' data-page='conexionXm'>Conexion XM</button><button type='button' class='mtb-side-btn mtb-btn' data-page='calendario'>Calendario Economico</button><button type='button' class='mtb-side-btn mtb-btn' data-page='constructor'>Constructor de Bots<span class='mtb-side-pill'>Pronto</span></button><button type='button' id='glosarioBtn' class='mtb-side-btn mtb-btn'>Glosario</button><a href='https://t.me/ricardopenac' target='_blank' rel='noopener' class='mtb-side-btn mtb-btn'><svg width='18' height='18' viewBox='0 0 240 240' aria-hidden='true'><circle cx='120' cy='120' r='120' fill='#26A5E4'></circle><path fill='#fff' d='M53 118l125-48c6-2 11 1 9 10l-21 101c-2 8-7 10-14 6l-38-28-18 17c-2 2-4 4-8 4l3-40 74-67c3-3-1-4-4-2l-91 57-39-12c-8-3-8-9 2-12z'></path></svg><span>Telegram</span></a></nav></aside><div class='flex-1 min-w-0 flex flex-col'><div class='flex items-center justify-between px-6 py-4 border-b border-slate-200'><div><h1 id='pageTitulo' class='text-xl font-extrabold text-slate-800'>Bots en Produccion</h1><p id='wizardSaludo' class='text-slate-500 text-sm'></p></div><a id='cerrarSesionBtn' href='/webhook/panel-alumnos-logout' class='mtb-btn text-sm font-semibold text-slate-500 underline'>Cerrar sesion</a></div><div class='p-6 flex-1 overflow-auto'><div id='page-master' hidden><div class='text-center py-10'><div class='text-slate-800 font-bold mb-2'>Aun no esta construido</div><p class='text-slate-500 text-sm max-w-sm mx-auto'>Master Trader sera el agente que orqueste tus robots automaticamente, sin que tengas que operarlos tu. Todavia no existe.</p></div></div><div id='page-resumen' hidden><div id='resumenContenido' class='text-slate-400 text-sm'>Cargando resumen...</div></div><div id='page-catalogoTop' hidden><div id='catalogoTopContenido' class='text-slate-400 text-sm'>Cargando catalogo...</div></div><div id="page-botsProduccion">
+</style></head><body class='min-h-screen flex items-center justify-center p-4'><div id='app' class='w-full max-w-md'><div class='text-center mb-6'><div class='inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-slate-800 to-green-500 rounded-2xl mb-3'><span class='text-white text-3xl'>&#129302;</span></div><h1 class='text-2xl font-extrabold text-slate-800'>Panel de Alumnos MexTradeBot</h1><p class='text-slate-500 text-sm mt-1'>Registrate o inicia sesion para conectar tu cuenta XM y recibir tus robots</p></div><div id='regBlock'><form id='regForm' onsubmit='event.preventDefault(); handleRegSubmit(); return false;' class='bg-white rounded-2xl shadow-xl p-6 space-y-4'><div><label class='text-sm font-semibold text-slate-700'>Nombre completo</label><input required name='nombre_completo' class='mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /></div><div><label class='text-sm font-semibold text-slate-700'>Correo electronico</label><input required type='email' name='correo' class='mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /></div><div><label class='text-sm font-semibold text-slate-700'>Telefono de recuperacion</label><input required name='telefono_recuperacion' class='mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /></div><div><label class='text-sm font-semibold text-slate-700'>Contrasena para el panel</label><div class='flex gap-2 mt-1'><input required id='password' name='password' type='text' class='flex-1 border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /><button type='button' id='genBtn' class='px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-semibold text-slate-700'>Generar</button></div><p class='text-xs text-slate-400 mt-1'>Puedes escribir la tuya o generar una automatica. Guardala, no la volveremos a mostrar.</p></div><button id='regSubmitBtn' type='submit'  class='mtb-btn w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg transition'>Crear mi cuenta</button><p id='errMsg' class='text-red-600 text-sm hidden'></p></form><p class='text-center text-sm text-slate-500 mt-4'>&#191;Ya tienes cuenta? <button type='button' id='irALogin' onclick="mostrar('loginBlock')" class='text-green-600 font-semibold underline cursor-pointer'>Inicia sesion</button></p></div><div id='loginBlock' class='hidden'><form id='loginForm' onsubmit='event.preventDefault(); handleLoginSubmit(); return false;' class='bg-white rounded-2xl shadow-xl p-6 space-y-4'><div><label class='text-sm font-semibold text-slate-700'>Correo electronico</label><input required type='email' name='correo' class='mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /></div><div><label class='text-sm font-semibold text-slate-700'>Contrasena</label><input required name='password' type='password' class='mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500' /></div><button id='loginSubmitBtn' type='submit'  class='mtb-btn w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-lg transition'>Iniciar sesion</button><p id='loginErrMsg' class='text-red-600 text-sm hidden'></p></form><p class='text-center text-sm text-slate-500 mt-4'>&#191;No tienes cuenta? <button type='button' id='irARegistro' onclick="mostrar('regBlock')" class='text-green-600 font-semibold underline cursor-pointer'>Registrate</button></p></div></div><div id='wizard' class='hidden w-full' style='max-width:1120px'><div class='bg-white rounded-2xl shadow-xl overflow-hidden flex' style='min-height:560px'><aside class='w-56 shrink-0 border-r border-slate-200 flex flex-col p-3'><div class='mb-3 px-1'><div class='font-extrabold text-slate-800 text-sm'>MexTradeBot</div><div class='text-xs text-slate-400'>Panel de Alumnos</div></div><nav id='mtbSidebarNav' class='flex flex-col gap-1 flex-1'><button type='button' class='mtb-side-btn mtb-btn' data-page='master'>Master Trader<span class='mtb-side-pill'>Pronto</span></button><button type='button' class='mtb-side-btn mtb-btn' data-page='resumen'>Resumen</button><button type='button' class='mtb-side-btn mtb-btn' data-page='catalogoTop'>Catalogo de Activos</button><button type='button' class='mtb-side-btn mtb-btn' data-page='botsProduccion' aria-current='true'>Bots en Produccion</button><button type='button' class='mtb-side-btn mtb-btn' data-page='conexionXm'>Conexion XM</button><button type='button' class='mtb-side-btn mtb-btn' data-page='calendario'>Calendario Economico</button><button type='button' class='mtb-side-btn mtb-btn' data-page='constructor'>Constructor de Bots<span class='mtb-side-pill'>Pronto</span></button><button type='button' id='glosarioBtn' class='mtb-side-btn mtb-btn'>Glosario</button><a href='https://t.me/ricardopenac' target='_blank' rel='noopener' class='mtb-side-btn mtb-btn'><svg width='18' height='18' viewBox='0 0 240 240' aria-hidden='true'><circle cx='120' cy='120' r='120' fill='#26A5E4'></circle><path fill='#fff' d='M53 118l125-48c6-2 11 1 9 10l-21 101c-2 8-7 10-14 6l-38-28-18 17c-2 2-4 4-8 4l3-40 74-67c3-3-1-4-4-2l-91 57-39-12c-8-3-8-9 2-12z'></path></svg><span>Telegram</span></a></nav></aside><div class='flex-1 min-w-0 flex flex-col'><div class='flex items-center justify-between px-6 py-4 border-b border-slate-200'><div><h1 id='pageTitulo' class='text-xl font-extrabold text-slate-800'>Bots en Produccion</h1><p id='wizardSaludo' class='text-slate-500 text-sm'></p></div><a id='cerrarSesionBtn' href='/webhook/panel-alumnos-logout' class='mtb-btn text-sm font-semibold text-slate-500 underline'>Cerrar sesion</a></div><div class='p-6 flex-1 overflow-auto'><div id='page-master' hidden></div><div id='page-resumen' hidden><div id='resumenContenido' class='text-slate-400 text-sm'>Cargando resumen...</div></div><div id='page-catalogoTop' hidden><div id='catalogoTopContenido' class='text-slate-400 text-sm'>Cargando catalogo...</div></div><div id="page-botsProduccion">
   <div class="mb-5">
     <p class="ag-eyebrow">MONITOR Y CONFIGURACIÓN</p>
     <h2 class="ag-title">Bots en Producción</h2>
@@ -2358,6 +2358,7 @@ window.cargarResumen = function(forzar){ return window.renderResumenDashboard(fo
     else if(page==='botsProduccion'){ if(typeof window.cargarBotsProduccion==='function')window.cargarBotsProduccion('catalogo');else loadOperations('ag-operations'); }
     else if(page==='resumen')window.cargarResumen();
     else if(page==='calendario')window.cargarCalendarioEconomico();
+    else if(page==='master'){ if(typeof window.renderMasterTraderPanel==='function')window.renderMasterTraderPanel(); }
     else if(page==='resumen')window.renderResumenDashboard();
   }
   async function loadOperations(id){
@@ -2415,4 +2416,437 @@ window.cargarResumen = function(forzar){ return window.renderResumenDashboard(fo
   window.irABacktest=()=>route('backtester');window.cargarResumen=()=>window.renderResumenDashboard();
   document.addEventListener('DOMContentLoaded',init);
 })();
+
+
+
+window.renderMasterTraderNodesData = [
+  { id: 'CLI-9042', cliente: 'Ricardo Peña', broker: 'XM Global Real', cuenta: '#318680674', bot: 'US30 Trend Rider EA', ubicacion: 'Remoto (Monterrey, MX)', tipo: 'Real', estado: 'protegido', ping: '14 ms', ultimo: 'BUY US30 @ 42,150 (OK)' },
+  { id: 'CLI-8812', cliente: 'Carlos Mendoza', broker: 'Exness Real', cuenta: '#55491203', bot: 'Gold Hunter Scalper v2', ubicacion: 'Remoto (CDMX, MX)', tipo: 'Real', estado: 'protegido', ping: '22 ms', ultimo: 'BUY XAUUSD @ 2,642.10 (OK)' },
+  { id: 'CLI-7741', cliente: 'Ana Lucía G.', broker: 'IC Markets Real', cuenta: '#8819201', bot: 'EURUSD Liquidity Hunter', ubicacion: 'Remoto (Madrid, ES)', tipo: 'Real', estado: 'protegido', ping: '38 ms', ultimo: 'SELL EURUSD @ 1.0845 (OK)' },
+  { id: 'CLI-3309', cliente: 'Cuenta Demo #1 (VPS)', broker: 'XM Demo', cuenta: '#318680674', bot: 'Catalog Multi-Bot EA', ubicacion: 'VPS Local (VPS-01)', tipo: 'Demo', estado: 'protegido', ping: '2 ms', ultimo: 'BUY XAUUSD @ 2,642.50 (OK)' },
+  { id: 'CLI-1102', cliente: 'Cuenta Demo #2 (VPS)', broker: 'XM Demo', cuenta: '#108460538', bot: 'Catalog Multi-Bot EA', ubicacion: 'VPS Local (VPS-01)', tipo: 'Demo', estado: 'protegido', ping: '2 ms', ultimo: 'BUY XAUUSD @ 2,642.50 (OK)' },
+  { id: 'CLI-1103', cliente: 'Cuenta Demo #3 (VPS)', broker: 'XM Demo', cuenta: '#336903105', bot: 'Catalog Multi-Bot EA', ubicacion: 'VPS Local (VPS-01)', tipo: 'Demo', estado: 'protegido', ping: '2 ms', ultimo: 'BUY XAUUSD @ 2,642.50 (OK)' },
+  { id: 'CLI-1104', cliente: 'Cuenta Demo #4 (VPS)', broker: 'XM Demo', cuenta: '#336903102', bot: 'Catalog Multi-Bot EA', ubicacion: 'VPS Local (VPS-01)', tipo: 'Demo', estado: 'protegido', ping: '2 ms', ultimo: 'BUY XAUUSD @ 2,642.50 (OK)' },
+  { id: 'CLI-1105', cliente: 'Cuenta Demo #5 (VPS)', broker: 'XM Demo', cuenta: '#318735437', bot: 'Catalog Multi-Bot EA', ubicacion: 'VPS Local (VPS-01)', tipo: 'Demo', estado: 'protegido', ping: '2 ms', ultimo: 'BUY XAUUSD @ 2,642.50 (OK)' },
+  { id: 'CLI-9941', cliente: 'Desconocido (Bypass Attempt)', broker: 'Desconocido (IP 45.12.xx)', cuenta: '#998124', bot: 'Modded EA v1', ubicacion: 'Remoto (Desconocido)', tipo: 'Blocked', estado: 'bloqueado', ping: '99 ms', ultimo: '⛔ Intento de Orden Rechazado (No Token)' },
+  { id: 'CLI-9942', cliente: 'Token Revocado #102', broker: 'RoboForex Real', cuenta: '#441920', bot: 'Old Strategy v1', ubicacion: 'Remoto (Bogotá, CO)', tipo: 'Blocked', estado: 'bloqueado', ping: '110 ms', ultimo: '⛔ Licencia Expirada (Acceso Denegado)' }
+];
+
+window.masterKillSwitchActive = false;
+
+window.renderMasterTraderPanel = function() {
+  var container = document.getElementById('page-master');
+  if (!container) return;
+
+  container.innerHTML = [
+    '<div class="mb-6 flex flex-wrap items-center justify-between gap-4">',
+      '<div>',
+        '<div class="flex items-center gap-2 mb-1">',
+          '<span class="ag-eyebrow">ORQUESTACIÓN & PROTECCIÓN CENTRAL</span>',
+          '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">MASTER TRADER BRAIN</span>',
+        '</div>',
+        '<h2 class="ag-title text-2xl font-black text-white flex items-center gap-2">',
+          '<span>⚡ Cerebro Master Trader</span>',
+          '<span class="text-xs px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30 font-mono">v3.8 Multi-Node Shield</span>',
+        '</h2>',
+        '<p class="ag-muted text-xs text-slate-400 max-w-2xl mt-1">',
+          'Control maestro centralizado de todos los bots emitidos en cuentas de clientes. Los bots remotos requieren token HTTPS y autorización en vivo para ejecutar trades.',
+        '</p>',
+      '</div>',
+
+      '<div class="flex items-center gap-3">',
+        '<button id="btnEmitirLicencia" type="button" class="mtb-btn text-xs font-bold px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white shadow-lg shadow-sky-600/20 flex items-center gap-2 transition">',
+          '<span>🔑 Emitir Nuevo Token de Bot</span>',
+        '</button>',
+        '<button id="btnKillSwitch" type="button" class="mtb-btn text-xs font-bold px-4 py-2.5 rounded-xl ' + (window.masterKillSwitchActive ? 'bg-rose-600 text-white border border-rose-400 animate-pulse' : 'bg-slate-800 hover:bg-rose-950/60 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/50') + ' flex items-center gap-2 transition">',
+          '<span class="w-2.5 h-2.5 rounded-full ' + (window.masterKillSwitchActive ? 'bg-white' : 'bg-emerald-500 animate-pulse') + '"></span>',
+          '<span id="killSwitchLabel">' + (window.masterKillSwitchActive ? 'KILL SWITCH GLOBAL: ACTIVADO ⛔' : 'KILL SWITCH GLOBAL: INACTIVO') + '</span>',
+        '</button>',
+      '</div>',
+    '</div>',
+
+    '<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">',
+      '<div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800/80 shadow-md">',
+        '<div class="flex items-center justify-between text-slate-400 text-xs mb-2">',
+          '<span>Estado del Cerebro VPS</span>',
+          '<span class="w-2 h-2 rounded-full bg-emerald-500"></span>',
+        '</div>',
+        '<div class="text-xl font-extrabold text-white flex items-baseline gap-1.5">',
+          '<span>ACTIVO</span>',
+          '<span class="text-xs text-emerald-400 font-normal">99.98% Uptime</span>',
+        '</div>',
+        '<p class="text-[11px] text-slate-400 mt-1">VPS Server IP: 147.93.xx.xx (Frankfurt)</p>',
+      '</div>',
+
+      '<div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800/80 shadow-md">',
+        '<div class="flex items-center justify-between text-slate-400 text-xs mb-2">',
+          '<span>Bots / Nodos Remotos</span>',
+          '<span class="text-sky-400 font-mono text-[10px]">98% Fuera de VPS</span>',
+        '</div>',
+        '<div class="text-xl font-extrabold text-white flex items-baseline gap-1.5">',
+          '<span id="totalNodosCount">142</span>',
+          '<span class="text-xs text-slate-400 font-normal">nodos activos</span>',
+        '</div>',
+        '<p class="text-[11px] text-emerald-400 mt-1">48 Reales · 94 Demos Conectadas</p>',
+      '</div>',
+
+      '<div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800/80 shadow-md">',
+        '<div class="flex items-center justify-between text-slate-400 text-xs mb-2">',
+          '<span>Protocolo de Protección</span>',
+          '<span class="text-emerald-400 font-mono text-[10px]">ESTRICTO</span>',
+        '</div>',
+        '<div class="text-xl font-extrabold text-emerald-400 flex items-baseline gap-1.5">',
+          '<span>100% PROTEGIDO</span>',
+        '</div>',
+        '<p class="text-[11px] text-slate-400 mt-1">Sin token no hay ejecución local</p>',
+      '</div>',
+
+      '<div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800/80 shadow-md">',
+        '<div class="flex items-center justify-between text-slate-400 text-xs mb-2">',
+          '<span>Latencia de Señal</span>',
+          '<span class="text-emerald-400 font-mono text-[10px]">⚡ ULTRA FAST</span>',
+        '</div>',
+        '<div class="text-xl font-extrabold text-white flex items-baseline gap-1.5">',
+          '<span>18 ms</span>',
+          '<span class="text-xs text-emerald-400 font-normal">promedio global</span>',
+        '</div>',
+        '<p class="text-[11px] text-slate-400 mt-1">Sockets & REST Async Pipeline</p>',
+      '</div>',
+    '</div>',
+
+    '<div class="p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-sky-950/40 to-slate-900 border border-sky-900/40 mb-6 relative overflow-hidden">',
+      '<div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">',
+        '<div class="space-y-1">',
+          '<div class="flex items-center gap-2">',
+            '<span class="text-amber-400 font-bold text-sm">🛡️ Escudo Anticopia y Control Remoto Restringido</span>',
+            '<span class="px-2 py-0.5 rounded text-[10px] bg-sky-500/20 text-sky-300 font-mono">WebRequest Auth Lock</span>',
+          '</div>',
+          '<p class="text-xs text-slate-300 max-w-3xl leading-relaxed">',
+            'Ningún robot en la cuenta de un cliente puede ejecutar una operación de forma aislada. Antes de colocar cualquier orden (COMPRA/VENTA/Cierre), el robot consulta a nuestro VPS central enviando su <strong>License Token & Signature</strong>. Si la consulta es rechazada o el Master Trader no ha emitido una señal válida, la ejecución se cancela automáticamente en el terminal cliente.',
+          '</p>',
+        '</div>',
+        '<button id="btnTestSignalBroadcast" type="button" class="mtb-btn shrink-0 text-xs font-bold px-4 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition">',
+          '📡 Probar Emisión de Señal a 142 Nodos',
+        '</button>',
+      '</div>',
+    '</div>',
+
+    '<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">',
+      '<div class="lg:col-span-2 space-y-4">',
+        '<div class="p-5 rounded-2xl bg-slate-900/90 border border-slate-800/80">',
+          '<div class="flex flex-wrap items-center justify-between gap-3 mb-4">',
+            '<div>',
+              '<h3 class="text-sm font-bold text-white flex items-center gap-2">',
+                '<span>🤖 Nodos de Bots Remotos Instalados</span>',
+                '<span class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">142 Activos</span>',
+              '</h3>',
+              '<p class="text-xs text-slate-400">Inventario en tiempo real de robots autenticados en brokers de clientes</p>',
+            '</div>',
+            '<div class="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs" id="nodeFilterContainer">',
+              '<button data-node-filter="all" class="node-filter-btn px-3 py-1 rounded-lg bg-sky-600 text-white font-bold transition">Todos (142)</button>',
+              '<button data-node-filter="real" class="node-filter-btn px-3 py-1 rounded-lg text-slate-400 hover:text-white transition">Reales (48)</button>',
+              '<button data-node-filter="demo" class="node-filter-btn px-3 py-1 rounded-lg text-slate-400 hover:text-white transition">Demos (94)</button>',
+              '<button data-node-filter="blocked" class="node-filter-btn px-3 py-1 rounded-lg text-slate-400 hover:text-rose-400 transition">Bloqueados (2)</button>',
+            '</div>',
+          '</div>',
+
+          '<div class="overflow-x-auto rounded-xl border border-slate-800">',
+            '<table class="w-full text-left text-xs text-slate-300">',
+              '<thead class="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800 uppercase text-[10px]">',
+                '<tr>',
+                  '<th class="p-3">Nodo / Cliente</th>',
+                  '<th class="p-3">Broker & Cuenta</th>',
+                  '<th class="p-3">Bot Asignado</th>',
+                  '<th class="p-3">Estado Protección</th>',
+                  '<th class="p-3">Ping</th>',
+                  '<th class="p-3 text-right">Acción</th>',
+                '</tr>',
+              '</thead>',
+              '<tbody id="nodeTableBody" class="divide-y divide-slate-800/60 bg-slate-900/50">',
+              '</tbody>',
+            '</table>',
+          '</div>',
+        '</div>',
+      '</div>',
+
+      '<div class="space-y-4">',
+        '<div class="p-5 rounded-2xl bg-slate-900/90 border border-slate-800/80 h-full flex flex-col">',
+          '<div class="flex items-center justify-between mb-3">',
+            '<h3 class="text-sm font-bold text-white flex items-center gap-2">',
+              '<span>📟 Handshake & Signal Feed</span>',
+              '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>',
+            '</div>',
+            '<span class="text-[10px] font-mono text-slate-400">REST WSS Stream</span>',
+          '</div>',
+          '<p class="text-xs text-slate-400 mb-3">Auditoría en tiempo real de consultas y señales enviadas desde el VPS.</p>',
+
+          '<div id="masterTerminalFeed" class="flex-1 min-h-[380px] max-h-[500px] p-3 rounded-xl bg-slate-950 font-mono text-[11px] text-emerald-400/90 overflow-y-auto space-y-2 border border-slate-800/90 shadow-inner">',
+          '</div>',
+        '</div>',
+      '</div>',
+    '</div>',
+
+    '<div id="modalLicenciaMaster" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm hidden items-center justify-center z-50 p-4">',
+      '<div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">',
+        '<button id="btnCloseModalLicencia" type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white text-lg font-bold">✕</button>',
+        '<div class="mb-4">',
+          '<span class="ag-eyebrow">CREAR AUTENTICACIÓN</span>',
+          '<h3 class="text-lg font-extrabold text-white">Emitir Token de Protección de Bot</h3>',
+          '<p class="text-xs text-slate-400 mt-1">Genera la clave de autorización para instalar un bot en el MetaTrader de un cliente.</p>',
+        '</div>',
+
+        '<form id="formNuevaLicencia" class="space-y-4 text-xs">',
+          '<div>',
+            '<label class="block text-slate-300 font-medium mb-1">Nombre del Cliente / Referencia</label>',
+            '<input type="text" id="licCliente" required placeholder="Ej. Juan Pérez - Cuenta VIP" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-sky-500">',
+          '</div>',
+
+          '<div class="grid grid-cols-2 gap-3">',
+            '<div>',
+              '<label class="block text-slate-300 font-medium mb-1">Número de Cuenta MT4/MT5</label>',
+              '<input type="text" id="licCuenta" required placeholder="Ej. 318680674" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-sky-500">',
+            '</div>',
+            '<div>',
+              '<label class="block text-slate-300 font-medium mb-1">Tipo de Cuenta</label>',
+              '<select id="licTipo" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-sky-500">',
+                '<option value="Real">Cuenta Real</option>',
+                '<option value="Demo">Cuenta Demo</option>',
+              '</select>',
+            '</div>',
+          '</div>',
+
+          '<div class="grid grid-cols-2 gap-3">',
+            '<div>',
+              '<label class="block text-slate-300 font-medium mb-1">Robot / Estrategia</label>',
+              '<select id="licBot" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-sky-500">',
+                '<option value="Catalog Multi-Bot EA">Catalog Multi-Bot EA (Master)</option>',
+                '<option value="Gold Hunter Scalper v2">Gold Hunter Scalper v2</option>',
+                '<option value="US30 Trend Rider EA">US30 Trend Rider EA</option>',
+                '<option value="EURUSD Liquidity Hunter">EURUSD Liquidity Hunter</option>',
+              '</select>',
+            '</div>',
+            '<div>',
+              '<label class="block text-slate-300 font-medium mb-1">Vencimiento Token</label>',
+              '<select id="licVenc" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-sky-500">',
+                '<option value="30 Días">30 Días</option>',
+                '<option value="90 Días">90 Días</option>',
+                '<option value="1 Año">1 Año (Licencia Completa)</option>',
+                '<option value="Ilimitada">Ilimitada (Suscripción Activa)</option>',
+              '</select>',
+            '</div>',
+          '</div>',
+
+          '<button type="submit" class="w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs shadow-lg shadow-sky-600/20 transition">',
+            '🔑 Generar Token & Script de Inicialización',
+          '</button>',
+        '</form>',
+
+        '<div id="licenciaResultado" class="mt-4 hidden p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs">',
+          '<p class="text-emerald-400 font-bold mb-1">✅ Token Generado con Éxito:</p>',
+          '<div class="p-2 rounded bg-slate-900 font-mono text-[11px] text-sky-300 select-all mb-2 break-all" id="generatedTokenCode">',
+            'MTB-SEC-9042-881A-XMREAL',
+          '</div>',
+          '<p class="text-[11px] text-slate-400">Pegar este identificador en los parámetros de entrada del Expert Advisor MQL5.</p>',
+        '</div>',
+      '</div>',
+    '</div>'
+  ].join('');
+
+  renderNodeTable('all');
+  initMasterTerminalLogs();
+  bindMasterEvents();
+};
+
+function renderNodeTable(filter) {
+  var tbody = document.getElementById('nodeTableBody');
+  if (!tbody) return;
+
+  var nodes = window.renderMasterTraderNodesData || [];
+  var filtered = nodes.filter(function(n) {
+    if (filter === 'real') return n.tipo === 'Real';
+    if (filter === 'demo') return n.tipo === 'Demo';
+    if (filter === 'blocked') return n.estado === 'bloqueado';
+    return true;
+  });
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">No hay nodos que coincidan con el filtro.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(function(n) {
+    var badgeHtml = n.estado === 'protegido' 
+      ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">🟢 Protegido & Auth OK</span>'
+      : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">🔴 ACCESO BLOQUEADO</span>';
+
+    return [
+      '<tr class="hover:bg-slate-800/40 transition border-b border-slate-800/40">',
+        '<td class="p-3">',
+          '<div class="font-bold text-white text-xs">' + n.cliente + '</div>',
+          '<div class="text-[11px] text-slate-400 font-mono">' + n.id + ' · ' + n.ubicacion + '</div>',
+        '</td>',
+        '<td class="p-3">',
+          '<div class="text-xs text-slate-200 font-medium">' + n.broker + '</div>',
+          '<div class="text-[11px] text-slate-400 font-mono">' + n.cuenta + '</div>',
+        '</td>',
+        '<td class="p-3 text-xs text-slate-300 font-mono">' + n.bot + '</td>',
+        '<td class="p-3">' + badgeHtml + '</td>',
+        '<td class="p-3 text-xs font-mono text-slate-400">' + n.ping + '</td>',
+        '<td class="p-3 text-right">',
+          n.estado === 'protegido'
+            ? '<button type="button" class="mtb-btn text-[11px] bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-500/40 px-2.5 py-1 rounded-lg transition" onclick="revocarNodoToken(\'" + n.id + "\')">Revocar Token</button>'
+            : '<button type="button" class="mtb-btn text-[11px] bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/40 px-2.5 py-1 rounded-lg transition" onclick="desbloquearNodoToken(\'" + n.id + "\')">Reautorizar</button>',
+        '</td>',
+      '</tr>'
+    ].join('');
+  }).join('');
+}
+
+function initMasterTerminalLogs() {
+  var feed = document.getElementById('masterTerminalFeed');
+  if (!feed) return;
+  var now = new Date().toLocaleTimeString();
+  feed.innerHTML = [
+    '<div class="text-sky-400">[' + now + '] [SYSTEM_INIT] Master Brain Node initialized on VPS (Frankfurt-01).</div>',
+    '<div class="text-emerald-400">[' + now + '] [PROTECTION_LOCK] 142 remote client nodes actively authorized via HTTPS Token.</div>',
+    '<div class="text-slate-400">[' + now + '] [HANDSHAKE_OK] Node CLI-9042 validated -> XM Real #318680674.</div>',
+    '<div class="text-slate-400">[' + now + '] [HANDSHAKE_OK] Node CLI-8812 validated -> Exness Real #55491203.</div>',
+    '<div class="text-rose-400">[' + now + '] [UNAUTHORIZED_ATTEMPT] Node CLI-9941 rejected: Missing signal auth token from VPS. Execution prevented.</div>'
+  ].join('');
+}
+
+function bindMasterEvents() {
+  // Filter buttons
+  var filterBtns = document.querySelectorAll('.node-filter-btn');
+  filterBtns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      filterBtns.forEach(function(b) {
+        b.className = 'node-filter-btn px-3 py-1 rounded-lg text-slate-400 hover:text-white transition';
+      });
+      btn.className = 'node-filter-btn px-3 py-1 rounded-lg bg-sky-600 text-white font-bold transition';
+      renderNodeTable(btn.dataset.nodeFilter);
+    });
+  });
+
+  // Kill Switch
+  var killBtn = document.getElementById('btnKillSwitch');
+  if (killBtn) {
+    killBtn.addEventListener('click', function() {
+      window.masterKillSwitchActive = !window.masterKillSwitchActive;
+      var lbl = document.getElementById('killSwitchLabel');
+      var feed = document.getElementById('masterTerminalFeed');
+      var now = new Date().toLocaleTimeString();
+
+      if (window.masterKillSwitchActive) {
+        killBtn.className = 'mtb-btn text-xs font-bold px-4 py-2.5 rounded-xl bg-rose-600 text-white border border-rose-400 animate-pulse flex items-center gap-2 transition';
+        if (lbl) lbl.textContent = 'KILL SWITCH GLOBAL: ACTIVADO ⛔';
+        if (feed) {
+          feed.innerHTML += '<div class="text-rose-400 font-bold">[' + now + '] [ALERT_KILL_SWITCH] GLOBAL EMERGENCY STOP BROADCASTED! All 142 remote slave bots locked from trading immediately.</div>';
+          feed.scrollTop = feed.scrollHeight;
+        }
+      } else {
+        killBtn.className = 'mtb-btn text-xs font-bold px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-rose-950/60 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/50 flex items-center gap-2 transition';
+        if (lbl) lbl.textContent = 'KILL SWITCH GLOBAL: INACTIVO';
+        if (feed) {
+          feed.innerHTML += '<div class="text-emerald-400">[' + now + '] [SYSTEM_RESUME] Kill Switch deactivated. Protection protocol resumed.</div>';
+          feed.scrollTop = feed.scrollHeight;
+        }
+      }
+    });
+  }
+
+  // Broadcast Signal Test
+  var testSignalBtn = document.getElementById('btnTestSignalBroadcast');
+  if (testSignalBtn) {
+    testSignalBtn.addEventListener('click', function() {
+      var feed = document.getElementById('masterTerminalFeed');
+      if (!feed) return;
+      var now = new Date().toLocaleTimeString();
+      feed.innerHTML += '<div class="text-amber-300 font-bold">[' + now + '] [SIGNAL_DISPATCH] Broadcast Token #SIGNAL-9912 -> XAUUSD BUY @ 2642.50 | SL: 2635.00 | TP: 2655.00</div>';
+      feed.innerHTML += '<div class="text-emerald-400">[' + now + '] [SIGNAL_FEEDBACK] 140/142 Remote Nodes acknowledged signal & executed in 18ms. 2 Nodes blocked.</div>';
+      feed.scrollTop = feed.scrollHeight;
+    });
+  }
+
+  // Modal handlers
+  var emitirBtn = document.getElementById('btnEmitirLicencia');
+  var modal = document.getElementById('modalLicenciaMaster');
+  var closeModal = document.getElementById('btnCloseModalLicencia');
+  var formLic = document.getElementById('formNuevaLicencia');
+
+  if (emitirBtn && modal) {
+    emitirBtn.addEventListener('click', function() { modal.classList.remove('hidden'); modal.classList.add('flex'); });
+  }
+  if (closeModal && modal) {
+    closeModal.addEventListener('click', function() { modal.classList.add('hidden'); modal.classList.remove('flex'); });
+  }
+  if (formLic) {
+    formLic.addEventListener('submit', function(e) {
+      e.preventDefault();
+      var cliente = document.getElementById('licCliente').value;
+      var cuenta = document.getElementById('licCuenta').value;
+      var tipo = document.getElementById('licTipo').value;
+      var bot = document.getElementById('licBot').value;
+      var tokenCode = 'MTB-SEC-' + Math.floor(1000 + Math.random() * 9000) + '-' + cuenta.slice(-4) + '-' + tipo.toUpperCase();
+
+      document.getElementById('generatedTokenCode').textContent = tokenCode;
+      document.getElementById('licenciaResultado').classList.remove('hidden');
+
+      // Append new node to array
+      window.renderMasterTraderNodesData.unshift({
+        id: 'CLI-' + Math.floor(1000 + Math.random() * 9000),
+        cliente: cliente,
+        broker: tipo === 'Real' ? 'Broker Real Cliente' : 'XM Demo',
+        cuenta: '#' + cuenta,
+        bot: bot,
+        ubicacion: 'Remoto (Cliente)',
+        tipo: tipo,
+        estado: 'protegido',
+        ping: '19 ms',
+        ultimo: 'Token Registrado (Listo)'
+      });
+
+      renderNodeTable('all');
+
+      var feed = document.getElementById('masterTerminalFeed');
+      if (feed) {
+        var now = new Date().toLocaleTimeString();
+        feed.innerHTML += '<div class="text-sky-300">[' + now + '] [TOKEN_GENERATED] New Token ' + tokenCode + ' issued for ' + cliente + ' (' + cuenta + ').</div>';
+        feed.scrollTop = feed.scrollHeight;
+      }
+    });
+  }
+}
+
+window.revocarNodoToken = function(id) {
+  var item = (window.renderMasterTraderNodesData || []).find(function(n) { return n.id === id; });
+  if (item) {
+    item.estado = 'bloqueado';
+    item.ultimo = '⛔ Token Revocado Manualmente';
+    renderNodeTable('all');
+    var feed = document.getElementById('masterTerminalFeed');
+    if (feed) {
+      var now = new Date().toLocaleTimeString();
+      feed.innerHTML += '<div class="text-rose-400">[' + now + '] [TOKEN_REVOKED] Token for node ' + id + ' (' + item.cliente + ') revoked. Remote bot locked.</div>';
+      feed.scrollTop = feed.scrollHeight;
+    }
+  }
+};
+
+window.desbloquearNodoToken = function(id) {
+  var item = (window.renderMasterTraderNodesData || []).find(function(n) { return n.id === id; });
+  if (item) {
+    item.estado = 'protegido';
+    item.ultimo = '🟢 Reautorizado por Master Trader';
+    renderNodeTable('all');
+    var feed = document.getElementById('masterTerminalFeed');
+    if (feed) {
+      var now = new Date().toLocaleTimeString();
+      feed.innerHTML += '<div class="text-emerald-400">[' + now + '] [TOKEN_REAUTHORIZED] Node ' + id + ' (' + item.cliente + ') reauthorized. Signal pipeline restored.</div>';
+      feed.scrollTop = feed.scrollHeight;
+    }
+  }
+};
+
+
 </script></body></html>
