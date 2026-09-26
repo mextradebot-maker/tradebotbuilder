@@ -3,7 +3,7 @@
 Estructura modular:
 - ciclo(): Lee cuentas_demo del Postgres e itera las 5 cuentas.
 - _evaluar_cuenta(): login_cuenta() -> revisa smc_snapshot -> decide.
-- _revisar_apertura(): Tendencia activa + sin posición -> calcular_lotes() + abrir_posicion() -> registra en posiciones_abiertas.
+- _revisar_apertura(): Tendencia activa + sin posición -> conectividad.riesgo.calcular_lotes() + abrir_posicion() -> registra en posiciones_abiertas.
 - _revisar_cierre(): Sincroniza posiciones de MT5 (auto-detecta trades del EA/manual) + Swing (CHoCH inverso -> cerrar_posicion()).
 - _log(): Cada decisión (abrir/cerrar/skip/error/alerta_capital) -> log_coordinador.
 """
@@ -32,8 +32,9 @@ from conectividad.xm import (
     cerrar_posicion as xm_cerrar_posicion,
     login_cuenta as xm_login_cuenta,
 )
-from coordinador.sizing import calcular_lotaje_swing, evaluar_capital_intraday
+from conectividad.riesgo import calcular_lotes, es_swing
 from persistencia.conexion import get_conn
+from persistencia.licencias import kill_switch_activo
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -199,57 +200,56 @@ def _revisar_apertura(conn, cuenta: Dict[str, Any], balance: float, mt5_posicion
     if not tick:
         return
 
-    if "Swing" in temp:
-        # Swing Trade: SIN SL en MT5 (Regla de Oro Opción A)
-        precio_entrada = tick.ask if tendencia == "compra" else tick.bid
-        lotes = calcular_lotaje_swing(simbolo, balance, precio_entrada, pct_riesgo=pct_riesgo)
+    precio_entrada = tick.ask if tendencia == "compra" else tick.bid
+    tipo_orden = mt5.ORDER_TYPE_BUY if tendencia == "compra" else mt5.ORDER_TYPE_SELL
+    dir_str = "BUY" if tendencia == "compra" else "SELL"
+    swing = es_swing(temp)
 
-        tipo_orden = mt5.ORDER_TYPE_BUY if tendencia == "compra" else mt5.ORDER_TYPE_SELL
-        dir_str = "BUY" if tendencia == "compra" else "SELL"
+    sl_precio = tp_precio = None
+    if not swing:
+        # Intraday / Scalping: SL a 1 ATR, TP a 2R. Sin ATR no hay SL confiable -> no se opera
+        # (antes caía a 0.0020 fijo, que en oro/índices daba lotes absurdamente grandes).
+        distancia = snapshot.get("atr") or 0.0
+        if distancia <= 0:
+            _log(conn, login, simbolo, temp, "SKIP_SIN_ATR", "ATR no disponible para colocar el SL")
+            return
+        signo = 1 if tendencia == "compra" else -1
+        sl_precio = precio_entrada - signo * distancia
+        tp_precio = precio_entrada + signo * distancia * 2.0
 
+    try:
+        lotaje = calcular_lotes(simbolo, balance, temp, precio_entrada, sl_precio=sl_precio, pct_riesgo=pct_riesgo)
+    except ValueError as e:
+        _log(conn, login, simbolo, temp, "SKIP_CONFIG_RIESGO", str(e))
+        return
+    if not lotaje.viable:
+        _log(conn, login, simbolo, temp, "ALERTA_CAPITAL_INSUFICIENTE", lotaje.motivo, None,
+             {"capital_minimo": lotaje.capital_minimo, "balance": balance})
+        logging.warning(f"[{login}] {lotaje.motivo}")
+        return
+    lotes = lotaje.lotes
+
+    if swing:
+        # Swing Trade: SIN SL en MT5 (Regla de Oro), salida por CHoCH inverso en _revisar_cierre
         logging.info(f"[{login}] Abriendo Swing {dir_str} en {simbolo} con {lotes} lotes (SIN SL en MT5)...")
         res = xm_abrir_posicion(simbolo, tipo_orden, lotes, sl_precio=None, tp_precio=None, comentario="MTB_Swing")
-        ticket_nuevo = res["order"]
-
-        conn.execute(
-            """INSERT INTO posiciones_abiertas
-               (ticket, login, simbolo, temporalidad, direccion, lotes, precio_entrada, tiene_sl, sl_precio, tendencia_apertura)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, false, null, %s)""",
-            (ticket_nuevo, login, simbolo, temp, dir_str, lotes, precio_entrada, tendencia),
-        )
-        _log(conn, login, simbolo, temp, "ABRIR_SWING", f"Entrada a favor de {tendencia}", lotes, {"ticket": ticket_nuevo})
-
+        accion, motivo, detalle = "ABRIR_SWING", f"Entrada a favor de {tendencia}", {}
     else:
-        # Intraday / Scalping: Con SL en la estructura y TP a 2R
-        precio_entrada = tick.ask if tendencia == "compra" else tick.bid
-        distancia = snapshot.get("atr", 0.0020) or 0.0020
-        sl_precio = precio_entrada - distancia if tendencia == "compra" else precio_entrada + distancia
-        tp_precio = precio_entrada + (distancia * 2.0) if tendencia == "compra" else precio_entrada - (distancia * 2.0)
-
-        lotes, es_viable, msg, cap_min = evaluar_capital_intraday(simbolo, balance, precio_entrada, sl_precio, pct_riesgo=pct_riesgo)
-
-        if not es_viable:
-            _log(conn, login, simbolo, temp, "ALERTA_CAPITAL_INSUFICIENTE", msg, lotes, {"capital_minimo": cap_min, "balance": balance})
-            logging.warning(f"[{login}] {msg}")
-            return
-
-        tipo_orden = mt5.ORDER_TYPE_BUY if tendencia == "compra" else mt5.ORDER_TYPE_SELL
-        dir_str = "BUY" if tendencia == "compra" else "SELL"
-
         logging.info(f"[{login}] Abriendo Intraday {dir_str} en {simbolo} {lotes} lotes | SL: {sl_precio:.5f} | TP: {tp_precio:.5f}")
         res = xm_abrir_posicion(simbolo, tipo_orden, lotes, sl_precio=sl_precio, tp_precio=tp_precio, comentario="MTB_Intraday")
-        ticket_nuevo = res["order"]
+        accion, motivo, detalle = "ABRIR_INTRADAY", f"Setup FVG a favor de {tendencia}", {"sl": sl_precio, "tp": tp_precio}
 
-        conn.execute(
-            """INSERT INTO posiciones_abiertas
-               (ticket, login, simbolo, temporalidad, direccion, lotes, precio_entrada, tiene_sl, sl_precio, tendencia_apertura)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, true, %s, %s)""",
-            (ticket_nuevo, login, simbolo, temp, dir_str, lotes, precio_entrada, sl_precio, tendencia),
-        )
-        _log(conn, login, simbolo, temp, "ABRIR_INTRADAY", f"Setup FVG a favor de {tendencia}", lotes, {"ticket": ticket_nuevo, "sl": sl_precio, "tp": tp_precio})
+    ticket_nuevo = res["order"]
+    conn.execute(
+        """INSERT INTO posiciones_abiertas
+           (ticket, login, simbolo, temporalidad, direccion, lotes, precio_entrada, tiene_sl, sl_precio, tendencia_apertura)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+        (ticket_nuevo, login, simbolo, temp, dir_str, lotes, precio_entrada, not swing, sl_precio, tendencia),
+    )
+    _log(conn, login, simbolo, temp, accion, motivo, lotes, {"ticket": ticket_nuevo, **detalle})
 
 
-def _evaluar_cuenta(conn, cuenta: Dict[str, Any]) -> None:
+def _evaluar_cuenta(conn, cuenta: Dict[str, Any], kill_switch: bool = False) -> None:
     """login_cuenta() -> revisa smc_snapshot -> decide (_revisar_cierre y _revisar_apertura)."""
     login = cuenta["login"]
     pw = cuenta.get("password")
@@ -269,8 +269,12 @@ def _evaluar_cuenta(conn, cuenta: Dict[str, Any]) -> None:
         # 1. Revisar cierres y auto-sincronizar posiciones MT5
         _revisar_cierre(conn, cuenta, mt5_pos, snapshot)
 
-        # 2. Revisar aperturas si no hay posición activa
-        _revisar_apertura(conn, cuenta, balance, mt5_pos, snapshot)
+        # 2. Revisar aperturas si no hay posición activa — el kill switch global solo
+        #    bloquea entradas nuevas; los cierres de arriba siguen (reducen riesgo).
+        if kill_switch:
+            _log(conn, login, simbolo, temp, "SKIP_KILL_SWITCH", "Kill switch global activo")
+        else:
+            _revisar_apertura(conn, cuenta, balance, mt5_pos, snapshot)
 
     except ConexionXMError as e:
         msg_err = f"Error en cuenta {login}@{server}: {e}"
@@ -288,8 +292,12 @@ def ciclo() -> None:
             cuentas = _cargar_cuentas_demo(conn)
             logging.info(f"Cuentas demo encontradas en BD: {len(cuentas)}")
 
+            kill = kill_switch_activo(conn)
+            if kill:
+                logging.warning("KILL SWITCH GLOBAL ACTIVO — solo cierres, sin aperturas nuevas")
+
             for c in cuentas:
-                _evaluar_cuenta(conn, c)
+                _evaluar_cuenta(conn, c, kill)
 
         logging.info("=== CICLO DEL COORDINADOR FINALIZADO CON ÉXITO ===")
     finally:

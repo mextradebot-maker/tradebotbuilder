@@ -2419,434 +2419,319 @@ window.cargarResumen = function(forzar){ return window.renderResumenDashboard(fo
 
 
 
-window.renderMasterTraderNodesData = [
-  { id: 'CLI-9042', cliente: 'Ricardo Peña', broker: 'XM Global Real', cuenta: '#318680674', bot: 'US30 Trend Rider EA', ubicacion: 'Remoto (Monterrey, MX)', tipo: 'Real', estado: 'protegido', ping: '14 ms', ultimo: 'BUY US30 @ 42,150 (OK)' },
-  { id: 'CLI-8812', cliente: 'Carlos Mendoza', broker: 'Exness Real', cuenta: '#55491203', bot: 'Gold Hunter Scalper v2', ubicacion: 'Remoto (CDMX, MX)', tipo: 'Real', estado: 'protegido', ping: '22 ms', ultimo: 'BUY XAUUSD @ 2,642.10 (OK)' },
-  { id: 'CLI-7741', cliente: 'Ana Lucía G.', broker: 'IC Markets Real', cuenta: '#8819201', bot: 'EURUSD Liquidity Hunter', ubicacion: 'Remoto (Madrid, ES)', tipo: 'Real', estado: 'protegido', ping: '38 ms', ultimo: 'SELL EURUSD @ 1.0845 (OK)' },
-  { id: 'CLI-3309', cliente: 'Cuenta Demo #1 (VPS)', broker: 'XM Demo', cuenta: '#318680674', bot: 'Catalog Multi-Bot EA', ubicacion: 'VPS Local (VPS-01)', tipo: 'Demo', estado: 'protegido', ping: '2 ms', ultimo: 'BUY XAUUSD @ 2,642.50 (OK)' },
-  { id: 'CLI-1102', cliente: 'Cuenta Demo #2 (VPS)', broker: 'XM Demo', cuenta: '#108460538', bot: 'Catalog Multi-Bot EA', ubicacion: 'VPS Local (VPS-01)', tipo: 'Demo', estado: 'protegido', ping: '2 ms', ultimo: 'BUY XAUUSD @ 2,642.50 (OK)' },
-  { id: 'CLI-1103', cliente: 'Cuenta Demo #3 (VPS)', broker: 'XM Demo', cuenta: '#336903105', bot: 'Catalog Multi-Bot EA', ubicacion: 'VPS Local (VPS-01)', tipo: 'Demo', estado: 'protegido', ping: '2 ms', ultimo: 'BUY XAUUSD @ 2,642.50 (OK)' },
-  { id: 'CLI-1104', cliente: 'Cuenta Demo #4 (VPS)', broker: 'XM Demo', cuenta: '#336903102', bot: 'Catalog Multi-Bot EA', ubicacion: 'VPS Local (VPS-01)', tipo: 'Demo', estado: 'protegido', ping: '2 ms', ultimo: 'BUY XAUUSD @ 2,642.50 (OK)' },
-  { id: 'CLI-1105', cliente: 'Cuenta Demo #5 (VPS)', broker: 'XM Demo', cuenta: '#318735437', bot: 'Catalog Multi-Bot EA', ubicacion: 'VPS Local (VPS-01)', tipo: 'Demo', estado: 'protegido', ping: '2 ms', ultimo: 'BUY XAUUSD @ 2,642.50 (OK)' },
-  { id: 'CLI-9941', cliente: 'Desconocido (Bypass Attempt)', broker: 'Desconocido (IP 45.12.xx)', cuenta: '#998124', bot: 'Modded EA v1', ubicacion: 'Remoto (Desconocido)', tipo: 'Blocked', estado: 'bloqueado', ping: '99 ms', ultimo: '⛔ Intento de Orden Rechazado (No Token)' },
-  { id: 'CLI-9942', cliente: 'Token Revocado #102', broker: 'RoboForex Real', cuenta: '#441920', bot: 'Old Strategy v1', ubicacion: 'Remoto (Bogotá, CO)', tipo: 'Blocked', estado: 'bloqueado', ping: '110 ms', ultimo: '⛔ Licencia Expirada (Acceso Denegado)' }
-];
+/* Cerebro Master Trader — panel de licencias conectado a /api/v1/licencias (api/licencias.py).
+   Toda accion exige la clave de administrador (MTB_ADMIN_KEY), guardada solo en esta pestana. */
+window.mtbMaster = { estado: null, filtro: 'all' };
 
-window.masterKillSwitchActive = false;
+function mtbEsc(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, function(c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function mtbAdminKey(nueva) {
+  try {
+    if (nueva !== undefined) { if (nueva) sessionStorage.setItem('mtbAdminKey', nueva); else sessionStorage.removeItem('mtbAdminKey'); }
+    return sessionStorage.getItem('mtbAdminKey') || '';
+  } catch (e) { if (nueva) window.__mtbAdminKey = nueva; return window.__mtbAdminKey || ''; }
+}
+function mtbApiLicencias(metodo, cuerpo) {
+  return fetch('/api/v1/licencias', {
+    method: metodo,
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': mtbAdminKey() },
+    body: cuerpo ? JSON.stringify(cuerpo) : undefined
+  }).then(function(r) {
+    return r.json().catch(function() { return {}; }).then(function(j) {
+      if (r.status === 401) { mtbAdminKey(''); }
+      if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+      return j;
+    });
+  });
+}
+function mtbFecha(v) {
+  if (!v) return '—';
+  var d = new Date(String(v).replace(' ', 'T'));
+  return isNaN(d) ? mtbEsc(v) : d.toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
+}
+function mtbEstadoLicencia(l) {
+  if (l.revocada_en) return 'revocada';
+  if (l.expira_en && new Date(String(l.expira_en).replace(' ', 'T')) <= new Date()) return 'expirada';
+  return 'activa';
+}
 
 window.renderMasterTraderPanel = function() {
   var container = document.getElementById('page-master');
   if (!container) return;
+  if (!mtbAdminKey()) { mtbRenderLogin(container); return; }
+  container.innerHTML = '<div class="text-slate-400 text-sm">Cargando licencias...</div>';
+  mtbApiLicencias('GET').then(function(estado) {
+    window.mtbMaster.estado = estado;
+    mtbRenderPanel(container);
+  }).catch(function(e) {
+    if (!mtbAdminKey()) { mtbRenderLogin(container, e.message); return; }
+    container.innerHTML = '<div class="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm">No se pudo cargar el Cerebro Master Trader: ' + mtbEsc(e.message) +
+      '</div><button type="button" class="mtb-btn mt-3 text-xs px-3 py-2 rounded-lg bg-slate-800 text-slate-200" onclick="renderMasterTraderPanel()">Reintentar</button>';
+  });
+};
+
+function mtbRenderLogin(container, error) {
+  container.innerHTML = [
+    '<div class="max-w-sm mx-auto mt-8 p-6 rounded-2xl bg-slate-900/90 border border-slate-800">',
+      '<span class="ag-eyebrow">ACCESO RESTRINGIDO</span>',
+      '<h3 class="text-lg font-extrabold text-white mt-1">Cerebro Master Trader</h3>',
+      '<p class="text-xs text-slate-400 mt-1 mb-4">Emitir, revocar licencias y el kill switch requieren la clave de administrador.</p>',
+      '<form id="mtbKeyForm" class="space-y-3">',
+        '<input id="mtbKeyInput" type="password" required autocomplete="off" placeholder="Clave de administrador" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-sm focus:outline-none focus:border-sky-500">',
+        error ? '<p class="text-xs text-rose-400">' + mtbEsc(error) + '</p>' : '',
+        '<button type="submit" class="mtb-btn w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs">Entrar</button>',
+      '</form>',
+    '</div>'
+  ].join('');
+  document.getElementById('mtbKeyForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    mtbAdminKey(document.getElementById('mtbKeyInput').value.trim());
+    window.renderMasterTraderPanel();
+  });
+}
+
+function mtbRenderPanel(container) {
+  var est = window.mtbMaster.estado;
+  var lics = est.licencias || [];
+  var ks = est.kill_switch || { activo: false };
+  var cuenta = function(f) { return lics.filter(f).length; };
+  var activas = cuenta(function(l) { return mtbEstadoLicencia(l) === 'activa'; });
+  var bloqueadas = lics.length - activas;
+  var hace24 = Date.now() - 864e5;
+  var conectadas = cuenta(function(l) { return l.ultimo_contacto && new Date(String(l.ultimo_contacto).replace(' ', 'T')).getTime() > hace24; });
+  var rechazos = (est.eventos || []).filter(function(e) { return e.resultado === 'rechazado'; }).length;
+
+  var tarjeta = function(titulo, valor, pie, color) {
+    return '<div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800/80 shadow-md">' +
+      '<div class="text-slate-400 text-xs mb-2">' + titulo + '</div>' +
+      '<div class="text-xl font-extrabold ' + (color || 'text-white') + '">' + valor + '</div>' +
+      '<p class="text-[11px] text-slate-400 mt-1">' + pie + '</p></div>';
+  };
 
   container.innerHTML = [
     '<div class="mb-6 flex flex-wrap items-center justify-between gap-4">',
       '<div>',
         '<div class="flex items-center gap-2 mb-1">',
           '<span class="ag-eyebrow">ORQUESTACIÓN & PROTECCIÓN CENTRAL</span>',
-          '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">MASTER TRADER BRAIN</span>',
+          '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">CEREBRO DE LICENCIAS</span>',
         '</div>',
-        '<h2 class="ag-title text-2xl font-black text-white flex items-center gap-2">',
-          '<span>⚡ Cerebro Master Trader</span>',
-          '<span class="text-xs px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30 font-mono">v3.8 Multi-Node Shield</span>',
-        '</h2>',
-        '<p class="ag-muted text-xs text-slate-400 max-w-2xl mt-1">',
-          'Control maestro centralizado de todos los bots emitidos en cuentas de clientes. Los bots remotos requieren token HTTPS y autorización en vivo para ejecutar trades.',
-        '</p>',
+        '<h2 class="ag-title text-2xl font-black text-white">Cerebro Master Trader</h2>',
+        '<p class="ag-muted text-xs text-slate-400 max-w-2xl mt-1">1 token = 1 cuenta MT5. Sin licencia válida el bot no recibe señales ni autorización para operar, y los lotes los calcula el servidor con la regla única de riesgo.</p>',
       '</div>',
-
       '<div class="flex items-center gap-3">',
-        '<button id="btnEmitirLicencia" type="button" class="mtb-btn text-xs font-bold px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white shadow-lg shadow-sky-600/20 flex items-center gap-2 transition">',
-          '<span>🔑 Emitir Nuevo Token de Bot</span>',
+        '<button id="btnEmitirLicencia" type="button" class="mtb-btn text-xs font-bold px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white shadow-lg shadow-sky-600/20 transition">Emitir nuevo token</button>',
+        '<button id="btnKillSwitch" type="button" class="mtb-btn text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-2 transition ' +
+          (ks.activo ? 'bg-rose-600 text-white border border-rose-400' : 'bg-slate-800 hover:bg-rose-950/60 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/50') + '">',
+          '<span class="w-2.5 h-2.5 rounded-full ' + (ks.activo ? 'bg-white' : 'bg-emerald-500') + '"></span>',
+          '<span>' + (ks.activo ? 'KILL SWITCH GLOBAL: ACTIVADO' : 'KILL SWITCH GLOBAL: INACTIVO') + '</span>',
         '</button>',
-        '<button id="btnKillSwitch" type="button" class="mtb-btn text-xs font-bold px-4 py-2.5 rounded-xl ' + (window.masterKillSwitchActive ? 'bg-rose-600 text-white border border-rose-400 animate-pulse' : 'bg-slate-800 hover:bg-rose-950/60 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/50') + ' flex items-center gap-2 transition">',
-          '<span class="w-2.5 h-2.5 rounded-full ' + (window.masterKillSwitchActive ? 'bg-white' : 'bg-emerald-500 animate-pulse') + '"></span>',
-          '<span id="killSwitchLabel">' + (window.masterKillSwitchActive ? 'KILL SWITCH GLOBAL: ACTIVADO ⛔' : 'KILL SWITCH GLOBAL: INACTIVO') + '</span>',
-        '</button>',
+        '<button id="btnSalirMaster" type="button" class="mtb-btn text-[11px] text-slate-400 underline">Salir</button>',
       '</div>',
     '</div>',
 
-    '<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">',
-      '<div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800/80 shadow-md">',
-        '<div class="flex items-center justify-between text-slate-400 text-xs mb-2">',
-          '<span>Estado del Cerebro VPS</span>',
-          '<span class="w-2 h-2 rounded-full bg-emerald-500"></span>',
-        '</div>',
-        '<div class="text-xl font-extrabold text-white flex items-baseline gap-1.5">',
-          '<span>ACTIVO</span>',
-          '<span class="text-xs text-emerald-400 font-normal">99.98% Uptime</span>',
-        '</div>',
-        '<p class="text-[11px] text-slate-400 mt-1">VPS Server IP: 147.93.xx.xx (Frankfurt)</p>',
-      '</div>',
+    ks.activo ? '<div class="mb-6 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/40 text-rose-200 text-xs"><strong>Kill switch activo</strong> desde ' + mtbFecha(ks.cambiado_en) +
+      (ks.motivo ? ' — ' + mtbEsc(ks.motivo) : '') + '. Ningún bot recibe autorización para abrir operaciones; el coordinador del VPS solo gestiona cierres.</div>' : '',
 
-      '<div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800/80 shadow-md">',
-        '<div class="flex items-center justify-between text-slate-400 text-xs mb-2">',
-          '<span>Bots / Nodos Remotos</span>',
-          '<span class="text-sky-400 font-mono text-[10px]">98% Fuera de VPS</span>',
-        '</div>',
-        '<div class="text-xl font-extrabold text-white flex items-baseline gap-1.5">',
-          '<span id="totalNodosCount">142</span>',
-          '<span class="text-xs text-slate-400 font-normal">nodos activos</span>',
-        '</div>',
-        '<p class="text-[11px] text-emerald-400 mt-1">48 Reales · 94 Demos Conectadas</p>',
-      '</div>',
-
-      '<div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800/80 shadow-md">',
-        '<div class="flex items-center justify-between text-slate-400 text-xs mb-2">',
-          '<span>Protocolo de Protección</span>',
-          '<span class="text-emerald-400 font-mono text-[10px]">ESTRICTO</span>',
-        '</div>',
-        '<div class="text-xl font-extrabold text-emerald-400 flex items-baseline gap-1.5">',
-          '<span>100% PROTEGIDO</span>',
-        '</div>',
-        '<p class="text-[11px] text-slate-400 mt-1">Sin token no hay ejecución local</p>',
-      '</div>',
-
-      '<div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800/80 shadow-md">',
-        '<div class="flex items-center justify-between text-slate-400 text-xs mb-2">',
-          '<span>Latencia de Señal</span>',
-          '<span class="text-emerald-400 font-mono text-[10px]">⚡ ULTRA FAST</span>',
-        '</div>',
-        '<div class="text-xl font-extrabold text-white flex items-baseline gap-1.5">',
-          '<span>18 ms</span>',
-          '<span class="text-xs text-emerald-400 font-normal">promedio global</span>',
-        '</div>',
-        '<p class="text-[11px] text-slate-400 mt-1">Sockets & REST Async Pipeline</p>',
-      '</div>',
-    '</div>',
-
-    '<div class="p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-sky-950/40 to-slate-900 border border-sky-900/40 mb-6 relative overflow-hidden">',
-      '<div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">',
-        '<div class="space-y-1">',
-          '<div class="flex items-center gap-2">',
-            '<span class="text-amber-400 font-bold text-sm">🛡️ Escudo Anticopia y Control Remoto Restringido</span>',
-            '<span class="px-2 py-0.5 rounded text-[10px] bg-sky-500/20 text-sky-300 font-mono">WebRequest Auth Lock</span>',
-          '</div>',
-          '<p class="text-xs text-slate-300 max-w-3xl leading-relaxed">',
-            'Ningún robot en la cuenta de un cliente puede ejecutar una operación de forma aislada. Antes de colocar cualquier orden (COMPRA/VENTA/Cierre), el robot consulta a nuestro VPS central enviando su <strong>License Token & Signature</strong>. Si la consulta es rechazada o el Master Trader no ha emitido una señal válida, la ejecución se cancela automáticamente en el terminal cliente.',
-          '</p>',
-        '</div>',
-        '<button id="btnTestSignalBroadcast" type="button" class="mtb-btn shrink-0 text-xs font-bold px-4 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition">',
-          '📡 Probar Emisión de Señal a 142 Nodos',
-        '</button>',
-      '</div>',
+    '<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">',
+      tarjeta('Licencias emitidas', lics.length, cuenta(function(l) { return l.tipo === 'real'; }) + ' reales · ' + cuenta(function(l) { return l.tipo === 'demo'; }) + ' demo · ' + cuenta(function(l) { return l.tipo === 'vip'; }) + ' VIP'),
+      tarjeta('Activas', activas, bloqueadas + ' revocadas o expiradas', 'text-emerald-400'),
+      tarjeta('Bots conectados (24 h)', conectadas, 'con contacto al cerebro en el último día'),
+      tarjeta('Rechazos recientes', rechazos, 'en los últimos ' + (est.eventos || []).length + ' eventos', rechazos ? 'text-rose-400' : 'text-white'),
     '</div>',
 
     '<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">',
-      '<div class="lg:col-span-2 space-y-4">',
-        '<div class="p-5 rounded-2xl bg-slate-900/90 border border-slate-800/80">',
-          '<div class="flex flex-wrap items-center justify-between gap-3 mb-4">',
-            '<div>',
-              '<h3 class="text-sm font-bold text-white flex items-center gap-2">',
-                '<span>🤖 Nodos de Bots Remotos Instalados</span>',
-                '<span class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">142 Activos</span>',
-              '</h3>',
-              '<p class="text-xs text-slate-400">Inventario en tiempo real de robots autenticados en brokers de clientes</p>',
-            '</div>',
-            '<div class="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs" id="nodeFilterContainer">',
-              '<button data-node-filter="all" class="node-filter-btn px-3 py-1 rounded-lg bg-sky-600 text-white font-bold transition">Todos (142)</button>',
-              '<button data-node-filter="real" class="node-filter-btn px-3 py-1 rounded-lg text-slate-400 hover:text-white transition">Reales (48)</button>',
-              '<button data-node-filter="demo" class="node-filter-btn px-3 py-1 rounded-lg text-slate-400 hover:text-white transition">Demos (94)</button>',
-              '<button data-node-filter="blocked" class="node-filter-btn px-3 py-1 rounded-lg text-slate-400 hover:text-rose-400 transition">Bloqueados (2)</button>',
-            '</div>',
+      '<div class="lg:col-span-2 p-5 rounded-2xl bg-slate-900/90 border border-slate-800/80">',
+        '<div class="flex flex-wrap items-center justify-between gap-3 mb-4">',
+          '<h3 class="text-sm font-bold text-white">Nodos de bots con licencia</h3>',
+          '<div class="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">',
+            ['all:Todos', 'real:Reales', 'demo:Demo', 'vip:VIP', 'bloqueadas:Bloqueadas'].map(function(par) {
+              var k = par.split(':');
+              return '<button type="button" data-node-filter="' + k[0] + '" class="node-filter-btn px-3 py-1 rounded-lg transition ' +
+                (window.mtbMaster.filtro === k[0] ? 'bg-sky-600 text-white font-bold' : 'text-slate-400 hover:text-white') + '">' + k[1] + '</button>';
+            }).join(''),
           '</div>',
-
-          '<div class="overflow-x-auto rounded-xl border border-slate-800">',
-            '<table class="w-full text-left text-xs text-slate-300">',
-              '<thead class="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800 uppercase text-[10px]">',
-                '<tr>',
-                  '<th class="p-3">Nodo / Cliente</th>',
-                  '<th class="p-3">Broker & Cuenta</th>',
-                  '<th class="p-3">Bot Asignado</th>',
-                  '<th class="p-3">Estado Protección</th>',
-                  '<th class="p-3">Ping</th>',
-                  '<th class="p-3 text-right">Acción</th>',
-                '</tr>',
-              '</thead>',
-              '<tbody id="nodeTableBody" class="divide-y divide-slate-800/60 bg-slate-900/50">',
-              '</tbody>',
-            '</table>',
-          '</div>',
+        '</div>',
+        '<div class="overflow-x-auto rounded-xl border border-slate-800">',
+          '<table class="w-full text-left text-xs text-slate-300">',
+            '<thead class="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800 uppercase text-[10px]"><tr>',
+              '<th class="p-3">Cliente / Token</th><th class="p-3">Cuenta</th><th class="p-3">Robot</th><th class="p-3">Estado</th><th class="p-3">Último contacto</th><th class="p-3 text-right">Acción</th>',
+            '</tr></thead>',
+            '<tbody id="nodeTableBody" class="divide-y divide-slate-800/60 bg-slate-900/50"></tbody>',
+          '</table>',
         '</div>',
       '</div>',
 
-      '<div class="space-y-4">',
-        '<div class="p-5 rounded-2xl bg-slate-900/90 border border-slate-800/80 h-full flex flex-col">',
-          '<div class="flex items-center justify-between mb-3">',
-            '<h3 class="text-sm font-bold text-white flex items-center gap-2">',
-              '<span>📟 Handshake & Signal Feed</span>',
-              '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>',
-            '</div>',
-            '<span class="text-[10px] font-mono text-slate-400">REST WSS Stream</span>',
-          '</div>',
-          '<p class="text-xs text-slate-400 mb-3">Auditoría en tiempo real de consultas y señales enviadas desde el VPS.</p>',
-
-          '<div id="masterTerminalFeed" class="flex-1 min-h-[380px] max-h-[500px] p-3 rounded-xl bg-slate-950 font-mono text-[11px] text-emerald-400/90 overflow-y-auto space-y-2 border border-slate-800/90 shadow-inner">',
-          '</div>',
-        '</div>',
+      '<div class="p-5 rounded-2xl bg-slate-900/90 border border-slate-800/80 flex flex-col">',
+        '<h3 class="text-sm font-bold text-white mb-1">Auditoría del cerebro</h3>',
+        '<p class="text-xs text-slate-400 mb-3">Rechazos de bots y acciones de administración, más recientes primero.</p>',
+        '<div id="masterTerminalFeed" class="flex-1 min-h-[300px] max-h-[500px] p-3 rounded-xl bg-slate-950 font-mono text-[11px] overflow-y-auto space-y-2 border border-slate-800/90"></div>',
       '</div>',
     '</div>',
 
     '<div id="modalLicenciaMaster" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm hidden items-center justify-center z-50 p-4">',
       '<div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">',
-        '<button id="btnCloseModalLicencia" type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white text-lg font-bold">✕</button>',
-        '<div class="mb-4">',
-          '<span class="ag-eyebrow">CREAR AUTENTICACIÓN</span>',
-          '<h3 class="text-lg font-extrabold text-white">Emitir Token de Protección de Bot</h3>',
-          '<p class="text-xs text-slate-400 mt-1">Genera la clave de autorización para instalar un bot en el MetaTrader de un cliente.</p>',
-        '</div>',
-
+        '<button id="btnCloseModalLicencia" type="button" aria-label="Cerrar" class="absolute top-4 right-4 text-slate-400 hover:text-white text-lg font-bold">✕</button>',
+        '<span class="ag-eyebrow">EMITIR LICENCIA</span>',
+        '<h3 class="text-lg font-extrabold text-white">Token de bot</h3>',
+        '<p class="text-xs text-slate-400 mt-1 mb-4">El token queda amarrado a esta cuenta MT5 y se muestra una sola vez.</p>',
         '<form id="formNuevaLicencia" class="space-y-4 text-xs">',
-          '<div>',
-            '<label class="block text-slate-300 font-medium mb-1">Nombre del Cliente / Referencia</label>',
-            '<input type="text" id="licCliente" required placeholder="Ej. Juan Pérez - Cuenta VIP" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-sky-500">',
-          '</div>',
-
+          '<div><label class="block text-slate-300 font-medium mb-1" for="licCliente">Cliente / referencia</label>',
+            '<input type="text" id="licCliente" required placeholder="Ej. Juan Pérez - VIP" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-sky-500"></div>',
           '<div class="grid grid-cols-2 gap-3">',
-            '<div>',
-              '<label class="block text-slate-300 font-medium mb-1">Número de Cuenta MT4/MT5</label>',
-              '<input type="text" id="licCuenta" required placeholder="Ej. 318680674" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-sky-500">',
-            '</div>',
-            '<div>',
-              '<label class="block text-slate-300 font-medium mb-1">Tipo de Cuenta</label>',
-              '<select id="licTipo" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-sky-500">',
-                '<option value="Real">Cuenta Real</option>',
-                '<option value="Demo">Cuenta Demo</option>',
-              '</select>',
-            '</div>',
+            '<div><label class="block text-slate-300 font-medium mb-1" for="licCuenta">Número de cuenta MT5</label>',
+              '<input type="text" inputmode="numeric" pattern="[0-9]+" id="licCuenta" required placeholder="318680674" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-sky-500"></div>',
+            '<div><label class="block text-slate-300 font-medium mb-1" for="licTipo">Tipo de licencia</label>',
+              '<select id="licTipo" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200">',
+                '<option value="demo">DEMO — solo cuentas demo</option><option value="real">REAL PRO — solo cuenta real</option><option value="vip">VIP — cualquier robot</option>',
+              '</select></div>',
           '</div>',
-
           '<div class="grid grid-cols-2 gap-3">',
-            '<div>',
-              '<label class="block text-slate-300 font-medium mb-1">Robot / Estrategia</label>',
-              '<select id="licBot" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-sky-500">',
-                '<option value="Catalog Multi-Bot EA">Catalog Multi-Bot EA (Master)</option>',
-                '<option value="Gold Hunter Scalper v2">Gold Hunter Scalper v2</option>',
-                '<option value="US30 Trend Rider EA">US30 Trend Rider EA</option>',
-                '<option value="EURUSD Liquidity Hunter">EURUSD Liquidity Hunter</option>',
-              '</select>',
-            '</div>',
-            '<div>',
-              '<label class="block text-slate-300 font-medium mb-1">Vencimiento Token</label>',
-              '<select id="licVenc" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-sky-500">',
-                '<option value="30 Días">30 Días</option>',
-                '<option value="90 Días">90 Días</option>',
-                '<option value="1 Año">1 Año (Licencia Completa)</option>',
-                '<option value="Ilimitada">Ilimitada (Suscripción Activa)</option>',
-              '</select>',
-            '</div>',
+            '<div><label class="block text-slate-300 font-medium mb-1" for="licBot">Robot</label>',
+              '<select id="licBot" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200">',
+                '<option value="seguidor-smc">Seguidor SMC (MexTradeBot_SeguidorSMC)</option>',
+              '</select></div>',
+            '<div><label class="block text-slate-300 font-medium mb-1" for="licVenc">Vigencia</label>',
+              '<select id="licVenc" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200">',
+                '<option value="30">30 días</option><option value="90">90 días</option><option value="365">1 año</option><option value="">Ilimitada</option>',
+              '</select></div>',
           '</div>',
-
-          '<button type="submit" class="w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs shadow-lg shadow-sky-600/20 transition">',
-            '🔑 Generar Token & Script de Inicialización',
-          '</button>',
+          '<p id="licError" class="text-rose-400 hidden"></p>',
+          '<button type="submit" id="licSubmit" class="mtb-btn w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs">Generar token</button>',
         '</form>',
-
-        '<div id="licenciaResultado" class="mt-4 hidden p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs">',
-          '<p class="text-emerald-400 font-bold mb-1">✅ Token Generado con Éxito:</p>',
-          '<div class="p-2 rounded bg-slate-900 font-mono text-[11px] text-sky-300 select-all mb-2 break-all" id="generatedTokenCode">',
-            'MTB-SEC-9042-881A-XMREAL',
-          '</div>',
-          '<p class="text-[11px] text-slate-400">Pegar este identificador en los parámetros de entrada del Expert Advisor MQL5.</p>',
+        '<div id="licenciaResultado" class="mt-4 hidden p-3 rounded-xl bg-slate-950 border border-emerald-500/30 text-xs">',
+          '<p class="text-emerald-400 font-bold mb-1">Token generado. Cópialo ahora: no se puede volver a mostrar.</p>',
+          '<div class="flex gap-2 items-center"><code id="generatedTokenCode" class="flex-1 p-2 rounded bg-slate-900 font-mono text-[12px] text-sky-300 select-all break-all"></code>',
+          '<button type="button" id="btnCopiarToken" class="mtb-btn px-3 py-2 rounded-lg bg-slate-800 text-slate-200 text-[11px]">Copiar</button></div>',
+          '<p class="text-[11px] text-slate-400 mt-2">El cliente lo pega en el parámetro <span class="font-mono">MTB_LICENSE_TOKEN</span> del robot en MetaTrader 5.</p>',
         '</div>',
       '</div>',
     '</div>'
   ].join('');
 
-  renderNodeTable('all');
-  initMasterTerminalLogs();
-  bindMasterEvents();
-};
+  mtbRenderTabla();
+  mtbRenderFeed();
+  mtbBindEventos();
+}
 
-function renderNodeTable(filter) {
+function mtbRenderTabla() {
   var tbody = document.getElementById('nodeTableBody');
   if (!tbody) return;
-
-  var nodes = window.renderMasterTraderNodesData || [];
-  var filtered = nodes.filter(function(n) {
-    if (filter === 'real') return n.tipo === 'Real';
-    if (filter === 'demo') return n.tipo === 'Demo';
-    if (filter === 'blocked') return n.estado === 'bloqueado';
-    return true;
+  var f = window.mtbMaster.filtro;
+  var lics = (window.mtbMaster.estado.licencias || []).filter(function(l) {
+    if (f === 'bloqueadas') return mtbEstadoLicencia(l) !== 'activa';
+    return f === 'all' || l.tipo === f;
   });
-
-  if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">No hay nodos que coincidan con el filtro.</td></tr>';
+  if (!lics.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">' +
+      (f === 'all' ? 'Aún no hay licencias emitidas. Usa “Emitir nuevo token”.' : 'Ninguna licencia coincide con el filtro.') + '</td></tr>';
     return;
   }
-
-  tbody.innerHTML = filtered.map(function(n) {
-    var badgeHtml = n.estado === 'protegido' 
-      ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">🟢 Protegido & Auth OK</span>'
-      : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">🔴 ACCESO BLOQUEADO</span>';
-
-    return [
-      '<tr class="hover:bg-slate-800/40 transition border-b border-slate-800/40">',
-        '<td class="p-3">',
-          '<div class="font-bold text-white text-xs">' + n.cliente + '</div>',
-          '<div class="text-[11px] text-slate-400 font-mono">' + n.id + ' · ' + n.ubicacion + '</div>',
-        '</td>',
-        '<td class="p-3">',
-          '<div class="text-xs text-slate-200 font-medium">' + n.broker + '</div>',
-          '<div class="text-[11px] text-slate-400 font-mono">' + n.cuenta + '</div>',
-        '</td>',
-        '<td class="p-3 text-xs text-slate-300 font-mono">' + n.bot + '</td>',
-        '<td class="p-3">' + badgeHtml + '</td>',
-        '<td class="p-3 text-xs font-mono text-slate-400">' + n.ping + '</td>',
-        '<td class="p-3 text-right">',
-          n.estado === 'protegido'
-            ? '<button type="button" class="mtb-btn text-[11px] bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-500/40 px-2.5 py-1 rounded-lg transition" onclick="revocarNodoToken(\'" + n.id + "\')">Revocar Token</button>'
-            : '<button type="button" class="mtb-btn text-[11px] bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/40 px-2.5 py-1 rounded-lg transition" onclick="desbloquearNodoToken(\'" + n.id + "\')">Reautorizar</button>',
-        '</td>',
-      '</tr>'
-    ].join('');
+  tbody.innerHTML = lics.map(function(l) {
+    var est = mtbEstadoLicencia(l);
+    var badge = est === 'activa'
+      ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Activa</span>'
+      : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">' + (est === 'revocada' ? 'Revocada' : 'Expirada') + '</span>';
+    var ultimo = l.ultimo_resultado && l.ultimo_resultado !== 'ok'
+      ? '<div class="text-[10px] text-rose-400">' + mtbEsc(l.ultimo_resultado) + '</div>' : '';
+    var accion = est === 'activa'
+      ? '<button type="button" class="mtb-btn text-[11px] bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-slate-700 px-2.5 py-1 rounded-lg" data-revocar="' + l.id + '">Revocar</button>'
+      : '<button type="button" class="mtb-btn text-[11px] bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/40 px-2.5 py-1 rounded-lg" data-reautorizar="' + l.id + '" data-expirada="' + (est === 'expirada') + '">' + (est === 'expirada' ? 'Renovar' : 'Reautorizar') + '</button>';
+    return '<tr class="hover:bg-slate-800/40">' +
+      '<td class="p-3"><div class="font-bold text-white">' + mtbEsc(l.cliente) + '</div><div class="text-[11px] text-slate-400 font-mono">' + mtbEsc(l.token_prefijo) + '…</div></td>' +
+      '<td class="p-3"><div class="font-mono">' + mtbEsc(l.cuenta) + '</div><div class="text-[11px] text-slate-400 uppercase">' + mtbEsc(l.tipo) + '</div></td>' +
+      '<td class="p-3 font-mono">' + (l.robot === '*' ? 'Todos (VIP)' : mtbEsc(l.robot)) + '</td>' +
+      '<td class="p-3">' + badge + '<div class="text-[10px] text-slate-500 mt-1">vence ' + (l.expira_en ? mtbFecha(l.expira_en) : 'nunca') + '</div></td>' +
+      '<td class="p-3 font-mono text-slate-400">' + mtbFecha(l.ultimo_contacto) + ultimo + '</td>' +
+      '<td class="p-3 text-right">' + accion + '</td></tr>';
   }).join('');
 }
 
-function initMasterTerminalLogs() {
+function mtbRenderFeed() {
   var feed = document.getElementById('masterTerminalFeed');
   if (!feed) return;
-  var now = new Date().toLocaleTimeString();
-  feed.innerHTML = [
-    '<div class="text-sky-400">[' + now + '] [SYSTEM_INIT] Master Brain Node initialized on VPS (Frankfurt-01).</div>',
-    '<div class="text-emerald-400">[' + now + '] [PROTECTION_LOCK] 142 remote client nodes actively authorized via HTTPS Token.</div>',
-    '<div class="text-slate-400">[' + now + '] [HANDSHAKE_OK] Node CLI-9042 validated -> XM Real #318680674.</div>',
-    '<div class="text-slate-400">[' + now + '] [HANDSHAKE_OK] Node CLI-8812 validated -> Exness Real #55491203.</div>',
-    '<div class="text-rose-400">[' + now + '] [UNAUTHORIZED_ATTEMPT] Node CLI-9941 rejected: Missing signal auth token from VPS. Execution prevented.</div>'
-  ].join('');
+  var ev = window.mtbMaster.estado.eventos || [];
+  feed.innerHTML = ev.length ? ev.map(function(e) {
+    var color = e.resultado === 'rechazado' ? 'text-rose-400' : 'text-sky-300';
+    return '<div class="' + color + '">[' + mtbFecha(e.registrado_en) + '] ' + mtbEsc(e.resultado.toUpperCase()) + ' · ' + mtbEsc(e.motivo) +
+      (e.cliente ? ' · ' + mtbEsc(e.cliente) : '') + (e.cuenta ? ' · #' + mtbEsc(e.cuenta) : '') + (e.ip ? ' · ' + mtbEsc(e.ip) : '') + '</div>';
+  }).join('') : '<div class="text-slate-500">Sin eventos todavía.</div>';
 }
 
-function bindMasterEvents() {
-  // Filter buttons
-  var filterBtns = document.querySelectorAll('.node-filter-btn');
-  filterBtns.forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      filterBtns.forEach(function(b) {
-        b.className = 'node-filter-btn px-3 py-1 rounded-lg text-slate-400 hover:text-white transition';
-      });
-      btn.className = 'node-filter-btn px-3 py-1 rounded-lg bg-sky-600 text-white font-bold transition';
-      renderNodeTable(btn.dataset.nodeFilter);
-    });
+function mtbAccion(cuerpo) {
+  return mtbApiLicencias('POST', cuerpo).then(function() { window.renderMasterTraderPanel(); })
+    .catch(function(e) { alert('No se pudo completar: ' + e.message); });
+}
+
+function mtbBindEventos() {
+  document.querySelectorAll('.node-filter-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() { window.mtbMaster.filtro = btn.dataset.nodeFilter; mtbRenderPanel(document.getElementById('page-master')); });
+  });
+  document.getElementById('nodeTableBody').addEventListener('click', function(e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.revocar && confirm('¿Revocar esta licencia? El bot quedará en STANDBY LOCK en su siguiente consulta y cancelará sus órdenes pendientes.')) {
+      mtbAccion({ accion: 'revocar', id: Number(b.dataset.revocar) });
+    }
+    if (b.dataset.reautorizar) {
+      var dias = null;
+      if (b.dataset.expirada === 'true') {
+        dias = prompt('La licencia expiró. ¿Cuántos días de vigencia nueva? (30, 90, 365)', '30');
+        if (dias === null) return;
+        dias = parseInt(dias, 10);
+        if (!(dias > 0)) { alert('Número de días inválido'); return; }
+      }
+      mtbAccion({ accion: 'reautorizar', id: Number(b.dataset.reautorizar), vigencia_dias: dias });
+    }
   });
 
-  // Kill Switch
-  var killBtn = document.getElementById('btnKillSwitch');
-  if (killBtn) {
-    killBtn.addEventListener('click', function() {
-      window.masterKillSwitchActive = !window.masterKillSwitchActive;
-      var lbl = document.getElementById('killSwitchLabel');
-      var feed = document.getElementById('masterTerminalFeed');
-      var now = new Date().toLocaleTimeString();
+  var ks = (window.mtbMaster.estado.kill_switch || {}).activo;
+  document.getElementById('btnKillSwitch').addEventListener('click', function() {
+    if (ks) {
+      if (confirm('¿Desactivar el kill switch y reanudar la autorización de operaciones?')) mtbAccion({ accion: 'kill_switch', activo: false });
+    } else {
+      var motivo = prompt('KILL SWITCH GLOBAL: bloquea la apertura de operaciones en TODOS los bots y en el coordinador del VPS.\nEscribe el motivo para confirmar:');
+      if (motivo && motivo.trim()) mtbAccion({ accion: 'kill_switch', activo: true, motivo: motivo.trim() });
+    }
+  });
+  document.getElementById('btnSalirMaster').addEventListener('click', function() { mtbAdminKey(''); window.renderMasterTraderPanel(); });
 
-      if (window.masterKillSwitchActive) {
-        killBtn.className = 'mtb-btn text-xs font-bold px-4 py-2.5 rounded-xl bg-rose-600 text-white border border-rose-400 animate-pulse flex items-center gap-2 transition';
-        if (lbl) lbl.textContent = 'KILL SWITCH GLOBAL: ACTIVADO ⛔';
-        if (feed) {
-          feed.innerHTML += '<div class="text-rose-400 font-bold">[' + now + '] [ALERT_KILL_SWITCH] GLOBAL EMERGENCY STOP BROADCASTED! All 142 remote slave bots locked from trading immediately.</div>';
-          feed.scrollTop = feed.scrollHeight;
-        }
-      } else {
-        killBtn.className = 'mtb-btn text-xs font-bold px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-rose-950/60 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/50 flex items-center gap-2 transition';
-        if (lbl) lbl.textContent = 'KILL SWITCH GLOBAL: INACTIVO';
-        if (feed) {
-          feed.innerHTML += '<div class="text-emerald-400">[' + now + '] [SYSTEM_RESUME] Kill Switch deactivated. Protection protocol resumed.</div>';
-          feed.scrollTop = feed.scrollHeight;
-        }
-      }
-    });
-  }
-
-  // Broadcast Signal Test
-  var testSignalBtn = document.getElementById('btnTestSignalBroadcast');
-  if (testSignalBtn) {
-    testSignalBtn.addEventListener('click', function() {
-      var feed = document.getElementById('masterTerminalFeed');
-      if (!feed) return;
-      var now = new Date().toLocaleTimeString();
-      feed.innerHTML += '<div class="text-amber-300 font-bold">[' + now + '] [SIGNAL_DISPATCH] Broadcast Token #SIGNAL-9912 -> XAUUSD BUY @ 2642.50 | SL: 2635.00 | TP: 2655.00</div>';
-      feed.innerHTML += '<div class="text-emerald-400">[' + now + '] [SIGNAL_FEEDBACK] 140/142 Remote Nodes acknowledged signal & executed in 18ms. 2 Nodes blocked.</div>';
-      feed.scrollTop = feed.scrollHeight;
-    });
-  }
-
-  // Modal handlers
-  var emitirBtn = document.getElementById('btnEmitirLicencia');
   var modal = document.getElementById('modalLicenciaMaster');
-  var closeModal = document.getElementById('btnCloseModalLicencia');
-  var formLic = document.getElementById('formNuevaLicencia');
-
-  if (emitirBtn && modal) {
-    emitirBtn.addEventListener('click', function() { modal.classList.remove('hidden'); modal.classList.add('flex'); });
-  }
-  if (closeModal && modal) {
-    closeModal.addEventListener('click', function() { modal.classList.add('hidden'); modal.classList.remove('flex'); });
-  }
-  if (formLic) {
-    formLic.addEventListener('submit', function(e) {
-      e.preventDefault();
-      var cliente = document.getElementById('licCliente').value;
-      var cuenta = document.getElementById('licCuenta').value;
-      var tipo = document.getElementById('licTipo').value;
-      var bot = document.getElementById('licBot').value;
-      var tokenCode = 'MTB-SEC-' + Math.floor(1000 + Math.random() * 9000) + '-' + cuenta.slice(-4) + '-' + tipo.toUpperCase();
-
-      document.getElementById('generatedTokenCode').textContent = tokenCode;
+  var abrir = function(si) { modal.classList.toggle('hidden', !si); modal.classList.toggle('flex', si); };
+  document.getElementById('btnEmitirLicencia').addEventListener('click', function() { abrir(true); });
+  document.getElementById('btnCloseModalLicencia').addEventListener('click', function() {
+    abrir(false);
+    if (!document.getElementById('licenciaResultado').classList.contains('hidden')) window.renderMasterTraderPanel();
+  });
+  document.getElementById('btnCopiarToken').addEventListener('click', function() {
+    var t = document.getElementById('generatedTokenCode').textContent;
+    if (navigator.clipboard) navigator.clipboard.writeText(t).then(function() { document.getElementById('btnCopiarToken').textContent = 'Copiado'; });
+  });
+  document.getElementById('formNuevaLicencia').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var err = document.getElementById('licError');
+    var btn = document.getElementById('licSubmit');
+    err.classList.add('hidden');
+    btn.disabled = true;
+    var venc = document.getElementById('licVenc').value;
+    mtbApiLicencias('POST', {
+      accion: 'emitir',
+      cliente: document.getElementById('licCliente').value.trim(),
+      cuenta: Number(document.getElementById('licCuenta').value.trim()),
+      tipo: document.getElementById('licTipo').value,
+      robot: document.getElementById('licBot').value,
+      vigencia_dias: venc ? Number(venc) : null
+    }).then(function(r) {
+      document.getElementById('generatedTokenCode').textContent = r.token;
       document.getElementById('licenciaResultado').classList.remove('hidden');
-
-      // Append new node to array
-      window.renderMasterTraderNodesData.unshift({
-        id: 'CLI-' + Math.floor(1000 + Math.random() * 9000),
-        cliente: cliente,
-        broker: tipo === 'Real' ? 'Broker Real Cliente' : 'XM Demo',
-        cuenta: '#' + cuenta,
-        bot: bot,
-        ubicacion: 'Remoto (Cliente)',
-        tipo: tipo,
-        estado: 'protegido',
-        ping: '19 ms',
-        ultimo: 'Token Registrado (Listo)'
-      });
-
-      renderNodeTable('all');
-
-      var feed = document.getElementById('masterTerminalFeed');
-      if (feed) {
-        var now = new Date().toLocaleTimeString();
-        feed.innerHTML += '<div class="text-sky-300">[' + now + '] [TOKEN_GENERATED] New Token ' + tokenCode + ' issued for ' + cliente + ' (' + cuenta + ').</div>';
-        feed.scrollTop = feed.scrollHeight;
-      }
-    });
-  }
+      document.getElementById('formNuevaLicencia').classList.add('hidden');
+    }).catch(function(ex) {
+      err.textContent = ex.message;
+      err.classList.remove('hidden');
+    }).then(function() { btn.disabled = false; });
+  });
 }
-
-window.revocarNodoToken = function(id) {
-  var item = (window.renderMasterTraderNodesData || []).find(function(n) { return n.id === id; });
-  if (item) {
-    item.estado = 'bloqueado';
-    item.ultimo = '⛔ Token Revocado Manualmente';
-    renderNodeTable('all');
-    var feed = document.getElementById('masterTerminalFeed');
-    if (feed) {
-      var now = new Date().toLocaleTimeString();
-      feed.innerHTML += '<div class="text-rose-400">[' + now + '] [TOKEN_REVOKED] Token for node ' + id + ' (' + item.cliente + ') revoked. Remote bot locked.</div>';
-      feed.scrollTop = feed.scrollHeight;
-    }
-  }
-};
-
-window.desbloquearNodoToken = function(id) {
-  var item = (window.renderMasterTraderNodesData || []).find(function(n) { return n.id === id; });
-  if (item) {
-    item.estado = 'protegido';
-    item.ultimo = '🟢 Reautorizado por Master Trader';
-    renderNodeTable('all');
-    var feed = document.getElementById('masterTerminalFeed');
-    if (feed) {
-      var now = new Date().toLocaleTimeString();
-      feed.innerHTML += '<div class="text-emerald-400">[' + now + '] [TOKEN_REAUTHORIZED] Node ' + id + ' (' + item.cliente + ') reauthorized. Signal pipeline restored.</div>';
-      feed.scrollTop = feed.scrollHeight;
-    }
-  }
-};
-
 
 </script></body></html>

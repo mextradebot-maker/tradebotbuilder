@@ -13,6 +13,8 @@ despacha por path hacia la lógica de cada endpoint:
   GET/POST /api/backtest?simbolo=XAUUSD&direccion=compra — ver api/backtest.py
   GET/POST /api/calendario?simbolo=XAUUSD&horas=24 — ver api/calendario.py
   GET/POST /api/mejor-indicador?simbolo=XAUUSD&direccion=compra — ver api/mejor_indicador.py
+  POST /api/v1/auth, GET/POST /api/v1/licencias — cerebro de licencias, ver api/licencias.py
+  /api/setups pasa antes por api.licencias.gate_setups (licencia o clave de servicio)
 """
 
 import json
@@ -30,6 +32,8 @@ RUTA_CALENDARIO = "/api/calendario"
 RUTA_MEJOR_INDICADOR = "/api/mejor-indicador"
 RUTA_REFRESCAR_SNAPSHOT = "/api/refrescar-snapshot"
 RUTA_CATALOGO = "/api/catalogo"
+RUTA_AUTH = "/api/v1/auth"
+RUTA_LICENCIAS = "/api/v1/licencias"
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -53,9 +57,14 @@ class handler(BaseHTTPRequestHandler):
         qs = {k: v[0] for k, v in parse_qs(partes.query).items()}
 
         if ruta == RUTA_SETUPS:
+            from api.licencias import gate_setups
             from api.setups import procesar as procesar_setups
 
-            status, body = procesar_setups(qs)
+            status, body = gate_setups(qs, dict(self.headers)) or procesar_setups(qs)
+        elif ruta == RUTA_LICENCIAS:
+            from api.licencias import procesar_admin
+
+            status, body = procesar_admin("GET", qs, dict(self.headers))
         elif ruta == RUTA_TENDENCIA:
             from api.tendencia import procesar as procesar_tendencia
 
@@ -94,9 +103,18 @@ class handler(BaseHTTPRequestHandler):
 
         ruta = urlparse(self.path).path.rstrip("/")
         if ruta == RUTA_SETUPS:
+            from api.licencias import gate_setups
             from api.setups import procesar as procesar_setups
 
-            status, body = procesar_setups(payload)
+            status, body = gate_setups(payload, dict(self.headers)) or procesar_setups(payload)
+        elif ruta == RUTA_AUTH:
+            from api.licencias import procesar_auth
+
+            status, body = procesar_auth(payload, dict(self.headers))
+        elif ruta == RUTA_LICENCIAS:
+            from api.licencias import procesar_admin
+
+            status, body = procesar_admin("POST", payload, dict(self.headers))
         elif ruta == RUTA_TENDENCIA:
             from api.tendencia import procesar as procesar_tendencia
 
@@ -130,7 +148,10 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        self.wfile.write(json.dumps(payload).encode())
+        # separators compactos: el parser mínimo del EA busca '"campo":valor' sin espacio
+        # (con el default '": "' nunca encontraba "setups_confirmados" ni "lotes").
+        # default=str: fechas de licencias.
+        self.wfile.write(json.dumps(payload, default=str, separators=(",", ":")).encode())
 
 
 def demo() -> None:

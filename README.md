@@ -144,3 +144,30 @@ no basta con crear el archivo.
 - Envío de órdenes vía XM (el conector de arriba es solo lectura por ahora).
 - Reparar pipeline n8n T-01→T-05 (Paso 2 del plan de construcción).
 - Más setups de la metodología (§7) además del insignia OB+FVG.
+
+## Cerebro de licencias (Master Trader)
+
+`persistencia/licencias.py` + `api/licencias.py`. Criterio: 1 token = 1 cuenta MT5;
+DEMO solo en cuentas demo, REAL solo en reales, VIP en ambas con cualquier robot;
+en la BD solo vive el SHA-256 del token (se muestra una vez al emitirlo); todo falla cerrado.
+
+| Endpoint | Quién | Qué |
+|---|---|---|
+| `POST /api/v1/auth` + `Authorization: Bearer <token>` | EA del cliente | Autoriza UNA orden y devuelve los lotes (regla única `conectividad/riesgo.py`) |
+| `GET/POST /api/v1/licencias` + `X-Admin-Key` | Panel Master Trader | Emitir, revocar, reautorizar/renovar, kill switch, auditoría |
+| `/api/setups` | EA / n8n | Con Bearer valida la licencia; sin Bearer exige `X-MTB-Service-Key` cuando `MTB_SERVICE_KEY` existe |
+
+El kill switch bloquea autorizaciones nuevas en todos los bots **y** las aperturas del coordinador del VPS (los cierres siguen).
+
+**Despliegue (en orden):**
+1. Vercel → env `MTB_ADMIN_KEY` (clave larga aleatoria; es la del panel). Las tablas se crean solas al primer uso (`persistencia/migraciones.py`).
+2. Emitir licencias desde el panel e instalar el EA v1.10 (`robots/MexTradeBot_SeguidorSMC.mq5`) con `MTB_LICENSE_TOKEN`.
+3. Agregar el header `X-MTB-Service-Key` a los nodos HTTP de n8n que llaman `/api/setups` (T-01, Análisis Diario).
+4. Solo entonces crear `MTB_SERVICE_KEY` en Vercel: desde ese momento un EA copiado o sin licencia no recibe señales.
+
+## Regla única de lotes
+
+`conectividad/riesgo.py` es la única implementación: el coordinador la llama directo y los EA
+reciben los lotes de `/api/v1/auth`. Redondea hacia abajo al step del broker y, si ni el lote
+mínimo cabe en el riesgo, marca la operación como no viable (nunca sube al mínimo en silencio).
+Autoverificación: `python -m conectividad.riesgo`.

@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .env
 conectividad/.cache_calendario.json
+
+# Scripts temporales de agentes (Antigravity/Claude) -- nunca al repo
+scratch/

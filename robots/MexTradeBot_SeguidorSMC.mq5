@@ -19,10 +19,24 @@
 //| es exactamente lo que se valido en backtesting/backtest.py -- si  |
 //| se agrega gestion dinamica aqui, los resultados en vivo dejan de  |
 //| ser comparables al backtest.                                      |
+//|                                                                    |
+//| LICENCIA (v1.10): sin MTB_LICENSE_TOKEN valido no hay senales ni  |
+//| ordenes. Cada consulta a /api/setups va firmada con el token y    |
+//| antes de cada orden se pide autorizacion a /api/v1/auth, que      |
+//| ademas devuelve los LOTES calculados con la regla unica del       |
+//| servidor (conectividad/riesgo.py) -- este EA ya no calcula lotes. |
+//| Token revocado/expirado/kill switch -> STANDBY LOCK: cancela sus  |
+//| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.00"
+#property version   "1.10"
 #property strict
+
+#define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
+
+//--- LICENCIA MASTER TRADER
+input string MTB_LICENSE_TOKEN   = "";            // Token entregado por MexTradeBot (MTB-XXXXX-XXXXX-XXXXX-XXXXX)
+input string InpAuthUrl          = "https://mextradebot-app.vercel.app/api/v1/auth"; // Autorizacion + lotes
 
 //--- CONEXION AL MOTOR PROPIO
 input string InpApiUrl           = "https://mextradebot-app.vercel.app/api/setups"; // URL de /api/setups
@@ -32,7 +46,7 @@ input int    InpDiasHistorico    = 0;             // 0 = usa el default calibrad
 
 //--- PARAMETROS DE OPERACION
 input ENUM_TIMEFRAMES InpTF      = PERIOD_H1;     // Timeframe del disparo (nueva vela = nueva consulta)
-input double InpRiskPercent      = 1.0;           // Riesgo por operacion (%)
+input double InpRiskPercent      = 1.0;           // Riesgo por operacion (%) -- los lotes los calcula el servidor
 input double InpTakeProfitR      = 2.0;           // Take profit en multiplos de R (igual que el backtest)
 input int    InpVelasExpiracion  = 20;            // Velas que la orden pendiente espera antes de cancelarse
 input int    InpMagicNumber      = 20260828;      // Numero magico unico del EA
@@ -41,19 +55,26 @@ input string InpComment          = "MTB-SMC";     // Comentario en operaciones
 //--- ESTADO INTERNO
 datetime g_ultima_vela = 0;
 double   g_ultima_entrada_operada = 0;
+bool     g_standby = false;               // true = licencia rechazada, no opera
 
 //+------------------------------------------------------------------+
 //| INICIALIZACION                                                    |
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   if(StringLen(InpApiUrl) == 0)
+   if(StringLen(InpApiUrl) == 0 || StringLen(InpAuthUrl) == 0)
    {
-      Print("ERROR: InpApiUrl vacio");
+      Print("ERROR: InpApiUrl / InpAuthUrl vacio");
+      return INIT_FAILED;
+   }
+   if(StringLen(MTB_LICENSE_TOKEN) == 0)
+   {
+      Print("BLOQUEO DE SEGURIDAD: falta MTB_LICENSE_TOKEN. Solicita tu token a MexTradeBot.");
       return INIT_FAILED;
    }
    Print("MexTradeBot_SeguidorSMC inicializado -- consultando ", InpApiUrl, " para ", InpSimboloConsulta, " (", InpTemporalidad, "), solo opera setups confirmados");
-   Print("IMPORTANTE: agrega '", InpApiUrl, "' en Herramientas > Opciones > Expert Advisors > 'Permitir WebRequest para las URL siguientes', si no las consultas fallan.");
+   Print("Licencia: cuenta ", AccountInfoInteger(ACCOUNT_LOGIN), " (", ModoCuenta(), "), robot ", MTB_ROBOT_ID);
+   Print("IMPORTANTE: agrega 'https://mextradebot-app.vercel.app' (cubre ", InpApiUrl, " y ", InpAuthUrl, ") en Herramientas > Opciones > Expert Advisors > 'Permitir WebRequest para las URL siguientes', si no las consultas fallan.");
    return INIT_SUCCEEDED;
 }
 
@@ -74,6 +95,7 @@ void OnTick()
    string direccion;
    double entrada, stop;
    if(!ConsultarUltimoSetup(direccion, entrada, stop)) return;
+   if(g_standby) return;
 
    // evita re-operar exactamente el mismo setup si ya se coloco antes
    if(MathAbs(entrada - g_ultima_entrada_operada) < _Point) return;
@@ -84,7 +106,10 @@ void OnTick()
    double tp = (direccion == "long") ? entrada + InpTakeProfitR * riesgo : entrada - InpTakeProfitR * riesgo;
    ENUM_ORDER_TYPE tipo = (direccion == "long") ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_SELL_LIMIT;
 
-   if(ColocarOrdenPendiente(tipo, entrada, stop, tp))
+   double lotes;
+   if(!AutorizarOrden(direccion, entrada, stop, lotes)) return;
+
+   if(ColocarOrdenPendiente(tipo, entrada, stop, tp, lotes))
       g_ultima_entrada_operada = entrada;
 }
 
@@ -93,10 +118,11 @@ void OnTick()
 //+------------------------------------------------------------------+
 bool ConsultarUltimoSetup(string &direccion, double &entrada, double &stop)
 {
-   string url = InpApiUrl + "?simbolo=" + InpSimboloConsulta + "&temporalidad=" + CodificarParametroUrl(InpTemporalidad);
+   string url = InpApiUrl + "?simbolo=" + InpSimboloConsulta + "&temporalidad=" + CodificarParametroUrl(InpTemporalidad)
+              + "&cuenta=" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "&modo=" + ModoCuenta() + "&robot=" + MTB_ROBOT_ID;
    if(InpDiasHistorico > 0)
       url += "&dias=" + IntegerToString(InpDiasHistorico);
-   string headers = "";
+   string headers = "Authorization: Bearer " + MTB_LICENSE_TOKEN + "\r\n";
    char   datos[];
    char   respuesta[];
    string headers_respuesta;
@@ -119,14 +145,91 @@ bool ConsultarUltimoSetup(string &direccion, double &entrada, double &stop)
          Print("ERROR WebRequest: codigo ", err);
       return false;
    }
+   if(status == 401 || status == 403)
+   {
+      EntrarStandby(CharArrayToString(respuesta));
+      return false;
+   }
    if(status != 200)
    {
       Print("API respondio HTTP ", status, ": ", CharArrayToString(respuesta));
       return false;
    }
+   SalirStandby();
 
    string cuerpo = CharArrayToString(respuesta);
    return ExtraerUltimoSetupConfirmado(cuerpo, direccion, entrada, stop);
+}
+
+//+------------------------------------------------------------------+
+//| LICENCIA -- modo de cuenta, standby y autorizacion por orden      |
+//+------------------------------------------------------------------+
+string ModoCuenta()
+{
+   return (AccountInfoInteger(ACCOUNT_TRADE_MODE) == ACCOUNT_TRADE_MODE_REAL) ? "real" : "demo";
+}
+
+void EntrarStandby(const string motivo)
+{
+   if(!g_standby)
+      Print("STANDBY LOCK: operacion bloqueada por el Cerebro Master Trader -- ", motivo);
+   g_standby = true;
+   CancelarOrdenesPendientes(false); // una licencia rechazada no deja ordenes vivas
+}
+
+void SalirStandby()
+{
+   if(g_standby)
+      Print("Licencia reautorizada por el Cerebro Master Trader -- se reanuda la operacion");
+   g_standby = false;
+}
+
+//+------------------------------------------------------------------+
+//| Pide autorizacion para UNA orden y los lotes calculados por el    |
+//| servidor con la regla unica. Falla cerrado: cualquier respuesta   |
+//| distinta de 200 con lotes > 0 cancela la orden.                   |
+//+------------------------------------------------------------------+
+bool AutorizarOrden(const string direccion, double entrada, double stop, double &lotes)
+{
+   lotes = 0;
+   string payload = StringFormat(
+      "{\"account\":%I64d,\"mode\":\"%s\",\"robot\":\"%s\",\"symbol\":\"%s\",\"type\":\"%s\","
+      + "\"balance\":%.2f,\"riesgo_pct\":%.4f,\"entrada\":%.10f,\"stop\":%.10f,"
+      + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f}",
+      AccountInfoInteger(ACCOUNT_LOGIN), ModoCuenta(), MTB_ROBOT_ID, _Symbol, direccion == "long" ? "buy" : "sell",
+      AccountInfoDouble(ACCOUNT_BALANCE), InpRiskPercent, entrada, stop,
+      SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE), SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE),
+      SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN), SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX),
+      SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP));
+
+   char   datos[];
+   char   respuesta[];
+   string headers_respuesta;
+   string headers = "Content-Type: application/json\r\nAuthorization: Bearer " + MTB_LICENSE_TOKEN + "\r\n";
+   StringToCharArray(payload, datos, 0, StringLen(payload)); // sin el \0 final: el servidor espera JSON limpio
+
+   ResetLastError();
+   int status = WebRequest("POST", InpAuthUrl, headers, 15000, datos, respuesta, headers_respuesta);
+   string cuerpo = CharArrayToString(respuesta);
+
+   if(status == 401 || status == 403)
+   {
+      EntrarStandby(cuerpo);
+      return false;
+   }
+   if(status != 200)
+   {
+      Print("BLOQUEO DE SEGURIDAD: autorizacion no disponible (HTTP ", status, ", err ", GetLastError(), ") -- orden cancelada");
+      return false;
+   }
+   if(!ExtraerCampoNumeroDesde(cuerpo, "lotes", 0, lotes) || lotes <= 0)
+   {
+      Print("Orden no colocada: ", cuerpo); // p.ej. capital insuficiente para el lote minimo sin exceder el riesgo
+      lotes = 0;
+      return false;
+   }
+   Print("Autenticacion Master Trader OK: ", direccion, " ", _Symbol, " -- ", lotes, " lotes");
+   return true;
 }
 
 //+------------------------------------------------------------------+
@@ -210,15 +313,8 @@ bool ExtraerUltimoSetupConfirmado(const string &json, string &direccion, double 
 //+------------------------------------------------------------------+
 //| ORDEN PENDIENTE (limite en el punto medio del FVG)                |
 //+------------------------------------------------------------------+
-bool ColocarOrdenPendiente(ENUM_ORDER_TYPE tipo, double precio, double sl, double tp)
+bool ColocarOrdenPendiente(ENUM_ORDER_TYPE tipo, double precio, double sl, double tp, double lots)
 {
-   double lots = CalcularLotes(MathAbs(precio - sl));
-   if(lots <= 0)
-   {
-      Print("ERROR: lote calculado invalido, no se coloca la orden");
-      return false;
-   }
-
    MqlTradeRequest request = {};
    MqlTradeResult  result  = {};
 
@@ -249,13 +345,18 @@ bool ColocarOrdenPendiente(ENUM_ORDER_TYPE tipo, double precio, double sl, doubl
 //+------------------------------------------------------------------+
 void CancelarOrdenesVencidas()
 {
+   CancelarOrdenesPendientes(true);
+}
+
+void CancelarOrdenesPendientes(bool solo_vencidas)
+{
    for(int i = OrdersTotal() - 1; i >= 0; i--)
    {
       ulong ticket = OrderGetTicket(i);
       if(!OrderSelect(ticket)) continue;
       if(OrderGetInteger(ORDER_MAGIC) != InpMagicNumber) continue;
       datetime expiracion = (datetime)OrderGetInteger(ORDER_TIME_EXPIRATION);
-      if(expiracion > 0 && TimeCurrent() >= expiracion)
+      if(!solo_vencidas || (expiracion > 0 && TimeCurrent() >= expiracion))
       {
          MqlTradeRequest request = {};
          MqlTradeResult  result  = {};
@@ -264,31 +365,6 @@ void CancelarOrdenesVencidas()
          OrderSend(request, result);
       }
    }
-}
-
-//+------------------------------------------------------------------+
-//| CALCULAR LOTES POR RIESGO (mismo patron que el resto de MexTradeBot) |
-//+------------------------------------------------------------------+
-double CalcularLotes(double riesgo_precio)
-{
-   double balance     = AccountInfoDouble(ACCOUNT_BALANCE);
-   double riesgo_dinero = balance * InpRiskPercent / 100.0;
-   double tick_value  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-   double tick_size   = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-   if(tick_size <= 0) return 0;
-
-   double valor_riesgo = riesgo_precio / tick_size * tick_value;
-   if(valor_riesgo <= 0) return 0;
-
-   double lots = riesgo_dinero / valor_riesgo;
-
-   double min_lot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-   double max_lot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
-   double lot_step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
-
-   lots = MathFloor(lots / lot_step) * lot_step;
-   lots = MathMax(min_lot, MathMin(max_lot, lots));
-   return lots;
 }
 
 //+------------------------------------------------------------------+

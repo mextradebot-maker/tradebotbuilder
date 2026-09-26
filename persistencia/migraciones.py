@@ -137,6 +137,54 @@ _SQL = [
     CREATE INDEX IF NOT EXISTS idx_peticiones_estado
         ON peticiones_usuario (estado, creada_en)
     """,
+
+    # ── Bloque 7: cerebro de licencias (persistencia/licencias.py) ────────
+    """
+    CREATE TABLE IF NOT EXISTS licencias (
+        id               bigserial   PRIMARY KEY,
+        token_hash       text        NOT NULL UNIQUE,
+        token_prefijo    text        NOT NULL,
+        cliente          text        NOT NULL,
+        cuenta           bigint      NOT NULL,
+        tipo             text        NOT NULL CHECK (tipo IN ('demo', 'real', 'vip')),
+        robot            text        NOT NULL,
+        expira_en        timestamptz,
+        revocada_en      timestamptz,
+        creada_en        timestamptz NOT NULL DEFAULT now(),
+        ultimo_contacto  timestamptz,
+        ultima_ip        text,
+        ultimo_resultado text
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_licencias_cuenta ON licencias (cuenta)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS licencias_eventos (
+        id            bigserial   PRIMARY KEY,
+        licencia_id   bigint      REFERENCES licencias(id),
+        cuenta        bigint,
+        resultado     text        NOT NULL,
+        motivo        text,
+        ip            text,
+        detalle       jsonb,
+        registrado_en timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_lic_eventos_fecha ON licencias_eventos (registrado_en DESC)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS kill_switch (
+        id          boolean     PRIMARY KEY DEFAULT true CHECK (id),
+        activo      boolean     NOT NULL DEFAULT false,
+        motivo      text,
+        cambiado_en timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    INSERT INTO kill_switch (id) VALUES (true) ON CONFLICT DO NOTHING
+    """,
 ]
 
 # 36 simbolos × 5 temporalidades = 180 pares seeded en la primera migración
