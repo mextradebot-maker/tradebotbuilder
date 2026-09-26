@@ -119,24 +119,8 @@ _SQL = [
         ON log_coordinador (login, registrado_en DESC)
     """,
 
-    # ── Bloque 6: peticiones manuales del usuario ─────────────────────────
-    """
-    CREATE TABLE IF NOT EXISTS peticiones_usuario (
-        id           bigserial   PRIMARY KEY,
-        simbolo      text        NOT NULL,
-        direccion    text        NOT NULL,
-        cuenta       bigint,
-        lotes        numeric,
-        estado       text        NOT NULL DEFAULT 'pendiente',
-        motivo_error text,
-        creada_en    timestamptz NOT NULL DEFAULT now(),
-        ejecutada_en timestamptz
-    )
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_peticiones_estado
-        ON peticiones_usuario (estado, creada_en)
-    """,
+    # Bloque 6 (peticiones_usuario / solicitar.py) retirado 2026-09-26: las
+    # operaciones manuales se abren directo en MT5 y el coordinador las adopta.
 
     # ── Bloque 7: cerebro de licencias (persistencia/licencias.py) ────────
     """

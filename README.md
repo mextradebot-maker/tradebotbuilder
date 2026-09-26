@@ -154,7 +154,7 @@ en la BD solo vive el SHA-256 del token (se muestra una vez al emitirlo); todo f
 | Endpoint | Quién | Qué |
 |---|---|---|
 | `POST /api/v1/auth` + `Authorization: Bearer <token>` | EA del cliente | Autoriza UNA orden y devuelve los lotes (regla única `conectividad/riesgo.py`) |
-| `GET/POST /api/v1/licencias` + `X-Admin-Key` | Panel Master Trader | Emitir, revocar, reautorizar/renovar, kill switch, auditoría |
+| `GET/POST /api/v1/licencias` + `X-Admin-Key` | Página de administración `/master.html` | Emitir, revocar, reautorizar/renovar, kill switch, auditoría |
 | `/api/setups` | EA / n8n | Con Bearer valida la licencia; sin Bearer exige `X-MTB-Service-Key` cuando `MTB_SERVICE_KEY` existe |
 
 El kill switch bloquea autorizaciones nuevas en todos los bots **y** las aperturas del coordinador del VPS (los cierres siguen).
