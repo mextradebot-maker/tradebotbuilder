@@ -362,7 +362,8 @@ void CancelarOrdenesPendientes(bool solo_vencidas)
          MqlTradeResult  result  = {};
          request.action = TRADE_ACTION_REMOVE;
          request.order   = ticket;
-         OrderSend(request, result);
+         if(!OrderSend(request, result))
+            Print("ERROR al cancelar orden pendiente #", ticket, ": ", GetLastError(), " (retcode ", result.retcode, ")");
       }
    }
 }
