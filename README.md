@@ -159,11 +159,9 @@ en la BD solo vive el SHA-256 del token (se muestra una vez al emitirlo); todo f
 
 El kill switch bloquea autorizaciones nuevas en todos los bots **y** las aperturas del coordinador del VPS (los cierres siguen).
 
-**Despliegue (en orden):**
-1. Vercel → env `MTB_ADMIN_KEY` (clave larga aleatoria; es la del panel). Las tablas se crean solas al primer uso (`persistencia/migraciones.py`).
-2. Emitir licencias desde el panel e instalar el EA v1.10 (`robots/MexTradeBot_SeguidorSMC.mq5`) con `MTB_LICENSE_TOKEN`.
-3. Agregar el header `X-MTB-Service-Key` a los nodos HTTP de n8n que llaman `/api/setups` (T-01, Análisis Diario).
-4. Solo entonces crear `MTB_SERVICE_KEY` en Vercel: desde ese momento un EA copiado o sin licencia no recibe señales.
+**Despliegue:** ver "Servidor en el VPS" abajo. Variables: `MTB_ADMIN_KEY` (entra a `/master.html`)
+y `MTB_SERVICE_KEY` (header `X-MTB-Service-Key` de n8n); con esta última, un EA copiado o sin
+licencia ya no recibe señales.
 
 ## Regla única de lotes
 
@@ -171,3 +169,22 @@ El kill switch bloquea autorizaciones nuevas en todos los bots **y** las apertur
 reciben los lotes de `/api/v1/auth`. Redondea hacia abajo al step del broker y, si ni el lote
 mínimo cabe en el riesgo, marca la operación como no viable (nunca sube al mínimo en silencio).
 Autoverificación: `python -m conectividad.riesgo`.
+
+## Servidor en el VPS (EasyPanel)
+
+Desde 2026-09-26 MexTradeBot corre en EasyPanel en vez de Vercel (Vercel bloqueó la cuenta
+por exceso de cómputo del refresco cada 30 min). `app.py` es el servidor único:
+
+| Ruta | Qué |
+|---|---|
+| `/api/*` | router de siempre (`api/analizar.py`) |
+| `/alumnos`, `/webhook/*` | proxy a n8n (antes rewrites de `vercel.json`) |
+| `/salud` | healthcheck |
+| resto | estáticos de `public/` |
+
+`refresco.py` corre en segundo plano y refresca cada activo×temporalidad solo al cerrar una
+vela nueva de su temporalidad (reemplaza el workflow n8n "MTB Refrescar Snapshots SMC").
+
+Variables del servicio: `DATABASE_URL`, `MTB_ADMIN_KEY`, `MTB_SERVICE_KEY`, opcionales
+`N8N_URL`, `REFRESCO_ACTIVO=0`, `PORT` (8000). Build: `Dockerfile` (dependencias de `uv.lock`).
+Prueba local: `REFRESCO_ACTIVO=0 python app.py`.

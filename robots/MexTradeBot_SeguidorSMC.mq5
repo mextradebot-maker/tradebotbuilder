@@ -36,10 +36,10 @@
 
 //--- LICENCIA MASTER TRADER
 input string MTB_LICENSE_TOKEN   = "";            // Token entregado por MexTradeBot (MTB-XXXXX-XXXXX-XXXXX-XXXXX)
-input string InpAuthUrl          = "https://mextradebot-app.vercel.app/api/v1/auth"; // Autorizacion + lotes
+input string InpAuthUrl          = "https://mextradebot.com.mx/api/v1/auth"; // Autorizacion + lotes
 
 //--- CONEXION AL MOTOR PROPIO
-input string InpApiUrl           = "https://mextradebot-app.vercel.app/api/setups"; // URL de /api/setups
+input string InpApiUrl           = "https://mextradebot.com.mx/api/setups"; // URL de /api/setups
 input string InpSimboloConsulta  = "XAUUSD";      // Simbolo tal como lo espera la API (ver conectividad.SIMBOLOS)
 input string InpTemporalidad     = "Intraday";    // Scalping / Intraday / Swing (H) / Swing (S) / Swing (M)
 input int    InpDiasHistorico    = 0;             // 0 = usa el default calibrado de la API para InpTemporalidad
@@ -74,7 +74,7 @@ int OnInit()
    }
    Print("MexTradeBot_SeguidorSMC inicializado -- consultando ", InpApiUrl, " para ", InpSimboloConsulta, " (", InpTemporalidad, "), solo opera setups confirmados");
    Print("Licencia: cuenta ", AccountInfoInteger(ACCOUNT_LOGIN), " (", ModoCuenta(), "), robot ", MTB_ROBOT_ID);
-   Print("IMPORTANTE: agrega 'https://mextradebot-app.vercel.app' (cubre ", InpApiUrl, " y ", InpAuthUrl, ") en Herramientas > Opciones > Expert Advisors > 'Permitir WebRequest para las URL siguientes', si no las consultas fallan.");
+   Print("IMPORTANTE: agrega 'https://mextradebot.com.mx' (cubre ", InpApiUrl, " y ", InpAuthUrl, ") en Herramientas > Opciones > Expert Advisors > 'Permitir WebRequest para las URL siguientes', si no las consultas fallan.");
    return INIT_SUCCEEDED;
 }
 

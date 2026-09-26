@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.git/
+scratch/
+conectividad/.cache_calendario.json
+robots/*.ex5
+index.html
+manual-cuenta-xm.html
+manual-registro-xm.html
+panel-alumnos-responder-html-*.html
