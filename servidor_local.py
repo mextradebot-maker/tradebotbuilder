@@ -323,6 +323,20 @@ class Handler(BaseHTTPRequestHandler):
             status, body = 404, {"error": f"rutas: {RUTA_DEMO_STATUS}, {RUTA_TRADING_RESUMEN}, {RUTA_PANEL_RESUMEN}, {RUTA_PANEL_RESUMEN_JSON}"}
         self._responder(status, body)
 
+    def do_POST(self):
+        if urlparse(self.path).path.rstrip("/") != "/compilar":
+            self._responder(404, {"error": "POST solo en /compilar"})
+            return
+        import compilador  # robot personalizado con token embebido, ver compilador.py
+
+        cuerpo = self.rfile.read(int(self.headers.get("Content-Length", 0) or 0))
+        status, tipo, datos = compilador.procesar_http(dict(self.headers), cuerpo)
+        self.send_response(status)
+        self.send_header("Content-Type", tipo)
+        self.send_header("Content-Length", str(len(datos)))
+        self.end_headers()
+        self.wfile.write(datos)
+
     def _responder_html(self, status: int, html: str) -> None:
         cuerpo = html.encode("utf-8")
         self.send_response(status)
