@@ -12,8 +12,8 @@
 
   GET  /api/v1/licencias   (admin)  X-Admin-Key: <MTB_ADMIN_KEY>  → licencias + kill switch + eventos
   POST /api/v1/licencias   (admin)  X-Admin-Key: <MTB_ADMIN_KEY>
-       {"accion": "emitir", "cliente", "cuenta", "tipo": "demo|real|vip", "robot", "vigencia_dias": 30|null}
-       {"accion": "revocar", "id"} | {"accion": "reautorizar", "id", "vigencia_dias"?}
+       {"accion": "emitir", "cliente", "cuenta"?: sin ella se amarra al primer uso, "tipo": "demo|real|vip", "robot", "vigencia_dias": 30|null}
+       {"accion": "revocar", "id"} | {"accion": "reautorizar", "id", "vigencia_dias"?} | {"accion": "liberar", "id"}
        {"accion": "kill_switch", "activo": true|false, "motivo"?}
 
   /api/setups — ver gate_setups(): con Bearer valida la licencia; sin Bearer
@@ -134,10 +134,14 @@ def procesar_admin(metodo: str, datos: dict, headers: dict) -> tuple[int, dict]:
         accion = datos.get("accion")
         dias = int(datos["vigencia_dias"]) if datos.get("vigencia_dias") else None
         if accion == "emitir":
-            token, lic = licencias.emitir(str(datos.get("cliente", "")), int(datos.get("cuenta") or 0),
+            cuenta = int(datos["cuenta"]) if str(datos.get("cuenta") or "").strip() else None
+            token, lic = licencias.emitir(str(datos.get("cliente", "")), cuenta,
                                           str(datos.get("tipo", "")).lower(), str(datos.get("robot", "")), dias)
             return 200, {"token": token, "licencia": lic,
                          "aviso": "Guarda el token ahora: no se puede volver a mostrar."}
+        if accion == "liberar":
+            licencias.liberar(int(datos["id"]))
+            return 200, {"ok": True}
         if accion == "revocar":
             licencias.revocar(int(datos["id"]))
             return 200, {"ok": True}
@@ -147,7 +151,7 @@ def procesar_admin(metodo: str, datos: dict, headers: dict) -> tuple[int, dict]:
         if accion == "kill_switch":
             licencias.fijar_kill_switch(bool(datos.get("activo")), datos.get("motivo"))
             return 200, {"ok": True}
-        return 400, {"error": "accion debe ser emitir | revocar | reautorizar | kill_switch"}
+        return 400, {"error": "accion debe ser emitir | revocar | reautorizar | liberar | kill_switch"}
     except (KeyError, TypeError, ValueError) as e:
         return 400, {"error": str(e)}
 
@@ -188,6 +192,28 @@ def demo() -> None:
         assert procesar_admin("GET", {}, {})[0] == 503
         os.environ["MTB_ADMIN_KEY"] = "adm"
         assert procesar_admin("GET", {}, {"X-Admin-Key": "otra"})[0] == 401
+
+        import sys as _s
+        import types as _t
+        llamadas = []
+        falso = _t.SimpleNamespace(
+            liberar=lambda i: llamadas.append(("liberar", i)),
+            emitir=lambda c, cu, t, r, d: (llamadas.append(("emitir", cu)) or ("MTB-T", {"id": 1})),
+        )
+        previos = {k: _s.modules.get(k) for k in ("persistencia", "persistencia.licencias")}
+        _s.modules["persistencia"] = _t.SimpleNamespace(licencias=falso)
+        _s.modules["persistencia.licencias"] = falso
+        try:
+            h = {"X-Admin-Key": "adm"}
+            assert procesar_admin("POST", {"accion": "liberar", "id": 7}, h) == (200, {"ok": True})
+            assert procesar_admin("POST", {"accion": "emitir", "cliente": "x", "cuenta": "", "tipo": "demo", "robot": "r"}, h)[0] == 200
+            assert llamadas == [("liberar", 7), ("emitir", None)], llamadas
+        finally:
+            for k, v in previos.items():
+                if v is None:
+                    _s.modules.pop(k, None)
+                else:
+                    _s.modules[k] = v
     finally:
         _verificar = original
         os.environ.pop("MTB_SERVICE_KEY", None)
