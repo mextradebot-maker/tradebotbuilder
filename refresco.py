@@ -12,7 +12,8 @@ import time
 from datetime import datetime, timedelta, timezone
 
 CRIPTO = {"BTCUSD", "ETHUSD", "XRPUSD"}
-MARGEN_DATOS = timedelta(minutes=2)  # el proveedor publica la vela cerrada con un poco de retraso
+MARGEN_DATOS = timedelta(minutes=2)
+REINTENTO_VACIO = timedelta(hours=1)  # el proveedor publica la vela cerrada con un poco de retraso
 PAUSA_CICLO_S = 60
 
 
@@ -47,7 +48,12 @@ def mercado_abierto(simbolo: str, ahora: datetime) -> bool:
     return True
 
 
-def necesita_refresco(simbolo: str, temporalidad: str, refrescado_en: datetime | None, ahora: datetime) -> bool:
+def necesita_refresco(simbolo: str, temporalidad: str, refrescado_en: datetime | None, ahora: datetime,
+                      vacio: bool = False) -> bool:
+    if refrescado_en is not None and refrescado_en.tzinfo is None:
+        refrescado_en = refrescado_en.replace(tzinfo=timezone.utc)
+    if vacio and refrescado_en is not None:  # descarga fallida antes: reintentar aunque sea fin de semana
+        return ahora - refrescado_en >= REINTENTO_VACIO
     if not mercado_abierto(simbolo, ahora) and refrescado_en is not None:
         return False
     cierre = inicio_vela(ahora, temporalidad)
@@ -71,7 +77,8 @@ def ciclo() -> int:
         if not c["activo"]:
             continue
         snap = persistencia.leer_snapshot(c["simbolo"], c["temporalidad"])
-        if not necesita_refresco(c["simbolo"], c["temporalidad"], snap and snap["refrescado_en"], ahora):
+        vacio = bool(snap) and not (snap["respuesta"] or {}).get("velas")
+        if not necesita_refresco(c["simbolo"], c["temporalidad"], snap and snap["refrescado_en"], ahora, vacio):
             continue
         try:
             status, body = procesar({"simbolo": c["simbolo"], "temporalidad": c["temporalidad"], "_force_refresh": True})
@@ -123,6 +130,10 @@ def demo() -> None:
     assert not necesita_refresco("EURUSD", "Intraday", datetime(2026, 9, 25, 20, 0, tzinfo=u), sabado)
     assert necesita_refresco("BTCUSD", "Intraday", datetime(2026, 9, 26, 10, 0, tzinfo=u), sabado)
     assert mercado_abierto("EURUSD", datetime(2026, 9, 27, 21, 30, tzinfo=u))  # domingo reapertura
+
+    # snapshot vacío (descarga fallida): se reintenta aun en fin de semana, máximo 1 vez por hora
+    assert necesita_refresco("EURUSD", "Scalping", datetime(2026, 9, 26, 10, 0, tzinfo=u), sabado, vacio=True)
+    assert not necesita_refresco("EURUSD", "Scalping", datetime(2026, 9, 26, 11, 30, tzinfo=u), sabado, vacio=True)
 
     # carga diaria por activo en días hábiles: 96 + 24 + 6 + ~0 = ~126 (antes: 48 × 5 = 240)
     print("refresco.demo() OK")
