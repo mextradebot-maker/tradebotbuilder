@@ -169,6 +169,11 @@ _SQL = [
     """
     INSERT INTO kill_switch (id) VALUES (true) ON CONFLICT DO NOTHING
     """,
+
+    # ── Fase 2: licencias sin amarrar (se amarran al primer uso) ──────────
+    """
+    ALTER TABLE licencias ALTER COLUMN cuenta DROP NOT NULL
+    """,
 ]
 
 # 36 simbolos × 5 temporalidades = 180 pares seeded en la primera migración

@@ -45,8 +45,8 @@ def evaluar(lic: dict | None, cuenta: int, modo: str, robot: str, kill_switch: b
         return False, "revocada"
     if lic["expira_en"] is not None and ahora >= lic["expira_en"]:
         return False, "expirada"
-    if lic["cuenta"] != cuenta:
-        return False, "cuenta_no_coincide"
+    if lic["cuenta"] is not None and lic["cuenta"] != cuenta:
+        return False, "cuenta_no_coincide"  # None = sin amarrar: verificar() la fija a esta cuenta
     if lic["tipo"] != "vip" and lic["tipo"] != modo:
         return False, f"licencia_{lic['tipo']}_en_cuenta_{modo}"
     if lic["robot"] not in (ROBOT_TODOS, robot):
@@ -77,6 +77,16 @@ def verificar(token: str, cuenta: int, modo: str, robot: str, ip: str | None,
                            (hash_token(token),)).fetchone()
         lic = _fila(row) if row else None
         ok, motivo = evaluar(lic, cuenta, modo, robot, kill_switch_activo(conn), ahora)
+        if ok and lic["cuenta"] is None:
+            amarrada = conn.execute(
+                "UPDATE licencias SET cuenta = %s WHERE id = %s AND cuenta IS NULL", (cuenta, lic["id"])
+            ).rowcount
+            if amarrada:
+                lic["cuenta"] = cuenta
+                _evento_admin(conn, lic["id"], cuenta, "amarrada_primer_uso")
+            else:  # otro robot la amarró en el mismo instante: re-evaluar contra la cuenta ya fijada
+                lic["cuenta"] = conn.execute("SELECT cuenta FROM licencias WHERE id = %s", (lic["id"],)).fetchone()[0]
+                ok, motivo = evaluar(lic, cuenta, modo, robot, False, ahora)
         if lic:
             conn.execute(
                 "UPDATE licencias SET ultimo_contacto = now(), ultima_ip = %s, ultimo_resultado = %s WHERE id = %s",
@@ -91,12 +101,13 @@ def verificar(token: str, cuenta: int, modo: str, robot: str, ip: str | None,
     return ok, motivo, lic
 
 
-def emitir(cliente: str, cuenta: int, tipo: str, robot: str, vigencia_dias: int | None) -> tuple[str, dict]:
-    """Crea la licencia. Devuelve (token_en_claro, licencia) — el token no se puede recuperar después."""
+def emitir(cliente: str, cuenta: int | None, tipo: str, robot: str, vigencia_dias: int | None) -> tuple[str, dict]:
+    """Crea la licencia. cuenta=None → se amarra al primer robot que la use.
+    Devuelve (token_en_claro, licencia) — el token no se puede recuperar después."""
     if tipo not in TIPOS:
         raise ValueError(f"tipo debe ser uno de {sorted(TIPOS)}")
-    if not cliente.strip() or cuenta <= 0:
-        raise ValueError("cliente y cuenta son obligatorios")
+    if not cliente.strip() or (cuenta is not None and cuenta <= 0):
+        raise ValueError("cliente obligatorio y cuenta, si se da, debe ser positiva")
     if tipo == "vip":
         robot = ROBOT_TODOS
     elif not robot.strip():
@@ -131,6 +142,13 @@ def reautorizar(licencia_id: int, vigencia_dias: int | None = None) -> None:
         else:
             conn.execute("UPDATE licencias SET revocada_en = NULL WHERE id = %s", (licencia_id,))
         _evento_admin(conn, licencia_id, None, "reautorizada")
+
+
+def liberar(licencia_id: int) -> None:
+    """Quita el amarre: el próximo robot que se autorice con este token la vuelve a amarrar."""
+    with get_conn() as conn:
+        conn.execute("UPDATE licencias SET cuenta = NULL WHERE id = %s", (licencia_id,))
+        _evento_admin(conn, licencia_id, None, "cuenta_liberada")
 
 
 def fijar_kill_switch(activo: bool, motivo: str | None) -> None:
@@ -186,6 +204,11 @@ def demo() -> None:
     vip = {**base, "tipo": "vip", "robot": ROBOT_TODOS}
     assert evaluar(vip, 318680674, "demo", "otro-bot", False, ahora) == (True, "ok")
     assert evaluar(vip, 111, "demo", "otro-bot", False, ahora)[1] == "cuenta_no_coincide"  # VIP también 1 cuenta
+
+    libre = {**base, "cuenta": None}
+    assert evaluar(libre, 318680674, "real", "seguidor-smc", False, ahora) == (True, "ok")  # se amarra
+    assert evaluar({**libre, "tipo": "demo"}, 318680674, "real", "seguidor-smc", False, ahora)[1] == "licencia_demo_en_cuenta_real"
+    assert evaluar({**libre, "revocada_en": ahora}, 1, "real", "seguidor-smc", False, ahora)[1] == "revocada"
 
     t = generar_token()
     assert len(t) == 27 and t.startswith("MTB-") and t != generar_token()
