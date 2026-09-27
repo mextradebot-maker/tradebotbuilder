@@ -16,6 +16,7 @@ despacha por path hacia la lógica de cada endpoint:
   POST /api/v1/auth, GET/POST /api/v1/licencias — cerebro de licencias, ver api/licencias.py
   GET /api/v1/licencias/robot?id=N — .ex5 personalizado (admin), ver api/licencias.procesar_robot
   GET /api/v1/mis-licencias, /api/v1/mi-robot?id=N — alumno con sesión del panel, ver api/alumnos.py
+  GET /api/v1/reporte-setups — setups vigentes de todos los activos para T-01 (X-MTB-Service-Key), ver api/reporte.py
   /api/setups pasa antes por api.licencias.gate_setups (licencia o clave de servicio)
 """
 
@@ -39,6 +40,7 @@ RUTA_LICENCIAS = "/api/v1/licencias"
 RUTA_ROBOT = "/api/v1/licencias/robot"
 RUTA_MIS_LICENCIAS = "/api/v1/mis-licencias"
 RUTA_MI_ROBOT = "/api/v1/mi-robot"
+RUTA_REPORTE = "/api/v1/reporte-setups"
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -66,6 +68,10 @@ class handler(BaseHTTPRequestHandler):
             from api.setups import procesar as procesar_setups
 
             status, body = gate_setups(qs, dict(self.headers)) or procesar_setups(qs)
+        elif ruta == RUTA_REPORTE:
+            from api.reporte import procesar_reporte
+
+            status, body = procesar_reporte(dict(self.headers))
         elif ruta == RUTA_MIS_LICENCIAS:
             from api.alumnos import procesar_mis_licencias
 
