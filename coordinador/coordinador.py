@@ -59,6 +59,18 @@ def _log(
     )
 
 
+def password_de(login: int, env=os.environ) -> Optional[str]:
+    """Contraseña XM de una cuenta. Acepta las dos convenciones de .env que existen:
+    XM_PASSWORD_<login>, o la del VPS: XM_LOGIN{,_2.._9} + XM_PASSWORD{,_2.._9} por posición.
+    """
+    if env.get(f"XM_PASSWORD_{login}"):
+        return env[f"XM_PASSWORD_{login}"]
+    for sufijo in [""] + [f"_{i}" for i in range(2, 10)]:
+        if str(env.get(f"XM_LOGIN{sufijo}", "")).strip() == str(login):
+            return env.get(f"XM_PASSWORD{sufijo}")
+    return env.get("XM_PASSWORD")
+
+
 def _cargar_cuentas_demo(conn) -> List[Dict[str, Any]]:
     """Lee las cuentas demo configuradas en la BD Postgres (`cuentas_demo`)."""
     rows = conn.execute(
@@ -70,7 +82,7 @@ def _cargar_cuentas_demo(conn) -> List[Dict[str, Any]]:
     cuentas = []
     for r in rows:
         login = r[0]
-        pw = os.environ.get(f"XM_PASSWORD_{login}") or os.environ.get("XM_PASSWORD")
+        pw = password_de(login)
         cuentas.append({
             "login": login,
             "server": r[1],
