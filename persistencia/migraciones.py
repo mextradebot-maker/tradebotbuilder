@@ -174,6 +174,10 @@ _SQL = [
     """
     ALTER TABLE licencias ALTER COLUMN cuenta DROP NOT NULL
     """,
+    # semilla del token derivado (persistencia/licencias.derivar_token): permite recompilar robots
+    """
+    ALTER TABLE licencias ADD COLUMN IF NOT EXISTS semilla text
+    """,
 ]
 
 # 36 simbolos × 5 temporalidades = 180 pares seeded en la primera migración

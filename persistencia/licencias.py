@@ -13,6 +13,8 @@ Criterio (docs/manual_uso_master_trader.md, endurecido):
 """
 
 import hashlib
+import hmac
+import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -27,6 +29,24 @@ def generar_token() -> str:
     """MTB-XXXXX-XXXXX-XXXXX-XXXXX — 100 bits aleatorios."""
     grupos = ["".join(secrets.choice(_ALFABETO) for _ in range(5)) for _ in range(4)]
     return "MTB-" + "-".join(grupos)
+
+
+def derivar_token(semilla: str, secreto: str) -> str:
+    """Token regenerable: 100 bits de HMAC-SHA256(secreto, semilla) → MTB-XXXXX-XXXXX-XXXXX-XXXXX.
+
+    La BD solo guarda la semilla; sin MTB_TOKEN_SECRET (variable del servidor) no se
+    puede reconstruir ningún token, pero el servidor sí puede para recompilar robots.
+    """
+    bits = int.from_bytes(hmac.new(secreto.encode(), semilla.encode(), hashlib.sha256).digest()[:13], "big") >> 4
+    letras = [_ALFABETO[(bits >> (5 * i)) & 31] for i in range(19, -1, -1)]
+    return "MTB-" + "-".join("".join(letras[i:i + 5]) for i in range(0, 20, 5))
+
+
+def _secreto() -> str:
+    secreto = os.environ.get("MTB_TOKEN_SECRET", "")
+    if not secreto:
+        raise ValueError("MTB_TOKEN_SECRET no configurado en el servidor")
+    return secreto
 
 
 def hash_token(token: str) -> str:
@@ -114,15 +134,27 @@ def emitir(cliente: str, cuenta: int | None, tipo: str, robot: str, vigencia_dia
         raise ValueError("robot obligatorio para licencias demo/real")
     expira = datetime.now(timezone.utc) + timedelta(days=vigencia_dias) if vigencia_dias else None
 
-    token = generar_token()
+    semilla = secrets.token_hex(16)
+    token = derivar_token(semilla, _secreto())
     with get_conn() as conn:
         row = conn.execute(
-            f"""INSERT INTO licencias (token_hash, token_prefijo, cliente, cuenta, tipo, robot, expira_en)
-                VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING {_COLS}""",
-            (hash_token(token), token[:9], cliente.strip(), cuenta, tipo, robot.strip(), expira),
+            f"""INSERT INTO licencias (token_hash, token_prefijo, cliente, cuenta, tipo, robot, expira_en, semilla)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING {_COLS}""",
+            (hash_token(token), token[:9], cliente.strip(), cuenta, tipo, robot.strip(), expira, semilla),
         ).fetchone()
         _evento_admin(conn, row[0], cuenta, "emitida")
     return token, _fila(row)
+
+
+def token_de_licencia(licencia_id: int) -> str:
+    """Regenera el token de una licencia (para compilar su robot). Nunca se guarda ni se registra."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT semilla FROM licencias WHERE id = %s", (licencia_id,)).fetchone()
+    if row is None:
+        raise ValueError("licencia no encontrada")
+    if not row[0]:
+        raise ValueError("licencia sin semilla (anterior a robots personalizados): emite una nueva")
+    return derivar_token(row[0], _secreto())
 
 
 def revocar(licencia_id: int) -> None:
@@ -209,6 +241,12 @@ def demo() -> None:
     assert evaluar(libre, 318680674, "real", "seguidor-smc", False, ahora) == (True, "ok")  # se amarra
     assert evaluar({**libre, "tipo": "demo"}, 318680674, "real", "seguidor-smc", False, ahora)[1] == "licencia_demo_en_cuenta_real"
     assert evaluar({**libre, "revocada_en": ahora}, 1, "real", "seguidor-smc", False, ahora)[1] == "revocada"
+
+    import re
+    d1 = derivar_token("ab" * 16, "secreto")
+    assert d1 == derivar_token("ab" * 16, "secreto")  # determinista: se puede regenerar para recompilar
+    assert re.fullmatch(r"MTB-([A-HJ-NP-Z2-9]{5}-){3}[A-HJ-NP-Z2-9]{5}", d1), d1
+    assert d1 != derivar_token("cd" * 16, "secreto") and d1 != derivar_token("ab" * 16, "otro")
 
     t = generar_token()
     assert len(t) == 27 and t.startswith("MTB-") and t != generar_token()
