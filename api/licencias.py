@@ -169,14 +169,10 @@ def _pedir_compilacion(url: str, clave: str, token: str) -> bytes:
         return r.read()
 
 
-def procesar_robot(datos: dict, headers: dict) -> tuple[int, bytes | dict]:
-    """GET /api/v1/licencias/robot?id=N (admin) → .ex5 compilado con el token de esa licencia."""
+def compilar_robot(licencia_id: int) -> tuple[int, bytes | dict]:
+    """.ex5 compilado con el token de esa licencia (lo usan el admin y el panel del alumno)."""
     import urllib.error
 
-    if not os.environ.get("MTB_ADMIN_KEY"):
-        return 503, {"error": "MTB_ADMIN_KEY no configurada en el servidor"}
-    if not _clave_ok(_h(headers, "X-Admin-Key"), "MTB_ADMIN_KEY"):
-        return 401, {"error": "clave de administrador inválida"}
     url, clave = os.environ.get("COMPILADOR_URL", ""), os.environ.get("COMPILADOR_KEY", "")
     if not url or not clave:
         return 503, {"error": "compilador no configurado (COMPILADOR_URL / COMPILADOR_KEY)"}
@@ -184,8 +180,8 @@ def procesar_robot(datos: dict, headers: dict) -> tuple[int, bytes | dict]:
     from persistencia import licencias
 
     try:
-        token = licencias.token_de_licencia(int(datos["id"]))
-    except (KeyError, TypeError, ValueError) as e:
+        token = licencias.token_de_licencia(int(licencia_id))
+    except (TypeError, ValueError) as e:
         return 400, {"error": str(e)}
     try:
         return 200, _pedir_compilacion(url, clave, token)
@@ -193,6 +189,17 @@ def procesar_robot(datos: dict, headers: dict) -> tuple[int, bytes | dict]:
         return 502, {"error": f"compilador respondió {e.code}: {e.read()[:200].decode(errors='replace')}"}
     except OSError as e:
         return 502, {"error": f"compilador no disponible: {e}"}
+
+
+def procesar_robot(datos: dict, headers: dict) -> tuple[int, bytes | dict]:
+    """GET /api/v1/licencias/robot?id=N (admin) → .ex5 compilado con el token de esa licencia."""
+    if not os.environ.get("MTB_ADMIN_KEY"):
+        return 503, {"error": "MTB_ADMIN_KEY no configurada en el servidor"}
+    if not _clave_ok(_h(headers, "X-Admin-Key"), "MTB_ADMIN_KEY"):
+        return 401, {"error": "clave de administrador inválida"}
+    if "id" not in datos:
+        return 400, {"error": "falta id"}
+    return compilar_robot(datos["id"])
 
 
 def demo() -> None:

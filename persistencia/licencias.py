@@ -22,6 +22,8 @@ from .conexion import get_conn
 
 TIPOS = {"demo", "real", "vip"}
 ROBOT_TODOS = "*"
+ROBOT_ALUMNOS = "seguidor-smc"
+VIGENCIA_DEMO_DIAS = 90
 _ALFABETO = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # sin 0/O/1/I: se copia a mano en MT5
 
 
@@ -74,7 +76,7 @@ def evaluar(lic: dict | None, cuenta: int, modo: str, robot: str, kill_switch: b
     return True, "ok"
 
 
-_COLS = "id, token_prefijo, cliente, cuenta, tipo, robot, expira_en, revocada_en, creada_en, ultimo_contacto, ultima_ip, ultimo_resultado"
+_COLS = "id, token_prefijo, cliente, cuenta, tipo, robot, expira_en, revocada_en, creada_en, ultimo_contacto, ultima_ip, ultimo_resultado, correo, origen"
 
 
 def _fila(cur_row, cols=_COLS) -> dict:
@@ -121,7 +123,8 @@ def verificar(token: str, cuenta: int, modo: str, robot: str, ip: str | None,
     return ok, motivo, lic
 
 
-def emitir(cliente: str, cuenta: int | None, tipo: str, robot: str, vigencia_dias: int | None) -> tuple[str, dict]:
+def emitir(cliente: str, cuenta: int | None, tipo: str, robot: str, vigencia_dias: int | None,
+           correo: str | None = None, origen: str = "admin") -> tuple[str, dict]:
     """Crea la licencia. cuenta=None → se amarra al primer robot que la use.
     Devuelve (token_en_claro, licencia) — el token no se puede recuperar después."""
     if tipo not in TIPOS:
@@ -138,12 +141,47 @@ def emitir(cliente: str, cuenta: int | None, tipo: str, robot: str, vigencia_dia
     token = derivar_token(semilla, _secreto())
     with get_conn() as conn:
         row = conn.execute(
-            f"""INSERT INTO licencias (token_hash, token_prefijo, cliente, cuenta, tipo, robot, expira_en, semilla)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING {_COLS}""",
-            (hash_token(token), token[:9], cliente.strip(), cuenta, tipo, robot.strip(), expira, semilla),
+            f"""INSERT INTO licencias (token_hash, token_prefijo, cliente, cuenta, tipo, robot, expira_en, semilla, correo, origen)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING {_COLS}""",
+            (hash_token(token), token[:9], cliente.strip(), cuenta, tipo, robot.strip(), expira, semilla,
+             correo.strip().lower() if correo else None, origen),
         ).fetchone()
         _evento_admin(conn, row[0], cuenta, "emitida")
     return token, _fila(row)
+
+
+def alumno_por_sesion(session_token: str) -> dict | None:
+    """Alumno del Panel de Alumnos con esa cookie mtb_token vigente (la sesión la crea n8n al hacer login)."""
+    if not session_token:
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, correo, nombre_completo FROM alumnos WHERE session_token = %s AND session_expira > now() LIMIT 1",
+            (session_token,),
+        ).fetchone()
+    return {"id": row[0], "correo": row[1].strip().lower(), "nombre": row[2]} if row else None
+
+
+def licencias_de_correo(correo: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT {_COLS} FROM licencias WHERE correo = %s ORDER BY creada_en DESC", (correo.strip().lower(),)
+        ).fetchall()
+    return [_fila(r) for r in rows]
+
+
+def asegurar_licencia_demo(correo: str, nombre: str) -> dict:
+    """Crea la licencia DEMO del alumno la primera vez que la pide (idempotente: 1 DEMO por correo)."""
+    import psycopg
+
+    correo = correo.strip().lower()
+    existente = next((l for l in licencias_de_correo(correo) if l["tipo"] == "demo" and l["origen"] == "registro"), None)
+    if existente:
+        return existente
+    try:
+        return emitir(nombre or correo, None, "demo", ROBOT_ALUMNOS, VIGENCIA_DEMO_DIAS, correo=correo, origen="registro")[1]
+    except psycopg.errors.UniqueViolation:  # otra petición del mismo alumno la creó en el mismo instante
+        return next(l for l in licencias_de_correo(correo) if l["tipo"] == "demo" and l["origen"] == "registro")
 
 
 def token_de_licencia(licencia_id: int) -> str:

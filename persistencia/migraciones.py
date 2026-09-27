@@ -178,6 +178,17 @@ _SQL = [
     """
     ALTER TABLE licencias ADD COLUMN IF NOT EXISTS semilla text
     """,
+    # licencias de alumnos: dueño por correo; 1 DEMO automática por alumno (persistencia/licencias.asegurar_licencia_demo)
+    """
+    ALTER TABLE licencias ADD COLUMN IF NOT EXISTS correo text
+    """,
+    """
+    ALTER TABLE licencias ADD COLUMN IF NOT EXISTS origen text NOT NULL DEFAULT 'admin'
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_licencia_demo_alumno ON licencias (correo)
+        WHERE tipo = 'demo' AND origen = 'registro'
+    """,
 ]
 
 # 36 simbolos × 5 temporalidades = 180 pares seeded en la primera migración

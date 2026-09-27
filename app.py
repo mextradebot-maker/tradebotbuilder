@@ -1,7 +1,8 @@
 """Servidor único de MexTradeBot en el VPS (EasyPanel) — reemplaza a Vercel.
 
   /api/*                 → router de siempre (api/analizar.py), sin cambios de lógica
-  /alumnos, /webhook/*   → n8n (lo que hacían los rewrites de vercel.json)
+  GET /alumnos, GET /webhook/panel-alumnos → Panel de Alumnos (plantillas/panel-alumnos.html, api/alumnos.py)
+  /webhook/*             → n8n: registro, login, logout y demás webhooks (antes rewrites de vercel.json)
   /salud                 → healthcheck para EasyPanel
   todo lo demás          → archivos estáticos de public/ (panel, master.html, manuales)
 
@@ -21,6 +22,7 @@ from api.analizar import handler as ApiHandler
 PUBLICO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public")
 N8N = urlsplit(os.environ.get("N8N_URL", "https://chatbotventas-n8n.h0w0dc.easypanel.host"))
 RUTAS_N8N = {"/alumnos": "/webhook/panel-alumnos"}
+RUTAS_PANEL = {"/alumnos", "/webhook/panel-alumnos"}  # GET: la página la arma mtb-api; POST (registro) sigue a n8n
 _SIN_REENVIO = {"host", "connection", "keep-alive", "transfer-encoding", "content-length", "accept-encoding"}
 
 
@@ -42,6 +44,8 @@ class Handler(SimpleHTTPRequestHandler):
         ruta = self._ruta()
         if ruta.startswith("/api/"):
             return ApiHandler.do_GET(self)
+        if ruta.rstrip("/") in RUTAS_PANEL:
+            return self._panel()
         if self._es_n8n():
             return self._a_n8n("GET")
         if ruta == "/salud":
@@ -57,6 +61,17 @@ class Handler(SimpleHTTPRequestHandler):
         if self._es_n8n():
             return self._a_n8n("POST")
         return ApiHandler.do_POST(self)
+
+    def _panel(self) -> None:
+        from api.alumnos import pagina_panel
+
+        datos = pagina_panel(dict(self.headers), urlsplit(self.path).query).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(datos)))
+        self.end_headers()
+        self.wfile.write(datos)
 
     def _a_n8n(self, metodo: str) -> None:
         partes = urlsplit(self.path)

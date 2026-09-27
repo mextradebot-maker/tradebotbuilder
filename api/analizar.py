@@ -15,6 +15,7 @@ despacha por path hacia la lógica de cada endpoint:
   GET/POST /api/mejor-indicador?simbolo=XAUUSD&direccion=compra — ver api/mejor_indicador.py
   POST /api/v1/auth, GET/POST /api/v1/licencias — cerebro de licencias, ver api/licencias.py
   GET /api/v1/licencias/robot?id=N — .ex5 personalizado (admin), ver api/licencias.procesar_robot
+  GET /api/v1/mis-licencias, /api/v1/mi-robot?id=N — alumno con sesión del panel, ver api/alumnos.py
   /api/setups pasa antes por api.licencias.gate_setups (licencia o clave de servicio)
 """
 
@@ -36,6 +37,8 @@ RUTA_CATALOGO = "/api/catalogo"
 RUTA_AUTH = "/api/v1/auth"
 RUTA_LICENCIAS = "/api/v1/licencias"
 RUTA_ROBOT = "/api/v1/licencias/robot"
+RUTA_MIS_LICENCIAS = "/api/v1/mis-licencias"
+RUTA_MI_ROBOT = "/api/v1/mi-robot"
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -63,6 +66,16 @@ class handler(BaseHTTPRequestHandler):
             from api.setups import procesar as procesar_setups
 
             status, body = gate_setups(qs, dict(self.headers)) or procesar_setups(qs)
+        elif ruta == RUTA_MIS_LICENCIAS:
+            from api.alumnos import procesar_mis_licencias
+
+            status, body = procesar_mis_licencias(dict(self.headers))
+        elif ruta == RUTA_MI_ROBOT:
+            from api.alumnos import procesar_mi_robot
+
+            status, body = procesar_mi_robot(qs, dict(self.headers))
+            if isinstance(body, bytes):
+                return self._responder_archivo(body, "MexTradeBot_SeguidorSMC.ex5")
         elif ruta == RUTA_ROBOT:
             from api.licencias import procesar_robot
 
