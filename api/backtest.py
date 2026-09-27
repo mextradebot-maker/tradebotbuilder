@@ -47,8 +47,15 @@ def procesar(payload: dict) -> tuple[int, dict]:
     except (TypeError, ValueError):
         return 400, {"error": "'dias'/'swing_length' deben ser enteros"}
 
-    fin = datetime.now(timezone.utc)
     desde_catalogo = str(payload.get("desde_catalogo", "")).lower() in ("1", "true", "yes")
+    if not desde_catalogo:
+        from api.setups import desde_snapshot
+        snap = desde_snapshot(simbolo, temporalidad, dias, swing_length)
+        reporte = (snap or {}).get("backtests", {}).get(direccion)
+        if reporte is not None:
+            return 200, {"simbolo": simbolo, "direccion": direccion, "temporalidad": temporalidad, "velas": snap.get("velas", 0), **reporte}
+
+    fin = datetime.now(timezone.utc)
     inicio = None
     if desde_catalogo and _persistencia is not None:
         try:

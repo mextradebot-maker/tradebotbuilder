@@ -37,6 +37,11 @@ def procesar(payload: dict) -> tuple[int, dict]:
     except (TypeError, ValueError):
         return 400, {"error": "'dias'/'swing_length' deben ser enteros"}
 
+    from api.setups import desde_snapshot
+    snap = desde_snapshot(simbolo, temporalidad, dias, swing_length)
+    if snap and "tendencia" in snap:
+        return 200, {"simbolo": simbolo, "temporalidad": temporalidad, "velas": snap.get("velas", 0), **snap["tendencia"]}
+
     fin = datetime.now(timezone.utc)
     inicio = fin - timedelta(days=dias)
 

@@ -77,7 +77,9 @@ def ciclo() -> int:
         if not c["activo"]:
             continue
         snap = persistencia.leer_snapshot(c["simbolo"], c["temporalidad"])
-        vacio = bool(snap) and not (snap["respuesta"] or {}).get("velas")
+        r = (snap or {}).get("respuesta") or {}
+        # vacío (descarga fallida) o formato viejo sin tendencia/backtests: rehacer, máx 1/hora
+        vacio = bool(snap) and (not r.get("velas") or "backtests" not in r)
         if not necesita_refresco(c["simbolo"], c["temporalidad"], snap and snap["refrescado_en"], ahora, vacio):
             continue
         try:

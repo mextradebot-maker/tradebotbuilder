@@ -71,6 +71,19 @@ DIAS_POR_TEMPORALIDAD = {
 DIRECCION_LONG_SHORT_A_COMPRA_VENTA = {"long": "compra", "short": "venta"}
 
 
+def desde_snapshot(simbolo: str, temporalidad: str, dias: int, swing_length: int) -> dict | None:
+    """Snapshot que refresco.py mantiene al día por vela, si fue calculado con los mismos
+    parámetros; None si no hay (o Postgres caído) y el llamador calcula en fresco.
+    Evita que 180 llamadas simultáneas de n8n descarguen Dukascopy a la vez (502)."""
+    if _persistencia is None or dias != DIAS_POR_TEMPORALIDAD.get(temporalidad) or swing_length != 20:
+        return None
+    try:
+        snap = _persistencia.leer_snapshot(simbolo, temporalidad)
+    except Exception:
+        return None
+    return snap["respuesta"] if snap and snap.get("respuesta") else None
+
+
 def procesar(payload: dict) -> tuple[int, dict]:
     simbolo = payload.get("simbolo")
     if not simbolo:
@@ -145,8 +158,11 @@ def procesar(payload: dict) -> tuple[int, dict]:
     tendencia = obtener_tendencia(ohlc, swing_length=swing_length)
     tendencia_actual = tendencia.get("direccion")
 
+    # también la dirección de la tendencia: /api/backtest la pide y la sirve desde este snapshot
+    direcciones = {s["direccion"] for s in setups_dict}
+    direcciones |= {ls for ls, cv in DIRECCION_LONG_SHORT_A_COMPRA_VENTA.items() if cv == tendencia_actual}
     reportes_por_direccion = {}
-    for direccion_ls in {s["direccion"] for s in setups_dict}:
+    for direccion_ls in direcciones:
         reportes_por_direccion[direccion_ls] = backtest_direccion(ohlc, direccion_ls, swing_length=swing_length)
 
     confirmados = []
@@ -175,6 +191,8 @@ def procesar(payload: dict) -> tuple[int, dict]:
         "temporalidad": temporalidad,
         "velas": len(ohlc),
         "tendencia_actual": tendencia_actual,
+        "tendencia": tendencia,
+        "backtests": {DIRECCION_LONG_SHORT_A_COMPRA_VENTA[ls]: r for ls, r in reportes_por_direccion.items()},
         "setups": setups_dict,
         "setups_confirmados": confirmados,
     }
