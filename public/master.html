@@ -239,7 +239,7 @@ function mtbRenderTabla() {
     var ultimo = l.ultimo_resultado && l.ultimo_resultado !== 'ok'
       ? '<div class="text-[10px] text-rose-400">' + mtbEsc(l.ultimo_resultado) + '</div>' : '';
     var accion = est === 'activa'
-      ? (l.cuenta ? '<button type="button" class="mtb-btn text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1 rounded-lg mr-1" data-liberar="' + l.id + '">Liberar cuenta</button>' : '') + '<button type="button" class="mtb-btn text-[11px] bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-slate-700 px-2.5 py-1 rounded-lg" data-revocar="' + l.id + '">Revocar</button>'
+      ? '<button type="button" class="mtb-btn text-[11px] bg-sky-900/60 hover:bg-sky-800 text-sky-200 border border-sky-700/60 px-2.5 py-1 rounded-lg mr-1" data-robot="' + l.id + '" title="Descargar .ex5 con el token de esta licencia">Robot</button>' + (l.cuenta ? '<button type="button" class="mtb-btn text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1 rounded-lg mr-1" data-liberar="' + l.id + '">Liberar cuenta</button>' : '') + '<button type="button" class="mtb-btn text-[11px] bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-slate-700 px-2.5 py-1 rounded-lg" data-revocar="' + l.id + '">Revocar</button>'
       : '<button type="button" class="mtb-btn text-[11px] bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/40 px-2.5 py-1 rounded-lg" data-reautorizar="' + l.id + '" data-expirada="' + (est === 'expirada') + '">' + (est === 'expirada' ? 'Renovar' : 'Reautorizar') + '</button>';
     return '<tr class="hover:bg-slate-800/40">' +
       '<td class="p-3"><div class="font-bold text-white">' + mtbEsc(l.cliente) + '</div><div class="text-[11px] text-slate-400 font-mono">' + mtbEsc(l.token_prefijo) + '…</div></td>' +
@@ -274,6 +274,23 @@ function mtbBindEventos() {
   document.getElementById('nodeTableBody').addEventListener('click', function(e) {
     var b = e.target.closest('button');
     if (!b) return;
+    if (b.dataset.robot) {
+      var texto = b.textContent; b.disabled = true; b.textContent = 'Compilando…';
+      fetch('/api/v1/licencias/robot?id=' + encodeURIComponent(b.dataset.robot), { headers: { 'X-Admin-Key': mtbAdminKey() } })
+        .then(function(r) {
+          if (!r.ok) return r.json().catch(function() { return {}; }).then(function(j) { throw new Error(j.error || ('HTTP ' + r.status)); });
+          return r.blob();
+        })
+        .then(function(blob) {
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'MexTradeBot_SeguidorSMC.ex5';
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function() { URL.revokeObjectURL(a.href); }, 5000);
+        })
+        .catch(function(e) { alert('No se pudo generar el robot: ' + e.message); })
+        .then(function() { b.disabled = false; b.textContent = texto; });
+    }
     if (b.dataset.liberar && confirm('¿Liberar la cuenta? El próximo robot que se conecte con este token quedará amarrado a su cuenta.')) {
       mtbAccion({ accion: 'liberar', id: Number(b.dataset.liberar) });
     }

@@ -14,6 +14,7 @@ despacha por path hacia la lógica de cada endpoint:
   GET/POST /api/calendario?simbolo=XAUUSD&horas=24 — ver api/calendario.py
   GET/POST /api/mejor-indicador?simbolo=XAUUSD&direccion=compra — ver api/mejor_indicador.py
   POST /api/v1/auth, GET/POST /api/v1/licencias — cerebro de licencias, ver api/licencias.py
+  GET /api/v1/licencias/robot?id=N — .ex5 personalizado (admin), ver api/licencias.procesar_robot
   /api/setups pasa antes por api.licencias.gate_setups (licencia o clave de servicio)
 """
 
@@ -34,6 +35,7 @@ RUTA_REFRESCAR_SNAPSHOT = "/api/refrescar-snapshot"
 RUTA_CATALOGO = "/api/catalogo"
 RUTA_AUTH = "/api/v1/auth"
 RUTA_LICENCIAS = "/api/v1/licencias"
+RUTA_ROBOT = "/api/v1/licencias/robot"
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -61,6 +63,12 @@ class handler(BaseHTTPRequestHandler):
             from api.setups import procesar as procesar_setups
 
             status, body = gate_setups(qs, dict(self.headers)) or procesar_setups(qs)
+        elif ruta == RUTA_ROBOT:
+            from api.licencias import procesar_robot
+
+            status, body = procesar_robot(qs, dict(self.headers))
+            if isinstance(body, bytes):
+                return self._responder_archivo(body, "MexTradeBot_SeguidorSMC.ex5")
         elif ruta == RUTA_LICENCIAS:
             from api.licencias import procesar_admin
 
@@ -142,6 +150,15 @@ class handler(BaseHTTPRequestHandler):
         else:
             status, body = procesar(payload)
         self._responder(status, body)
+
+    def _responder_archivo(self, datos: bytes, nombre: str) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Disposition", f'attachment; filename="{nombre}"')
+        self.send_header("Content-Length", str(len(datos)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(datos)
 
     def _responder(self, status: int, payload: dict) -> None:
         self.send_response(status)

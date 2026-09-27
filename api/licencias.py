@@ -156,6 +156,45 @@ def procesar_admin(metodo: str, datos: dict, headers: dict) -> tuple[int, dict]:
         return 400, {"error": str(e)}
 
 
+def _pedir_compilacion(url: str, clave: str, token: str) -> bytes:
+    import json
+    import urllib.request
+
+    req = urllib.request.Request(
+        url, data=json.dumps({"token": token}).encode(), method="POST",
+        # User-Agent propio: Cloudflare bloquea "Python-urllib" (error 1010)
+        headers={"Content-Type": "application/json", "X-Compilador-Key": clave, "User-Agent": "MexTradeBot-API/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=150) as r:
+        return r.read()
+
+
+def procesar_robot(datos: dict, headers: dict) -> tuple[int, bytes | dict]:
+    """GET /api/v1/licencias/robot?id=N (admin) → .ex5 compilado con el token de esa licencia."""
+    import urllib.error
+
+    if not os.environ.get("MTB_ADMIN_KEY"):
+        return 503, {"error": "MTB_ADMIN_KEY no configurada en el servidor"}
+    if not _clave_ok(_h(headers, "X-Admin-Key"), "MTB_ADMIN_KEY"):
+        return 401, {"error": "clave de administrador inválida"}
+    url, clave = os.environ.get("COMPILADOR_URL", ""), os.environ.get("COMPILADOR_KEY", "")
+    if not url or not clave:
+        return 503, {"error": "compilador no configurado (COMPILADOR_URL / COMPILADOR_KEY)"}
+
+    from persistencia import licencias
+
+    try:
+        token = licencias.token_de_licencia(int(datos["id"]))
+    except (KeyError, TypeError, ValueError) as e:
+        return 400, {"error": str(e)}
+    try:
+        return 200, _pedir_compilacion(url, clave, token)
+    except urllib.error.HTTPError as e:
+        return 502, {"error": f"compilador respondió {e.code}: {e.read()[:200].decode(errors='replace')}"}
+    except OSError as e:
+        return 502, {"error": f"compilador no disponible: {e}"}
+
+
 def demo() -> None:
     """Self-check sin BD: parsing, claves y cálculo de lotes con verificación simulada."""
     global _verificar
@@ -208,6 +247,25 @@ def demo() -> None:
             assert procesar_admin("POST", {"accion": "liberar", "id": 7}, h) == (200, {"ok": True})
             assert procesar_admin("POST", {"accion": "emitir", "cliente": "x", "cuenta": "", "tipo": "demo", "robot": "r"}, h)[0] == 200
             assert llamadas == [("liberar", 7), ("emitir", None)], llamadas
+
+            # robot personalizado: regenera el token y lo manda al compilador
+            falso.token_de_licencia = lambda i: "MTB-ABCDE-FGHJK-LMNPQ-RS234"
+            enviados = []
+            global _pedir_compilacion
+            original_pedir = _pedir_compilacion
+            _pedir_compilacion = lambda url, clave, token: (enviados.append((url, clave, token)) or b"EX5")
+            try:
+                os.environ.pop("COMPILADOR_URL", None)
+                assert procesar_robot({"id": "3"}, h)[0] == 503
+                os.environ["COMPILADOR_URL"], os.environ["COMPILADOR_KEY"] = "https://c/compilar", "ck"
+                st, cuerpo = procesar_robot({"id": "3"}, h)
+                assert st == 200 and cuerpo == b"EX5", (st, cuerpo)
+                assert enviados == [("https://c/compilar", "ck", "MTB-ABCDE-FGHJK-LMNPQ-RS234")]
+                assert procesar_robot({"id": "3"}, {"X-Admin-Key": "mala"})[0] == 401
+            finally:
+                _pedir_compilacion = original_pedir
+                os.environ.pop("COMPILADOR_URL", None)
+                os.environ.pop("COMPILADOR_KEY", None)
         finally:
             for k, v in previos.items():
                 if v is None:
