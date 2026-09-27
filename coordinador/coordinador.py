@@ -35,6 +35,7 @@ from conectividad.xm import (
 from conectividad.riesgo import calcular_lotes, es_swing
 from persistencia.conexion import get_conn
 from persistencia.licencias import kill_switch_activo
+from refresco import mercado_abierto
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -206,6 +207,10 @@ def _revisar_apertura(conn, cuenta: Dict[str, Any], balance: float, mt5_posicion
     tendencia = snapshot.get("tendencia_actual")
     if tendencia not in ("compra", "venta"):
         _log(conn, login, simbolo, temp, "SKIP_SIN_TENDENCIA", f"Tendencia no definida: {tendencia}")
+        return
+
+    if not mercado_abierto(simbolo, datetime.now(timezone.utc)):
+        _log(conn, login, simbolo, temp, "SKIP_MERCADO_CERRADO", "Fin de semana: no se abren posiciones")
         return
 
     tick = mt5.symbol_info_tick(simbolo)
