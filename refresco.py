@@ -1,8 +1,8 @@
 """Refresco de snapshots SMC dentro del servicio (reemplaza el cron n8n de 180 llamadas HTTP).
 
 Una combinación activo×temporalidad solo se refresca cuando cerró una vela nueva
-de SU temporalidad (Scalping 15m, Intraday 1h, Swing H 4h, Swing S semanal,
-Swing M mensual) y su snapshot es anterior a ese cierre. Con el mercado cerrado
+de SU temporalidad (Scalping 15m, Intraday 1h, Swing H 4h) y su snapshot es
+anterior a ese cierre; Swing S y M, una vez al día (su vela en curso cambia a diario). Con el mercado cerrado
 (fin de semana forex) no se refresca nada salvo cripto.
 """
 
@@ -15,6 +15,11 @@ CRIPTO = {"BTCUSD", "ETHUSD", "XRPUSD"}
 MARGEN_DATOS = timedelta(minutes=2)
 REINTENTO_VACIO = timedelta(hours=1)  # el proveedor publica la vela cerrada con un poco de retraso
 PAUSA_CICLO_S = 60
+# Swing S/M se recalculan a diario (no solo al cerrar su vela) para detectar un cambio
+# de tendencia a tiempo. 03:00 UTC: tras el cierre diario forex (21:00) y con la vela
+# diaria ya publicada, antes del Análisis Diario de n8n (06:00 UTC).
+REFRESCO_DIARIO = {"Swing (S)", "Swing (M)"}
+HORA_REFRESCO_DIARIO = 3
 
 
 def inicio_vela(ahora: datetime, temporalidad: str) -> datetime:
@@ -56,7 +61,11 @@ def necesita_refresco(simbolo: str, temporalidad: str, refrescado_en: datetime |
         return ahora - refrescado_en >= REINTENTO_VACIO
     if not mercado_abierto(simbolo, ahora) and refrescado_en is not None:
         return False
-    cierre = inicio_vela(ahora, temporalidad)
+    if temporalidad in REFRESCO_DIARIO:  # la vela semanal/mensual en curso cambia cada día
+        hoy = ahora.astimezone(timezone.utc).replace(hour=HORA_REFRESCO_DIARIO, minute=0, second=0, microsecond=0)
+        cierre = hoy if ahora >= hoy else hoy - timedelta(days=1)
+    else:
+        cierre = inicio_vela(ahora, temporalidad)
     if ahora < cierre + MARGEN_DATOS:  # vela recién cerrada: esperar a que el proveedor la publique
         return False
     if refrescado_en is None:
@@ -121,8 +130,10 @@ def demo() -> None:
     # snapshot de antes del cierre de la vela 14:30 → refrescar; de después → no
     assert necesita_refresco("EURUSD", "Scalping", datetime(2026, 9, 23, 14, 20, tzinfo=u), ahora)
     assert not necesita_refresco("EURUSD", "Scalping", datetime(2026, 9, 23, 14, 33, tzinfo=u), ahora)
-    # Swing mensual refrescado este mes → no se toca en todo el mes
-    assert not necesita_refresco("EURUSD", "Swing (M)", datetime(2026, 9, 2, tzinfo=u), ahora)
+    # Swing S/M: una vez al día, pasadas las 03:00 UTC (no esperar al cierre semanal/mensual)
+    assert necesita_refresco("EURUSD", "Swing (M)", datetime(2026, 9, 22, 4, tzinfo=u), ahora)
+    assert not necesita_refresco("EURUSD", "Swing (S)", datetime(2026, 9, 23, 3, 10, tzinfo=u), ahora)
+    assert not necesita_refresco("EURUSD", "Swing (S)", datetime(2026, 9, 22, 4, tzinfo=u), datetime(2026, 9, 23, 2, 0, tzinfo=u))
     assert necesita_refresco("EURUSD", "Swing (M)", None, ahora)
     # vela de 15m recién cerrada (14:31, dentro del margen de 2 min) → esperar
     assert not necesita_refresco("EURUSD", "Scalping", datetime(2026, 9, 23, 14, 10, tzinfo=u), datetime(2026, 9, 23, 14, 31, tzinfo=u))

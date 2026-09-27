@@ -109,7 +109,21 @@ def obtener_velas(
     """Descarga velas históricas. `simbolo` acepta una clave de SIMBOLOS o un
     instrumento crudo de dukascopy_python.instruments (ej. "XAU/USD")."""
     instrumento = SIMBOLOS.get(simbolo, simbolo)
-    return dp.fetch(instrumento, intervalo, offer_side, inicio, fin)
+    regla = _AGREGAR_DESDE_DIARIO.get(intervalo)
+    if regla is None:
+        return dp.fetch(instrumento, intervalo, offer_side, inicio, fin)
+    # Dukascopy publica W1/MN1 con 1-2 semanas de retraso (27 sep 2026: última semanal
+    # = 14 sep, última mensual = agosto). Las diarias sí vienen al día → se agregan
+    # aquí, incluyendo la vela en curso, para ver un cambio de tendencia a tiempo.
+    diario = dp.fetch(instrumento, dp.INTERVAL_DAY_1, offer_side, inicio, fin)
+    if diario.empty:
+        return diario
+    return (diario.resample(regla, label="left", closed="left")
+            .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
+            .dropna(subset=["open"]))
+
+
+_AGREGAR_DESDE_DIARIO = {dp.INTERVAL_WEEK_1: "W-MON", dp.INTERVAL_MONTH_1: "MS"}
 
 
 def demo() -> None:
