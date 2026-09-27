@@ -2,9 +2,9 @@
 #
 # Configura una tarea programada que ejecuta run_coordinador.py cada 15 minutos desatendida.
 
-$TaskName = "MexTradeBot-Coordinador"
-$WorkingDir = "C:\MTB\tradebotbuilder"
-$VenvPython = "C:\MTB\tradebotbuilder\.venv\Scripts\python.exe"
+$TaskName = "MTB-Coordinador"   # mismo nombre que la tarea existente en el VPS: la reemplaza
+$WorkingDir = "C:\MTB"
+$VenvPython = "python"          # Python del sistema, el mismo que usan las demas tareas del VPS
 $ScriptPath = "$WorkingDir\run_coordinador.py"
 
 Write-Host "Configurando Tarea Programada: $TaskName..." -ForegroundColor Cyan
