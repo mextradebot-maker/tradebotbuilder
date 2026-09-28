@@ -78,7 +78,7 @@ def necesita_refresco(simbolo: str, temporalidad: str, refrescado_en: datetime |
 def ciclo() -> int:
     """Refresca lo pendiente, uno por uno. Devuelve cuántos refrescó."""
     import persistencia
-    from api.setups import procesar
+    from api.setups import SWING_LENGTH_POR_TEMPORALIDAD, procesar
 
     ahora = datetime.now(timezone.utc)
     hechos = 0
@@ -87,8 +87,8 @@ def ciclo() -> int:
             continue
         snap = persistencia.leer_snapshot(c["simbolo"], c["temporalidad"])
         r = (snap or {}).get("respuesta") or {}
-        # vacío (descarga fallida) o formato viejo sin tendencia/backtests: rehacer, máx 1/hora
-        vacio = bool(snap) and (not r.get("velas") or "backtests" not in r)
+        # vacío (descarga fallida) o calculado con otro swing_length (recalibración): rehacer, máx 1/hora
+        vacio = bool(snap) and (not r.get("velas") or r.get("swing_length") != SWING_LENGTH_POR_TEMPORALIDAD.get(c["temporalidad"]))
         if not necesita_refresco(c["simbolo"], c["temporalidad"], snap and snap["refrescado_en"], ahora, vacio):
             continue
         try:

@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 
 from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, obtener_velas
 from motor_smc import obtener_tendencia
+from api.setups import SWING_LENGTH_POR_TEMPORALIDAD
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -33,7 +34,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
 
     try:
         dias = int(payload.get("dias", 90))
-        swing_length = int(payload.get("swing_length", 20))
+        swing_length = int(payload.get("swing_length", SWING_LENGTH_POR_TEMPORALIDAD.get(temporalidad, 20)))
     except (TypeError, ValueError):
         return 400, {"error": "'dias'/'swing_length' deben ser enteros"}
 

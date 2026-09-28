@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 
 from backtesting.comparar_indicadores import comparar_indicadores
 from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, obtener_velas
+from api.setups import SWING_LENGTH_POR_TEMPORALIDAD
 
 DIRECCION_A_LONG_SHORT = {"compra": "long", "venta": "short"}
 
@@ -43,7 +44,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
 
     try:
         dias = int(payload.get("dias", DIAS_POR_TEMPORALIDAD.get(temporalidad, 365)))
-        swing_length = int(payload.get("swing_length", 20))
+        swing_length = int(payload.get("swing_length", SWING_LENGTH_POR_TEMPORALIDAD.get(temporalidad, 20)))
         fraccion_out_of_sample = float(payload.get("fraccion_out_of_sample", 0.25))
     except (TypeError, ValueError):
         return 400, {"error": "'dias'/'swing_length' deben ser enteros, 'fraccion_out_of_sample' un decimal"}

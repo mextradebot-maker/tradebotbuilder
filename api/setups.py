@@ -35,11 +35,13 @@ from backtesting.backtest import backtest_direccion
 from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, obtener_velas
 from motor_smc import analizar, detectar_setups, obtener_tendencia
 
-# ponytail: umbral y dias-por-temporalidad duplicados en 3 lugares (este
-# archivo, el job n8n "MTB Analisis Diario de Mercado", y el webhook "Panel
-# Alumnos - Resumen") -- no hay todavia una fuente unica de configuracion
-# compartida entre Python y n8n. Si se ajusta uno, ajustar los tres.
-UMBRAL_SETUPS_SUFICIENTES = 20
+# ponytail: dias-por-temporalidad duplicado en api/mejor_indicador.py y en el
+# job n8n "MTB Analisis Diario de Mercado" (nodo Consultar Backtest) -- si se
+# ajusta aquí, ajustar ahí. swing_length y el umbral viven solo aquí.
+# Umbral 10 (antes 20): con las ventanas de DIAS_POR_TEMPORALIDAD ninguna combinación
+# símbolo×dirección llegaba a 20 casos → ningún setup podía confirmarse (barrido
+# 27 sep 2026, backtesting/calibrar_swing_length.py). Decisión de Ricardo.
+UMBRAL_SETUPS_SUFICIENTES = 10
 
 # Cache Postgres (Fase 1 BD SMC persistente). Si DATABASE_URL no esta disponible
 # o Postgres esta caido, _persistencia queda None y se cae al compute fresco.
@@ -68,6 +70,17 @@ DIAS_POR_TEMPORALIDAD = {
     "Swing (M)": 2555,
 }
 
+# Barrido 27 sep 2026 (spec docs/superpowers/specs/2026-09-27-calibracion-swing-length-design.md):
+# con 20 fijo, Scalping/Intraday casi no daban setups y Swing (M) nunca definía tendencia.
+# Valores "conservadores" elegidos por Ricardo sobre la tabla del barrido.
+SWING_LENGTH_POR_TEMPORALIDAD = {
+    "Scalping": 8,
+    "Intraday": 10,
+    "Swing (H)": 10,
+    "Swing (S)": 5,
+    "Swing (M)": 5,
+}
+
 DIRECCION_LONG_SHORT_A_COMPRA_VENTA = {"long": "compra", "short": "venta"}
 
 
@@ -75,7 +88,7 @@ def desde_snapshot(simbolo: str, temporalidad: str, dias: int, swing_length: int
     """Snapshot que refresco.py mantiene al día por vela, si fue calculado con los mismos
     parámetros; None si no hay (o Postgres caído) y el llamador calcula en fresco.
     Evita que 180 llamadas simultáneas de n8n descarguen Dukascopy a la vez (502)."""
-    if _persistencia is None or dias != DIAS_POR_TEMPORALIDAD.get(temporalidad) or swing_length != 20:
+    if _persistencia is None or dias != DIAS_POR_TEMPORALIDAD.get(temporalidad) or swing_length != SWING_LENGTH_POR_TEMPORALIDAD.get(temporalidad):
         return None
     try:
         snap = _persistencia.leer_snapshot(simbolo, temporalidad)
@@ -96,7 +109,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
     try:
         dias_default = DIAS_POR_TEMPORALIDAD.get(temporalidad, 90)
         dias = int(payload.get("dias", dias_default))
-        swing_length = int(payload.get("swing_length", 20))
+        swing_length = int(payload.get("swing_length", SWING_LENGTH_POR_TEMPORALIDAD.get(temporalidad, 20)))
         ventana_fvg = int(payload.get("ventana_fvg", 5))
     except (TypeError, ValueError):
         return 400, {"error": "'dias'/'swing_length'/'ventana_fvg' deben ser enteros"}
@@ -191,6 +204,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
         "temporalidad": temporalidad,
         "velas": len(ohlc),
         "tendencia_actual": tendencia_actual,
+        "swing_length": swing_length,
         "tendencia": tendencia,
         "backtests": {DIRECCION_LONG_SHORT_A_COMPRA_VENTA[ls]: r for ls, r in reportes_por_direccion.items()},
         "setups": setups_dict,

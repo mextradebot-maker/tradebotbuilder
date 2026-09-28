@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone, time as _time
 
 from backtesting.backtest import backtest_direccion
 from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, obtener_velas
+from api.setups import SWING_LENGTH_POR_TEMPORALIDAD
 
 try:
     import persistencia as _persistencia
@@ -43,7 +44,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
 
     try:
         dias = int(payload.get("dias", 365))
-        swing_length = int(payload.get("swing_length", 20))
+        swing_length = int(payload.get("swing_length", SWING_LENGTH_POR_TEMPORALIDAD.get(temporalidad, 20)))
     except (TypeError, ValueError):
         return 400, {"error": "'dias'/'swing_length' deben ser enteros"}
 
