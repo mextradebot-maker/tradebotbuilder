@@ -49,8 +49,18 @@ def setups_vigentes(snapshots: list[dict], max_velas: int = VELAS_VIGENCIA) -> d
         "sin_setup": sin_setup,
         "snapshot_mas_viejo": min(refrescos) if refrescos else None,
         "vigentes": sorted(vigentes, key=lambda x: (x["velas_desde_confirmacion"], x["simbolo"])),
+        "conteo_por_temporalidad": _conteos(tendencias),  # Claude redacta, no cuenta (contaba mal)
         "tendencias": tendencias,
     }
+
+
+def _conteos(tendencias: dict) -> dict:
+    c = {}
+    for por_temp in tendencias.values():
+        for temp, d in por_temp.items():
+            c.setdefault(temp, {"compra": 0, "venta": 0, "sin_definir": 0})
+            c[temp][d if d in ("compra", "venta") else "sin_definir"] += 1
+    return c
 
 
 def _leer_snapshots() -> list[dict]:
@@ -97,6 +107,7 @@ def demo() -> None:
     v = rep["vigentes"][0]
     assert (v["simbolo"], v["direccion"], v["velas_desde_confirmacion"]) == ("XAUUSD", "compra", 4), v
     assert rep["tendencias"]["EURUSD"]["Scalping"] == "venta"
+    assert rep["conteo_por_temporalidad"]["Intraday"] == {"compra": 1, "venta": 0, "sin_definir": 0}
     assert setups_vigentes([])["con_setup_vigente"] == 0
 
     previa = os.environ.pop("MTB_SERVICE_KEY", None)
