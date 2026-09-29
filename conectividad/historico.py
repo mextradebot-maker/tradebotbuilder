@@ -144,10 +144,12 @@ def obtener_velas(
             and os.environ.get("DATABASE_URL") and time.monotonic() >= _ALMACEN_FALLA[0]):
         try:
             return _velas_almacen(simbolo, instrumento, inicio, fin, intervalo)
+        except _ErrDescarga as e:
+            raise e.__cause__  # falla de Dukascopy, no del almacen: sin pausa ni reintento directo
         except Exception:
             # ponytail: pausa global de 60 s tras cualquier falla (BD caida no cuesta un timeout por llamada)
             _ALMACEN_FALLA[0] = time.monotonic() + 60
-            log.warning("almacen de velas fallo (%s %s); descarga directa", simbolo, intervalo, exc_info=True)
+            log.error("almacen de velas fallo (%s %s); descarga directa", simbolo, intervalo, exc_info=True)
     return _velas_directo(instrumento, inicio, fin, intervalo, offer_side)
 
 
@@ -181,6 +183,17 @@ _EXTRA_FIN = {dp.INTERVAL_MIN_30: timedelta(minutes=15), dp.INTERVAL_HOUR_4: tim
 _ALMACEN_FALLA = [0.0]  # time.monotonic() hasta el que no se intenta el almacén
 
 
+class _ErrDescarga(Exception):
+    """Envuelve un error de dp.fetch dentro del camino del almacen (causa = error original)."""
+
+
+def _descargar(instrumento, intervalo, a, b):
+    try:
+        return dp.fetch(instrumento, intervalo, dp.OFFER_SIDE_BID, a, b)
+    except Exception as e:
+        raise _ErrDescarga() from e
+
+
 def _velas_almacen(simbolo, instrumento, inicio, fin, intervalo):
     from conectividad import almacen
     import pandas as pd
@@ -192,7 +205,7 @@ def _velas_almacen(simbolo, instrumento, inicio, fin, intervalo):
     f = pd.Timestamp(datetime.fromtimestamp(fin.timestamp(), timezone.utc))
     lo = ini.floor(_VELA_QUE_CONTIENE[intervalo]) if intervalo in _VELA_QUE_CONTIENE else ini
     base = almacen.sincronizar(simbolo, serie, lo, f + _EXTRA_FIN.get(intervalo, timedelta(0)),
-                               lambda a, b: dp.fetch(instrumento, iv_base, dp.OFFER_SIDE_BID, a, b), paso)
+                               lambda a, b: _descargar(instrumento, iv_base, a, b), paso)
     if derivada is None:
         return base
     out = almacen.agregar(base, derivada)
@@ -220,8 +233,41 @@ def _demo_temporalidades() -> None:
     print("conectividad.historico._demo_temporalidades() OK")
 
 
+def _demo_error_descarga() -> None:
+    """Sin red ni BD: un error de Dukascopy dentro del almacen se propaga tal cual, sin pausar el almacen
+    ni repetir la descarga directa."""
+    from conectividad import almacen
+    llamadas, orig_fetch, orig_sinc = [], dp.fetch, almacen.sincronizar
+    url = os.environ.get("DATABASE_URL")
+
+    def fetch_roto(*a, **k):
+        llamadas.append(a)
+        raise ConnectionError("dukascopy caido")
+
+    dp.fetch = fetch_roto
+    almacen.sincronizar = lambda s, se, lo, hi, descargar, paso: descargar(lo, hi)
+    os.environ["DATABASE_URL"] = "postgresql://nadie@localhost:1/x"
+    _ALMACEN_FALLA[0] = 0.0
+    try:
+        try:
+            obtener_velas("XAUUSD", datetime(2026, 9, 1), datetime(2026, 9, 2), dp.INTERVAL_MIN_15)
+            raise AssertionError("debio propagar el error de Dukascopy")
+        except ConnectionError:
+            pass
+        assert len(llamadas) == 1, "no debe repetir la descarga directa"
+        assert _ALMACEN_FALLA[0] == 0.0, "un error de red no pausa el almacen"
+    finally:
+        dp.fetch, almacen.sincronizar = orig_fetch, orig_sinc
+        if url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = url
+    print("conectividad.historico._demo_error_descarga() OK")
+
+
 def demo() -> None:
     _demo_temporalidades()
+    _demo_error_descarga()
     from motor_smc import analizar, detectar_setups
 
     # rango fijo en el pasado (dukascopy es dato historico real, no hay datos
@@ -303,6 +349,7 @@ def demo_almacen() -> None:
 if __name__ == "__main__":
     import os as _os
     if _os.environ.get("HISTORICO_DEMO_ALMACEN") == "1":
+        _demo_error_descarga()
         demo_almacen()
     else:
         demo()

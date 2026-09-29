@@ -3,16 +3,25 @@
 `leer` devuelve lo mismo que `obtener_velas` (open/high/low/close/volume float64,
 indice DatetimeIndex UTC) para poder sustituirlo de forma transparente.
 """
+import logging
 import os
+import threading
+from contextlib import contextmanager
 
 import numpy as np
 import pandas as pd
 
+log = logging.getLogger(__name__)
+# maximo de conexiones Postgres simultaneas del almacen por proceso (hilos HTTP + refresco + carga)
+_CONEXIONES = threading.BoundedSemaphore(4)
 
+
+@contextmanager
 def get_conn():
     # import perezoso: importar persistencia corre las migraciones y exige DATABASE_URL
     from persistencia.conexion import get_conn as _g
-    return _g()
+    with _CONEXIONES, _g() as conn:
+        yield conn
 
 
 COLS = ["open", "high", "low", "close", "volume"]
@@ -100,7 +109,7 @@ def sincronizar(simbolo: str, serie: str, lo, hi, descargar, paso) -> pd.DataFra
     lo, hi = _utc(lo), _utc(hi)
     c = carga(simbolo, serie)
     if c is not None and c[0] <= lo:
-        if hi > c[1]:
+        if hi >= c[1]:  # >=: la ultima vela guardada pudo quedar parcial, se vuelve a pedir
             desde = c[1] - paso
             nuevas = descargar(desde.to_pydatetime(), hi.to_pydatetime())
             if not nuevas.empty:
@@ -108,6 +117,9 @@ def sincronizar(simbolo: str, serie: str, lo, hi, descargar, paso) -> pd.DataFra
                 registrar_carga(simbolo, serie, desde, nuevas.index[-1])
         return leer(simbolo, serie, lo, hi)
     df = descargar(lo.to_pydatetime(), hi.to_pydatetime())
+    if not df.empty and serie in ("15m", "1H") and df.index[0] - lo > pd.Timedelta(days=4):
+        log.warning("almacen %s %s: la descarga pedida desde %s empieza en %s (posible descarga truncada)",
+                    simbolo, serie, lo, df.index[0])
     if not df.empty:
         guardar(simbolo, serie, df)
         registrar_carga(simbolo, serie, lo, df.index[-1])
@@ -194,6 +206,11 @@ def _demo_sincronizar(sim: str) -> None:
     # 3) ventana dentro de lo guardado: no pide nada a Dukascopy
     pedidos.clear()
     assert sincronizar(sim, "15m", t[20], t[250], descargar, paso).equals(todo.iloc[20:251]) and pedidos == []
+    # 3b) fin == ultima vela guardada: se vuelve a pedir (pudo guardarse parcial) y se corrige
+    todo.iloc[300, 3] = -1.0
+    got = sincronizar(sim, "15m", t[20], t[300], descargar, paso)
+    assert pedidos == [(t[299], t[300])] and got.close.iloc[-1] == -1.0, pedidos
+    pedidos.clear()
     # 4) ventana anterior sin traslape: bajada directa, la cobertura no salta el hueco
     got = sincronizar(sim, "15m", t[0], t[5], descargar, paso)
     assert pedidos == [(t[0], t[5])] and carga(sim, "15m") == (t[10], t[300])
