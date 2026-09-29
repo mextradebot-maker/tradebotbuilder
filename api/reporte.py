@@ -6,7 +6,8 @@ No calcula nada: lee los snapshots que refresco.py ya mantiene al día en Postgr
 redacta el mensaje de Telegram con este JSON.
 
 "Vigente" = conocido (indice_conocido; si no viene, confirmado) en las últimas VELAS_VIGENCIA velas de su temporalidad: la misma
-ventana en que el robot mantiene su orden pendiente (InpVelasExpiracion del EA).
+ventana en que el robot mantiene su orden pendiente (InpVelasExpiracion del EA). Un setup del motor v2
+con `resultado` distinto de "sin_llenar" (ya llenado, cancelado o expirado) tampoco está vigente.
 """
 
 import os
@@ -25,6 +26,8 @@ def setups_vigentes(snapshots: list[dict], max_velas: int = VELAS_VIGENCIA) -> d
         velas = int(r.get("velas") or 0)
         encontrados = []
         for st in r.get("setups_confirmados") or []:
+            if st.get("resultado", "sin_llenar") != "sin_llenar":
+                continue
             hace = velas - 1 - int(st.get("indice_conocido", st["indice_confirmacion"]))
             if 0 <= hace <= max_velas:
                 encontrados.append({
@@ -116,6 +119,11 @@ def demo() -> None:
     rv = setups_vigentes([snap("XAUUSD", "Intraday", 500, [v2])])["vigentes"][0]
     assert (rv["velas_desde_confirmacion"], rv["tp"], rv["tipo"]) == (4, 2660.0, "reversion"), rv
     assert v["tp"] is None and v["tipo"] is None  # setups viejos sin tp/tipo
+    # un setup ya llenado/cancelado/expirado no está vigente aunque esté dentro de la ventana
+    resuelto = {**v2, "resultado": "gano"}
+    assert setups_vigentes([snap("XAUUSD", "Intraday", 500, [resuelto])])["con_setup_vigente"] == 0
+    pendiente = {**v2, "resultado": "sin_llenar"}
+    assert setups_vigentes([snap("XAUUSD", "Intraday", 500, [pendiente])])["con_setup_vigente"] == 1
 
     previa = os.environ.pop("MTB_SERVICE_KEY", None)
     try:

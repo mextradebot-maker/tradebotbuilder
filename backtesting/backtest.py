@@ -27,8 +27,10 @@ import pandas as pd
 # una regla mejor en la metodologia.
 RETORNO_RIESGO_TP = 2.0
 
-# v2: "sin_llenar" (el precio nunca volvió a la entrada) y "sin_resolver" no cuentan.
+# v2: "sin_llenar" (orden pendiente todavía vigente al final de los datos), "expirado",
+# "cancelado_tp" y "sin_resolver" no cuentan.
 RESULTADOS_RESUELTOS = ("gano", "perdio", "invalidado")
+VELAS_EXPIRACION_ORDEN = 20  # = InpVelasExpiracion del EA (robots/MexTradeBot_SeguidorSMC.mq5)
 
 
 def _simular_uno(ohlc: pd.DataFrame, setup: pd.Series, r_multiplo_tp: float) -> dict:
@@ -142,16 +144,21 @@ def _simular_v2_uno(ohlc: pd.DataFrame, s) -> dict:
       `zona_extremo` -> invalidado, sale al cierre (§1.3); el TP no cuenta en esa vela
       (el orden intrabar es desconocido).
     - Si antes de llenar el precio toca el TP, la orden se cancela ("cancelado_tp", no cuenta).
+    - Si pasan VELAS_EXPIRACION_ORDEN velas sin llenar, expira como en el EA ("expirado", no cuenta);
+      si los datos se acaban antes, queda "sin_llenar" (= orden pendiente todavía vigente).
     - Después: stop antes que TP si ambos se tocan en la misma vela (peor caso)."""
     long = s["direccion"] == "long"
     entrada, stop, tp, extremo = s["entrada"], s["stop"], s["tp"], s["zona_extremo"]
     riesgo = abs(entrada - stop)
     riesgo_pct = riesgo / entrada
     lleno_en = None
-    for p in range(int(s["indice_conocido"]) + 1, len(ohlc)):
+    conocido = int(s["indice_conocido"])
+    for p in range(conocido + 1, len(ohlc)):
         v = ohlc.iloc[p]
         toca_stop = v["low"] <= stop if long else v["high"] >= stop
         if lleno_en is None:
+            if p > conocido + VELAS_EXPIRACION_ORDEN:
+                return {"resultado": "expirado", "r": 0.0, "velas": 0, "riesgo_pct": riesgo_pct}
             if not (v["low"] <= entrada if long else v["high"] >= entrada):
                 if v["high"] >= tp if long else v["low"] <= tp:  # el TP llegó antes que la entrada: orden cancelada
                     return {"resultado": "cancelado_tp", "r": 0.0, "velas": 0, "riesgo_pct": riesgo_pct}
@@ -181,9 +188,11 @@ def simular_v2(ohlc: pd.DataFrame, setups: pd.DataFrame) -> pd.DataFrame:
     return pd.concat([validos, pd.DataFrame([_simular_v2_uno(ohlc, f) for _, f in validos.iterrows()])], axis=1)
 
 
-def backtest_v2(ohlc: pd.DataFrame, setups: pd.DataFrame) -> dict:
-    """Reporte separado por tipo de apertura y dirección (compra/venta, mismo vocabulario que /api/tendencia)."""
-    resultados = simular_v2(ohlc, setups)
+def backtest_v2(ohlc: pd.DataFrame, setups: pd.DataFrame, resultados: pd.DataFrame | None = None) -> dict:
+    """Reporte separado por tipo de apertura y dirección (compra/venta, mismo vocabulario que /api/tendencia).
+    `resultados`: la salida de `simular_v2` si el llamador ya la tiene (no simula dos veces)."""
+    if resultados is None:
+        resultados = simular_v2(ohlc, setups)
     salida = {}
     for tipo in ("reversion", "continuacion"):
         salida[tipo] = {}
@@ -203,7 +212,7 @@ def demo() -> None:
     from conectividad import obtener_velas
 
     # ── v2 (sintético, sin red) ──
-    idx = pd.date_range("2026-01-05", periods=8, freq="h", tz="UTC")
+    idx = pd.date_range("2026-01-05", periods=30, freq="h", tz="UTC")
 
     def serie(filas):
         return pd.DataFrame(filas, columns=["open", "high", "low", "close", "volume"], index=idx[: len(filas)])
@@ -223,6 +232,14 @@ def demo() -> None:
     assert _simular_v2_uno(tp_en_llenado, s)["velas"] == 2  # el TP de la vela que llena no cuenta
     tp_antes = serie([(105, 106, 104, 105, 1), (105, 111, 104, 110, 1), (110, 110, 99, 100, 1)])
     assert _simular_v2_uno(tp_antes, s)["resultado"] == "cancelado_tp"  # el TP llegó antes que la entrada
+    # expiración igual que el EA (InpVelasExpiracion): 20 velas tras indice_conocido sin llenar
+    quieta = (105, 106, 104, 105, 1)
+    assert _simular_v2_uno(serie([quieta] * 22), s)["resultado"] == "expirado"
+    assert _simular_v2_uno(serie([quieta] * 21), s)["resultado"] == "sin_llenar"  # velas 1..20: sigue vigente
+    llena_ultima = serie([quieta] * 20 + [(101, 102, 99, 101, 1), (101, 111, 100, 110, 1)])
+    assert _simular_v2_uno(llena_ultima, s)["resultado"] == "gano"  # llenó en la vela 20: todavía válida
+    exp = backtest_v2(serie([quieta] * 22), pd.DataFrame([base]))
+    assert exp["total"]["compra"]["n_setups"] == 0 and "expirado" not in RESULTADOS_RESUELTOS
     corto = pd.Series({**base, "direccion": "short", "stop": 105.0, "tp": 90.0, "zona_extremo": 103.0})
     assert _simular_v2_uno(serie([(95, 96, 94, 95, 1), (98, 101, 97, 99, 1), (99, 100, 89, 90, 1)]), corto)["resultado"] == "gano"
     rep = backtest_v2(gana, pd.DataFrame([base, {**base, "valido": False}]))

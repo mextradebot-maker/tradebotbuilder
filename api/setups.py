@@ -27,7 +27,7 @@ from datetime import datetime, timedelta, timezone, time as _time
 
 import dukascopy_python as dp
 
-from backtesting.backtest import backtest_v2
+from backtesting.backtest import backtest_v2, simular_v2
 from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, obtener_velas
 from motor_smc import analizar, detectar_setups, obtener_tendencia
 from motor_smc.setups_v2 import detectar_setups_v2, embudo
@@ -125,12 +125,17 @@ def motor_v2(simbolo: str, temporalidad: str, ohlc, inicio, fin) -> dict:
         setups = detectar_setups_v2(ohlc, ohlc_mayor, vela, vela_mayor)
         # jsonb no acepta NaN: celdas vacías -> None
         registros = setups.astype(object).where(setups.notna(), None).to_dict(orient="records")
+        simulados = simular_v2(ohlc, setups)
+        validos = [s for s in registros if s["valido"]]
+        for s, res in zip(validos, simulados["resultado"]):  # simular_v2 conserva el orden de los válidos
+            s["resultado"] = res
         resultado = {
             "estado": "ok", "vela": vela, "vela_mayor": vela_mayor,
             "setups": registros,
-            "setups_validos": [s for s in registros if s["valido"]],
+            # al EA solo va la orden todavía vigente: ni llenada, ni cancelada, ni expirada
+            "setups_validos": [s for s in validos if s["resultado"] == "sin_llenar"],
             "embudo": embudo(setups),
-            "backtests": backtest_v2(ohlc, setups),
+            "backtests": backtest_v2(ohlc, setups, simulados),
         }
         # ida y vuelta estricta: un NaN o tipo numpy en embudo/backtests lanza aquí (-> estado error)
         # en vez de romper json.dumps en escribir_snapshot y dejar sin snapshot al motor viejo.
@@ -295,6 +300,18 @@ def _demo_aislamiento() -> None:
         r = motor_v2("XAUUSD", "Intraday", ohlc, ini, fin)
         assert r["estado"] == "ok" and r["setups"] == [], r
         json.dumps(r, allow_nan=False)
+
+        # solo pasa a setups_validos (-> setups_confirmados) la orden todavía vigente ("sin_llenar")
+        reglas = {n: {"cumple": True, "dato": None, "razon": ""} for n in ("R1", "R2", "R3", "R4", "R5", "R6")}
+        fila = {c: None for c in COLUMNAS} | {"tipo": "continuacion", "direccion": "long", "valido": True,
+                                              "razon_descarte": "", "reglas": reglas}
+        ya_gano = fila | {"indice_conocido": 2, "entrada": 1.0, "stop": 0.2, "tp": 1.9, "zona_extremo": 0.3}
+        vigente = fila | {"indice_conocido": 8, "entrada": 0.1, "stop": 0.05, "tp": 5.0, "zona_extremo": 0.08}
+        g.detectar_setups_v2 = lambda *a, **k: pd.DataFrame([ya_gano, vigente], columns=COLUMNAS)
+        r = motor_v2("XAUUSD", "Intraday", ohlc, ini, fin)
+        assert [s["resultado"] for s in r["setups"]] == ["gano", "sin_llenar"], r["setups"]
+        assert [s["indice_conocido"] for s in r["setups_validos"]] == [8], r["setups_validos"]
+        assert r["backtests"]["total"]["compra"]["n_setups"] == 1
     finally:
         for n, v in orig.items():
             setattr(g, n, v)
