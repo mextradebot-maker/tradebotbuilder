@@ -1,8 +1,10 @@
 """Motor SMC — Bloque 4.
 
 Lee velas de MT5 por cada par activo en cuentas_demo,
-calcula tendencia (HH/HL vs LH/LL) + ATR,
-y hace upsert en smc_snapshot.
+calcula tendencia (HH/HL vs LH/LL) + ATR y solo ACTUALIZA ultimo_timestamp, volumen_promedio y atr
+de la fila existente de smc_snapshot (nunca inserta). tendencia_actual y refrescado_en los escribe
+únicamente el refresco v2 (refresco.py): refrescado_en es su reloj de frescura y la caché de
+api/setups.py. La tendencia de MT5 que se imprime es solo informativa.
 
 Ejecutar antes de coordinador.py (o en paralelo con mayor frecuencia).
 """
@@ -102,22 +104,15 @@ def ciclo() -> None:
             r = _analizar(simbolo, temporalidad)
             if r is None:
                 continue
+            canon = resolver_temporalidad(temporalidad)  # nombres viejos de cuentas_demo -> fila canónica
             with get_conn() as conn:
                 conn.execute(
-                    """INSERT INTO smc_snapshot
-                           (simbolo, temporalidad, ultimo_timestamp,
-                            tendencia_actual, volumen_promedio, atr, refrescado_en)
-                       VALUES (%s, %s, to_timestamp(%s), %s, %s, %s, now())
-                       ON CONFLICT (simbolo, temporalidad) DO UPDATE SET
-                           ultimo_timestamp = EXCLUDED.ultimo_timestamp,
-                           tendencia_actual = EXCLUDED.tendencia_actual,
-                           volumen_promedio = EXCLUDED.volumen_promedio,
-                           atr              = EXCLUDED.atr,
-                           refrescado_en    = now()""",
-                    (simbolo, temporalidad, r["ultimo_timestamp"],
-                     r["tendencia_actual"], r["volumen_promedio"], r["atr"]),
+                    """UPDATE smc_snapshot
+                          SET ultimo_timestamp = to_timestamp(%s), volumen_promedio = %s, atr = %s
+                        WHERE simbolo = %s AND temporalidad = %s""",
+                    (r["ultimo_timestamp"], r["volumen_promedio"], r["atr"], simbolo, canon),
                 )
-            print(f"  {simbolo}/{temporalidad}: tendencia={r['tendencia_actual']}  ATR={r['atr']:.5f}")
+            print(f"  {simbolo}/{canon}: ATR={r['atr']:.5f}  (tendencia MT5 informativa={r['tendencia_actual']})")
     finally:
         desconectar()
     print("Motor SMC: ciclo completado")
