@@ -20,9 +20,9 @@ from motor_smc import analizar, detectar_setups, obtener_tendencia
 
 SIMBOLOS = ["XAUUSD", "EURUSD", "US30", "BTCUSD"]
 CANDIDATOS = {
-    "Scalping": [5, 8, 10, 15, 20, 30],
-    "Intraday": [5, 8, 10, 15, 20, 30],
-    "Swing (H)": [5, 8, 10, 15, 20, 30],
+    "Scalping 15m": [5, 8, 10, 15, 20, 30],
+    "Intraday 1H": [5, 8, 10, 15, 20, 30],
+    "Intraday 4H": [5, 8, 10, 15, 20, 30],
     "Swing (S)": [3, 5, 8, 10, 15, 20],   # ~157 velas semanales en 3 años
     "Swing (M)": [2, 3, 5, 8, 10, 20],    # ~85 velas mensuales en 7 años
 }
@@ -87,7 +87,7 @@ def demo() -> None:
                          "volume": 1.0}, index=pd.date_range("2026-01-01", periods=n, freq="h"))
     m = medir(ohlc, 5)
     assert m["setups"] >= m["resueltos"] >= m["oos_resueltos"] >= 0
-    df = pd.DataFrame([{"temporalidad": "Intraday", "swing_length": 5, "simbolo": "X", "dias": 30, **m}])
+    df = pd.DataFrame([{"temporalidad": "Intraday 1H", "swing_length": 5, "simbolo": "X", "dias": 30, **m}])
     assert list(resumir(df)["setups_mes"]) == [float(m["setups"])]
     print("calibrar_swing_length.demo() OK", m)
 

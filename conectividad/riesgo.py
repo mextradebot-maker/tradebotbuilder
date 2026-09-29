@@ -22,7 +22,7 @@ viable (no se sube al mínimo en silencio) y se devuelve el capital mínimo.
 import math
 from dataclasses import dataclass
 
-TEMPORALIDADES_SWING = {"Swing (H)", "Swing (S)", "Swing (M)"}
+TEMPORALIDADES_SWING = {"Swing (S)", "Swing (M)"}
 PCT_RIESGO_SWING = 0.02
 PCT_MAX_SWING = 0.02
 PCT_RIESGO_DEFAULT = 0.01
@@ -37,7 +37,8 @@ class Lotaje:
 
 
 def es_swing(temporalidad: str) -> bool:
-    return temporalidad in TEMPORALIDADES_SWING
+    from conectividad.historico import ALIAS_TEMPORALIDAD  # import tardío: evita cargar dukascopy al importar riesgo
+    return ALIAS_TEMPORALIDAD.get(temporalidad, temporalidad) in TEMPORALIDADES_SWING
 
 
 def perdida_por_lote(precio_entrada: float, sl_precio: float, tick_size: float, tick_value: float) -> float:
@@ -94,6 +95,8 @@ def calcular_lotes(simbolo: str, capital: float, temporalidad: str, precio_entra
 
 def demo() -> None:
     """Self-check del núcleo con valores reales de XM (sin MT5 en vivo)."""
+    assert es_swing("Swing (S)") and es_swing("Swing (M)")
+    assert not es_swing("Swing (H)") and not es_swing("Swing") and not es_swing("Intraday 4H") and not es_swing("Scalping")
     mn, mx, st = 0.01, 100.0, 0.01
 
     # EURUSD scalping: tick 0.00001 = $1/lote. $300, 1%, SL 30 pips → $3 / $300 = 0.01

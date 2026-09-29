@@ -21,7 +21,7 @@ miss se llama a api.setups.procesar con _force_refresh, que además deja el snap
 
 from datetime import datetime, timedelta, timezone, time as _time
 
-from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO
+from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, resolver_temporalidad
 from api.setups import SWING_LENGTH_POR_TEMPORALIDAD
 
 try:
@@ -40,8 +40,10 @@ def procesar(payload: dict) -> tuple[int, dict]:
     if direccion not in DIRECCION_A_LONG_SHORT:
         return 400, {"error": "falta 'direccion' (compra / venta)"}
 
-    temporalidad = payload.get("temporalidad", "Intraday")
-    if temporalidad not in TEMPORALIDAD_A_INTERVALO:
+    temporalidad = payload.get("temporalidad", "Intraday 1H")
+    try:
+        temporalidad = resolver_temporalidad(temporalidad)
+    except ValueError:
         return 400, {"error": f"'temporalidad' debe ser una de {list(TEMPORALIDAD_A_INTERVALO)}"}
 
     try:
@@ -97,7 +99,7 @@ def _demo_miss_usa_motor_v2() -> None:
     try:
         setups.procesar, setups.desde_snapshot = falso, (lambda *a, **k: None)
         status, body = procesar({"simbolo": "XAUUSD", "direccion": "compra", "dias": 30, "temporalidad": "Scalping"})
-        assert status == 200 and body == {"simbolo": "XAUUSD", "direccion": "compra", "temporalidad": "Scalping",
+        assert status == 200 and body == {"simbolo": "XAUUSD", "direccion": "compra", "temporalidad": "Scalping 15m",
                                           "velas": 42, "n_setups": 7, "rentable_sin_optimizar": True}, body
         assert llamadas[0]["dias"] == 30 and llamadas[0]["_force_refresh"] is True, llamadas
         setups.procesar = lambda p: (502, {"error": "sin datos"})
@@ -112,12 +114,12 @@ def demo() -> None:
     status, body = procesar({"simbolo": "XAUUSD", "direccion": "compra", "dias": 365})
     assert status == 200
     assert "n_setups" in body
-    assert body["temporalidad"] == "Intraday"
-    print(f"api.backtest.demo() OK — XAUUSD compra Intraday 365d: {body}")
+    assert body["temporalidad"] == "Intraday 1H"
+    print(f"api.backtest.demo() OK — XAUUSD compra Intraday 1H 365d: {body}")
 
     status_swing, body_swing = procesar({"simbolo": "XAUUSD", "direccion": "venta", "dias": 365, "temporalidad": "Swing (H)"})
-    assert status_swing == 200 and body_swing["temporalidad"] == "Swing (H)"
-    print(f"api.backtest.demo() OK — XAUUSD venta Swing (H) 365d: {body_swing}")
+    assert status_swing == 200 and body_swing["temporalidad"] == "Intraday 4H"  # alias resuelto a canonico
+    print(f"api.backtest.demo() OK — XAUUSD venta Swing (H)->Intraday 4H 365d: {body_swing}")
 
     status_malo, body_malo = procesar({})
     assert status_malo == 400 and "error" in body_malo

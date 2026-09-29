@@ -29,7 +29,7 @@ import dukascopy_python as dp
 import pandas as pd
 
 from backtesting.backtest import backtest_v2, simular_v2
-from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, obtener_velas
+from conectividad import SIMBOLOS, TEMPORALIDADES, TEMPORALIDAD_A_INTERVALO, obtener_velas, resolver_temporalidad
 from motor_smc import analizar, detectar_setups, obtener_tendencia
 from motor_smc.reglas import DURACION_VELA
 from motor_smc.setups_v2 import detectar_setups_v2, embudo
@@ -57,41 +57,13 @@ def _snapshot_viejo(snap: dict) -> bool:
         ts = ts.replace(tzinfo=timezone.utc)
     return ts < datetime.now(timezone.utc) - timedelta(minutes=TOLERANCIA_SNAPSHOT_MIN)
 
-DIAS_POR_TEMPORALIDAD = {
-    "Scalping": 60,
-    "Intraday": 365,
-    "Swing (H)": 365,
-    "Swing (S)": 1095,
-    "Swing (M)": 2555,
-}
-
-# Barrido 27 sep 2026 (spec docs/superpowers/specs/2026-09-27-calibracion-swing-length-design.md):
-# con 20 fijo, Scalping/Intraday casi no daban setups y Swing (M) nunca definía tendencia.
-# Valores "conservadores" elegidos por Ricardo sobre la tabla del barrido.
-SWING_LENGTH_POR_TEMPORALIDAD = {
-    "Scalping": 8,
-    "Intraday": 10,
-    "Swing (H)": 10,
-    "Swing (S)": 5,
-    "Swing (M)": 5,
-}
-
-# Motor v2: mapa PROVISIONAL perfil -> (vela de entrada, temporalidad mayor).
-# La Etapa 2 lo reemplaza por el mapa definitivo en conectividad/historico.py
-# (spec docs/superpowers/specs/2026-09-28-motor-smc-v2-design.md).
-PERFIL_A_VELAS_V2 = {
-    "Scalping": ("15m", "1H"),
-    "Intraday": ("1H", "D"),
-    "Swing (H)": ("4H", "D"),
-    "Swing": ("4H", "D"),
-    "Swing (S)": ("S", "M"),
-    "Swing (M)": ("M", "M"),
-}
-VELA_A_INTERVALO = {
-    "15m": dp.INTERVAL_MIN_15, "30m": dp.INTERVAL_MIN_30, "1H": dp.INTERVAL_HOUR_1, "4H": dp.INTERVAL_HOUR_4,
-    "D": dp.INTERVAL_DAY_1, "S": dp.INTERVAL_WEEK_1, "M": dp.INTERVAL_MONTH_1,
-}
-
+# Todo se deriva del mapa unico conectividad.historico.TEMPORALIDADES (solo nombres canonicos:
+# los alias se resuelven a la entrada con resolver_temporalidad). Toda vela mayor es a su vez
+# la vela de otra temporalidad, por eso VELA_A_INTERVALO se arma solo con las velas.
+DIAS_POR_TEMPORALIDAD = {n: t["dias"] for n, t in TEMPORALIDADES.items()}
+SWING_LENGTH_POR_TEMPORALIDAD = {n: t["swing_length"] for n, t in TEMPORALIDADES.items()}
+PERFIL_A_VELAS_V2 = {n: (t["vela"], t["vela_mayor"]) for n, t in TEMPORALIDADES.items()}
+VELA_A_INTERVALO = {t["vela"]: t["intervalo"] for t in TEMPORALIDADES.values()}
 
 _PRIMERO_EA = ("direccion", "entrada", "stop", "tp")
 
@@ -170,8 +142,11 @@ def procesar(payload: dict) -> tuple[int, dict]:
         return 400, {"error": f"falta 'simbolo' (uno de {list(SIMBOLOS)} o un instrumento crudo de dukascopy_python.instruments)"}
 
     temporalidad = payload.get("temporalidad") or None
-    if temporalidad is not None and temporalidad not in TEMPORALIDAD_A_INTERVALO:
-        return 400, {"error": f"'temporalidad' debe ser una de {list(TEMPORALIDAD_A_INTERVALO)}"}
+    if temporalidad is not None:
+        try:
+            temporalidad = resolver_temporalidad(temporalidad)  # alias -> canonico, nunca se guarda el alias
+        except ValueError:
+            return 400, {"error": f"'temporalidad' debe ser una de {list(TEMPORALIDAD_A_INTERVALO)}"}
 
     try:
         dias_default = DIAS_POR_TEMPORALIDAD.get(temporalidad, 90)
@@ -300,19 +275,19 @@ def _demo_aislamiento() -> None:
     try:
         g.obtener_velas = lambda *a, **k: ohlc
         g.detectar_setups_v2 = boom
-        assert motor_v2("XAUUSD", "Intraday", ohlc, ini, fin)["estado"] == "error"
+        assert motor_v2("XAUUSD", "Intraday 1H", ohlc, ini, fin)["estado"] == "error"
 
         g.detectar_setups_v2 = lambda *a, **k: vacio
         g.obtener_velas = boom
-        r = motor_v2("XAUUSD", "Intraday", ohlc, ini, fin)
+        r = motor_v2("XAUUSD", "Intraday 1H", ohlc, ini, fin)
         assert r["estado"] == "sin_datos_temporalidad_mayor" and "error" in r, r
 
         g.obtener_velas = lambda *a, **k: ohlc
         g.backtest_v2 = lambda *a, **k: {"x": float("nan")}
-        assert motor_v2("XAUUSD", "Intraday", ohlc, ini, fin)["estado"] == "error"
+        assert motor_v2("XAUUSD", "Intraday 1H", ohlc, ini, fin)["estado"] == "error"
 
         g.backtest_v2 = orig["backtest_v2"]
-        r = motor_v2("XAUUSD", "Intraday", ohlc, ini, fin)
+        r = motor_v2("XAUUSD", "Intraday 1H", ohlc, ini, fin)
         assert r["estado"] == "ok" and r["setups"] == [], r
         json.dumps(r, allow_nan=False)
 
@@ -323,7 +298,7 @@ def _demo_aislamiento() -> None:
         ya_gano = fila | {"indice_conocido": 2, "entrada": 1.0, "stop": 0.2, "tp": 1.9, "zona_extremo": 0.3}
         vigente = fila | {"indice_conocido": 8, "entrada": 0.1, "stop": 0.05, "tp": 5.0, "zona_extremo": 0.08}
         g.detectar_setups_v2 = lambda *a, **k: pd.DataFrame([ya_gano, vigente], columns=COLUMNAS)
-        r = motor_v2("XAUUSD", "Intraday", ohlc, ini, fin)
+        r = motor_v2("XAUUSD", "Intraday 1H", ohlc, ini, fin)
         assert [s["resultado"] for s in r["setups"]] == ["gano", "sin_llenar"], r["setups"]
         assert [s["indice_conocido"] for s in r["setups_validos"]] == [8], r["setups_validos"]
         assert r["backtests"]["total"]["compra"]["n_setups"] == 1
@@ -333,11 +308,11 @@ def _demo_aislamiento() -> None:
         formando = ohlc.set_axis(pd.date_range(end=ahora, periods=len(ohlc), freq="h", tz="UTC"))
         vistas = []
         g.detectar_setups_v2 = lambda o, *a, **k: vistas.append(len(o)) or vacio
-        assert motor_v2("XAUUSD", "Intraday", formando, ini, fin)["velas"] == len(ohlc) - 1
+        assert motor_v2("XAUUSD", "Intraday 1H", formando, ini, fin)["velas"] == len(ohlc) - 1
         assert vistas == [len(ohlc) - 1], vistas
-        assert motor_v2("XAUUSD", "Intraday", ohlc, ini, fin)["velas"] == len(ohlc)  # todas cerradas
+        assert motor_v2("XAUUSD", "Intraday 1H", ohlc, ini, fin)["velas"] == len(ohlc)  # todas cerradas
         g.obtener_velas, g._persistencia = (lambda *a, **k: formando), None
-        status, body = procesar({"simbolo": "XAUUSD", "temporalidad": "Intraday", "_force_refresh": True})
+        status, body = procesar({"simbolo": "XAUUSD", "temporalidad": "Intraday 1H", "_force_refresh": True})
         assert status == 200 and body["velas"] == len(ohlc) - 1, body
 
         # snapshot fresco pero de antes del motor v2: se recalcula (cache hit y desde_snapshot)
@@ -345,13 +320,13 @@ def _demo_aislamiento() -> None:
         viejo = {"simbolo": "XAUUSD", "velas": 3, "setups_confirmados": [], "viejo": True}
         g._persistencia = SimpleNamespace(leer_snapshot=lambda *a: {
             "respuesta": viejo, "refrescado_en": datetime.now(timezone.utc)})
-        status, body = procesar({"simbolo": "XAUUSD", "temporalidad": "Intraday"})
+        status, body = procesar({"simbolo": "XAUUSD", "temporalidad": "Intraday 1H"})
         assert status == 200 and "viejo" not in body and body["motor"] == "v2", body
-        assert desde_snapshot("XAUUSD", "Intraday", DIAS_POR_TEMPORALIDAD["Intraday"],
-                              SWING_LENGTH_POR_TEMPORALIDAD["Intraday"]) is None
+        assert desde_snapshot("XAUUSD", "Intraday 1H", DIAS_POR_TEMPORALIDAD["Intraday 1H"],
+                              SWING_LENGTH_POR_TEMPORALIDAD["Intraday 1H"]) is None
         g._persistencia = SimpleNamespace(leer_snapshot=lambda *a: {
             "respuesta": {**viejo, "motor": "v2"}, "refrescado_en": datetime.now(timezone.utc)})
-        assert procesar({"simbolo": "XAUUSD", "temporalidad": "Intraday"})[1].get("viejo") is True
+        assert procesar({"simbolo": "XAUUSD", "temporalidad": "Intraday 1H"})[1].get("viejo") is True
     finally:
         for n, v in orig.items():
             setattr(g, n, v)
@@ -382,7 +357,7 @@ def _demo_snapshot_solo_por_defecto() -> None:
         g.obtener_velas, g._persistencia = (lambda *a, **k: ohlc), falso
         g.motor_v2 = lambda *a, **k: {"estado": "ok", "vela": "1H", "vela_mayor": "D", "velas": len(ohlc),
                                       "setups": [], "setups_validos": [], "embudo": {}, "backtests": {}}
-        por_defecto = {"simbolo": "XAUUSD", "temporalidad": "Intraday"}
+        por_defecto = {"simbolo": "XAUUSD", "temporalidad": "Intraday 1H"}
         for extra in ({"dias": 30}, {"swing_length": 3}, {"desde_catalogo": "1"}):
             llamadas.clear()
             status, body = procesar({**por_defecto, **extra, "_force_refresh": True})
@@ -390,9 +365,16 @@ def _demo_snapshot_solo_por_defecto() -> None:
             status, body = procesar({**por_defecto, **extra})  # sin _force_refresh: no sirve el snapshot ajeno
             assert status == 200 and "del_snapshot" not in body, (extra, body)
         llamadas.clear()
-        procesar({**por_defecto, "dias": DIAS_POR_TEMPORALIDAD["Intraday"], "_force_refresh": True})
+        procesar({**por_defecto, "dias": DIAS_POR_TEMPORALIDAD["Intraday 1H"], "_force_refresh": True})
         assert llamadas == ["escribir_snapshot", "registrar_cambio_tendencia"], llamadas
         assert procesar(por_defecto)[1].get("del_snapshot") is True  # por defecto: cache hit como siempre
+        # alias: se acepta de entrada pero la respuesta y el snapshot usan el nombre canonico
+        guardados = []
+        g._persistencia = SimpleNamespace(**{**vars(falso), "leer_snapshot": lambda *a: None,
+                                              "escribir_snapshot": lambda sim, temp, *a: guardados.append(temp)})
+        status, body = procesar({"simbolo": "XAUUSD", "temporalidad": "Swing (H)", "_force_refresh": True})
+        assert status == 200 and body["temporalidad"] == "Intraday 4H" and guardados == ["Intraday 4H"], (body, guardados)
+        assert procesar({"simbolo": "XAUUSD", "temporalidad": "Nope"})[0] == 400
     finally:
         for n, v in orig.items():
             setattr(g, n, v)
@@ -438,7 +420,7 @@ def _demo_forma_ea() -> None:
                 "reglas": {"R6": {"cumple": True, "dato": {"tp": tp, "rr": 2.5}, "razon": "x"}}}
 
     confirmados = [setup("short", 2650.5, 2660.0, 2620.0), setup("long", 2642.5, 2635.0, 2665.0)]
-    respuesta = {"simbolo": "XAUUSD", "temporalidad": "Intraday", "velas": 100, "motor": "v2",
+    respuesta = {"simbolo": "XAUUSD", "temporalidad": "Intraday 1H", "velas": 100, "motor": "v2",
                  "setups": confirmados, "setups_confirmados": confirmados}
     compacto = lambda r: json.dumps(r, separators=(",", ":"))  # igual que api/analizar.py
     esperado = ("long", 2642.5, 2635.0, 2665.0)
@@ -463,12 +445,12 @@ def demo() -> None:
     assert "motor" not in body  # sin temporalidad no hay motor v2
     print(f"api.setups.demo() OK — {body['velas']} velas XAUUSD, {len(body['setups'])} setups (sin temporalidad)")
 
-    status_t, body_t = procesar({"simbolo": "XAUUSD", "temporalidad": "Swing (H)"})
+    status_t, body_t = procesar({"simbolo": "XAUUSD", "temporalidad": "Intraday 4H"})
     assert status_t == 200
-    assert body_t["temporalidad"] == "Swing (H)"
+    assert body_t["temporalidad"] == "Intraday 4H"
     assert "tendencia_actual" in body_t
     assert len(body_t["setups_confirmados"]) <= len(body_t["setups"])
-    print(f"api.setups.demo() OK — XAUUSD Swing (H): tendencia {body_t['tendencia_actual']}, "
+    print(f"api.setups.demo() OK — XAUUSD Intraday 4H: tendencia {body_t['tendencia_actual']}, "
           f"{len(body_t['setups'])} setups crudos, {len(body_t['setups_confirmados'])} confirmados")
 
     assert list(body_t)[-1] == "setups_confirmados"  # contrato del parser del EA

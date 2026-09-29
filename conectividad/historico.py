@@ -72,31 +72,54 @@ SIMBOLOS = {
     "WMT": inst.INSTRUMENT_US_WMT_US_USD,
 }
 
-# Temporalidad -> intervalo real de velas (agregado 08 sep 2026, ampliado a 5
-# niveles 14 sep 2026 -- ver spec docs/panel-alumnos-catalogo-indicadores-spec.md
-# §3). Usado por api/tendencia.py y api/backtest.py -- cada temporalidad tiene
-# su PROPIA tendencia (verificado con datos reales: XAUUSD daba venta rentable
-# en H4 pero esa misma direccion no era rentable en H1), asi que no se puede
-# comparar temporalidades contra una sola direccion compartida.
-TEMPORALIDAD_A_INTERVALO = {
-    "Scalping": dp.INTERVAL_MIN_15,
-    "Intraday": dp.INTERVAL_HOUR_1,
-    "Swing (H)": dp.INTERVAL_HOUR_4,
-    "Swing (S)": dp.INTERVAL_WEEK_1,
-    "Swing (M)": dp.INTERVAL_MONTH_1,
-    # ponytail: alias temporal -- un Telegram callback_data viejo ("t|SIMBOLO|Swing")
-    # ya entregado a un alumno antes de este deploy sigue funcionando (equivale a
-    # Swing (H), el comportamiento previo). Quitar cuando se confirme que ya no
-    # llegan mensajes con el valor viejo.
-    "Swing": dp.INTERVAL_HOUR_4,
+# FUENTE UNICA de las 7 temporalidades (Etapa 2, decision de Ricardo 29 sep 2026): el
+# nombre incluye la vela. Cada temporalidad tiene su PROPIA tendencia (XAUUSD daba venta
+# rentable en H4 pero no en H1), asi que no se comparan contra una direccion compartida.
+# dias / swing_length: barrido 27 sep 2026 (spec 2026-09-27-calibracion-swing-length-design.md).
+# diaria = se recalcula una vez al dia (08:00 Mexico); las demas al cierre de su vela.
+# solo_compras = regla de negocio "solo se entrega si la tendencia real es alcista".
+def _t(vela, mayor, intervalo, dias, swing, diaria=False, swing_perfil=False):
+    return {"vela": vela, "vela_mayor": mayor, "intervalo": intervalo, "dias": dias, "swing_length": swing,
+            "diaria": diaria, "solo_compras": swing_perfil, "es_swing": swing_perfil}
+
+
+TEMPORALIDADES = {
+    "Scalping 15m": _t("15m", "1H", dp.INTERVAL_MIN_15, 60, 8),
+    "Scalping 30m": _t("30m", "1H", dp.INTERVAL_MIN_30, 120, 8),
+    "Intraday 1H": _t("1H", "D", dp.INTERVAL_HOUR_1, 365, 10),
+    "Intraday 4H": _t("4H", "D", dp.INTERVAL_HOUR_4, 365, 10),
+    "Intraday D": _t("D", "S", dp.INTERVAL_DAY_1, 1095, 10, diaria=True),
+    "Swing (S)": _t("S", "M", dp.INTERVAL_WEEK_1, 1095, 5, diaria=True, swing_perfil=True),
+    "Swing (M)": _t("M", "M", dp.INTERVAL_MONTH_1, 2555, 5, diaria=True, swing_perfil=True),
 }
 
-# Tipos de robot con la regla de negocio "solo se entrega si la tendencia real
-# es alcista" (a largo plazo los activos tienden a subir -- decision de Ricardo,
-# ver motor_smc/tendencia.py). Generalizado a un set porque ahora hay 3 variantes
-# de Swing, no una sola -- quien orqueste la entrega (T-04 en n8n) debe revisar
-# `tipoRobot in TIPOS_SOLO_ALCISTA`, no comparar contra el string "Swing" a secas.
-TIPOS_SOLO_ALCISTA = {"Swing (H)", "Swing (S)", "Swing (M)", "Swing"}
+# Nombres viejos: solo se aceptan de entrada (Telegram callback_data ya entregados, EA viejo,
+# n8n); nunca se guardan ni se devuelven.
+ALIAS_TEMPORALIDAD = {
+    "Scalping": "Scalping 15m",
+    "Intraday": "Intraday 1H",
+    "Swing (H)": "Intraday 4H",
+    "Swing": "Intraday 4H",
+}
+
+
+def resolver_temporalidad(nombre: str) -> str:
+    """Nombre canonico de `nombre` (canonico o alias); ValueError si no existe."""
+    if nombre in TEMPORALIDADES:
+        return nombre
+    if nombre in ALIAS_TEMPORALIDAD:
+        return ALIAS_TEMPORALIDAD[nombre]
+    raise ValueError(f"temporalidad desconocida: {nombre!r} (validas: {list(TEMPORALIDADES) + list(ALIAS_TEMPORALIDAD)})")
+
+
+# Compatibilidad: canonicos + alias -> intervalo de dukascopy.
+TEMPORALIDAD_A_INTERVALO = {**{n: t["intervalo"] for n, t in TEMPORALIDADES.items()},
+                            **{a: TEMPORALIDADES[c]["intervalo"] for a, c in ALIAS_TEMPORALIDAD.items()}}
+
+# Tipos de robot con la regla "solo se entrega si la tendencia real es alcista" (decision de
+# Ricardo, ver motor_smc/tendencia.py). Quien orqueste la entrega debe revisar
+# `tipoRobot in TIPOS_SOLO_ALCISTA`.
+TIPOS_SOLO_ALCISTA = {n for n, t in TEMPORALIDADES.items() if t["solo_compras"]}
 
 
 def obtener_velas(
@@ -126,7 +149,26 @@ def obtener_velas(
 _AGREGAR_DESDE_DIARIO = {dp.INTERVAL_WEEK_1: "W-MON", dp.INTERVAL_MONTH_1: "MS"}
 
 
+def _demo_temporalidades() -> None:
+    """Sin red: mapa unico de las 7 temporalidades y sus alias."""
+    assert list(TEMPORALIDADES) == ["Scalping 15m", "Scalping 30m", "Intraday 1H", "Intraday 4H", "Intraday D",
+                                    "Swing (S)", "Swing (M)"]
+    for n in TEMPORALIDADES:
+        assert resolver_temporalidad(n) == n
+    assert [resolver_temporalidad(a) for a in ("Scalping", "Intraday", "Swing (H)", "Swing")] ==         ["Scalping 15m", "Intraday 1H", "Intraday 4H", "Intraday 4H"]
+    try:
+        resolver_temporalidad("Nope")
+        raise AssertionError("debio fallar")
+    except ValueError:
+        pass
+    assert TIPOS_SOLO_ALCISTA == {"Swing (S)", "Swing (M)"}
+    assert TEMPORALIDAD_A_INTERVALO["Swing"] == TEMPORALIDAD_A_INTERVALO["Intraday 4H"]
+    assert [t["dias"] for t in TEMPORALIDADES.values()] == [60, 120, 365, 365, 1095, 1095, 2555]
+    print("conectividad.historico._demo_temporalidades() OK")
+
+
 def demo() -> None:
+    _demo_temporalidades()
     from motor_smc import analizar, detectar_setups
 
     # rango fijo en el pasado (dukascopy es dato historico real, no hay datos

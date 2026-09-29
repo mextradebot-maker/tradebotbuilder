@@ -12,10 +12,10 @@ from datetime import datetime, timedelta, timezone
 
 from api.setups import DIAS_POR_TEMPORALIDAD, PERFIL_A_VELAS_V2, VELA_A_INTERVALO
 from backtesting.backtest import backtest_v2
-from conectividad import obtener_velas
+from conectividad import TEMPORALIDADES, obtener_velas
 from motor_smc.setups_v2 import detectar_setups_v2, embudo
 
-PERFILES = ("Scalping", "Intraday", "Swing (H)", "Swing (S)", "Swing (M)")
+PERFILES = tuple(TEMPORALIDADES)
 
 
 def correr(simbolo: str, perfil: str) -> dict:

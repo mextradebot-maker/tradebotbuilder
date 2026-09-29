@@ -104,26 +104,26 @@ def demo() -> None:
     st = lambda idx, d="long", e=2642.5, s=2635.0: {"indice_confirmacion": idx, "direccion": d, "entrada": e, "stop": s,
                                                      "order_block_confluente": True, "liquidez_confluente": False}
     rep = setups_vigentes([
-        snap("XAUUSD", "Intraday", 500, [st(400), st(495), st(490)]),   # vigentes: hace 4 y hace 9 → el de hace 4
-        snap("EURUSD", "Scalping", 300, [st(100, "short", 1.0845, 1.0852)], "venta"),  # hace 199 → viejo
-        snap("USDJPY", "Swing (H)", 200, []),
+        snap("XAUUSD", "Intraday 1H", 500, [st(400), st(495), st(490)]),   # vigentes: hace 4 y hace 9 → el de hace 4
+        snap("EURUSD", "Scalping 15m", 300, [st(100, "short", 1.0845, 1.0852)], "venta"),  # hace 199 → viejo
+        snap("USDJPY", "Intraday 4H", 200, []),
     ])
     assert rep["combinaciones"] == 3 and rep["con_setup_vigente"] == 1 and rep["sin_setup"] == 2, rep
     v = rep["vigentes"][0]
     assert (v["simbolo"], v["direccion"], v["velas_desde_confirmacion"]) == ("XAUUSD", "compra", 4), v
-    assert rep["tendencias"]["EURUSD"]["Scalping"] == "venta"
-    assert rep["conteo_por_temporalidad"]["Intraday"] == {"compra": 1, "venta": 0, "sin_definir": 0}
+    assert rep["tendencias"]["EURUSD"]["Scalping 15m"] == "venta"
+    assert rep["conteo_por_temporalidad"]["Intraday 1H"] == {"compra": 1, "venta": 0, "sin_definir": 0}
     assert setups_vigentes([])["con_setup_vigente"] == 0
     # v2: la vigencia cuenta desde indice_conocido (cuando el setup ya era visible), y salen tp/tipo
     v2 = {**st(100), "indice_conocido": 495, "tp": 2660.0, "tipo": "reversion"}
-    rv = setups_vigentes([snap("XAUUSD", "Intraday", 500, [v2])])["vigentes"][0]
+    rv = setups_vigentes([snap("XAUUSD", "Intraday 1H", 500, [v2])])["vigentes"][0]
     assert (rv["velas_desde_confirmacion"], rv["tp"], rv["tipo"]) == (4, 2660.0, "reversion"), rv
     assert v["tp"] is None and v["tipo"] is None  # setups viejos sin tp/tipo
     # un setup ya llenado/cancelado/expirado no está vigente aunque esté dentro de la ventana
     resuelto = {**v2, "resultado": "gano"}
-    assert setups_vigentes([snap("XAUUSD", "Intraday", 500, [resuelto])])["con_setup_vigente"] == 0
+    assert setups_vigentes([snap("XAUUSD", "Intraday 1H", 500, [resuelto])])["con_setup_vigente"] == 0
     pendiente = {**v2, "resultado": "sin_llenar"}
-    assert setups_vigentes([snap("XAUUSD", "Intraday", 500, [pendiente])])["con_setup_vigente"] == 1
+    assert setups_vigentes([snap("XAUUSD", "Intraday 1H", 500, [pendiente])])["con_setup_vigente"] == 1
 
     previa = os.environ.pop("MTB_SERVICE_KEY", None)
     try:

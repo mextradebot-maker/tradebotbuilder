@@ -15,18 +15,11 @@ n8n), todavía pendiente de implementar (ver checkpoint de esta sesión).
 from datetime import datetime, timedelta, timezone
 
 from backtesting.comparar_indicadores import comparar_indicadores
-from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, obtener_velas
-from api.setups import SWING_LENGTH_POR_TEMPORALIDAD
+from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, resolver_temporalidad, obtener_velas
+from api.setups import DIAS_POR_TEMPORALIDAD, SWING_LENGTH_POR_TEMPORALIDAD
 
 DIRECCION_A_LONG_SHORT = {"compra": "long", "venta": "short"}
 
-DIAS_POR_TEMPORALIDAD = {
-    "Scalping": 60,
-    "Intraday": 365,
-    "Swing (H)": 365,
-    "Swing (S)": 1095,
-    "Swing (M)": 2555,
-}
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -38,8 +31,10 @@ def procesar(payload: dict) -> tuple[int, dict]:
     if direccion not in DIRECCION_A_LONG_SHORT:
         return 400, {"error": "falta 'direccion' (compra / venta)"}
 
-    temporalidad = payload.get("temporalidad", "Intraday")
-    if temporalidad not in TEMPORALIDAD_A_INTERVALO:
+    temporalidad = payload.get("temporalidad", "Intraday 1H")
+    try:
+        temporalidad = resolver_temporalidad(temporalidad)
+    except ValueError:
         return 400, {"error": f"'temporalidad' debe ser una de {list(TEMPORALIDAD_A_INTERVALO)}"}
 
     try:

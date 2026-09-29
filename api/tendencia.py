@@ -18,7 +18,7 @@ para las tres (ver n8n "MTB Analisis Diario de Mercado").
 
 from datetime import datetime, timedelta, timezone
 
-from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, obtener_velas
+from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, resolver_temporalidad, obtener_velas
 from motor_smc import obtener_tendencia
 from api.setups import SWING_LENGTH_POR_TEMPORALIDAD
 
@@ -28,8 +28,10 @@ def procesar(payload: dict) -> tuple[int, dict]:
     if not simbolo:
         return 400, {"error": f"falta 'simbolo' (uno de {list(SIMBOLOS)} o un instrumento crudo de dukascopy_python.instruments)"}
 
-    temporalidad = payload.get("temporalidad", "Intraday")
-    if temporalidad not in TEMPORALIDAD_A_INTERVALO:
+    temporalidad = payload.get("temporalidad", "Intraday 1H")
+    try:
+        temporalidad = resolver_temporalidad(temporalidad)
+    except ValueError:
         return 400, {"error": f"'temporalidad' debe ser una de {list(TEMPORALIDAD_A_INTERVALO)}"}
 
     try:
@@ -62,11 +64,11 @@ def demo() -> None:
     status, body = procesar({"simbolo": "XAUUSD", "dias": 90})
     assert status == 200
     assert body["direccion"] in {"compra", "venta", "sin_definir"}
-    assert body["temporalidad"] == "Intraday"
+    assert body["temporalidad"] == "Intraday 1H"
     print(f"api.tendencia.demo() OK — XAUUSD Intraday: {body['direccion']} ({body.get('fuente')})")
 
     status_swing, body_swing = procesar({"simbolo": "XAUUSD", "dias": 365, "temporalidad": "Swing (H)"})
-    assert status_swing == 200 and body_swing["temporalidad"] == "Swing (H)"
+    assert status_swing == 200 and body_swing["temporalidad"] == "Intraday 4H"
     print(f"api.tendencia.demo() OK — XAUUSD Swing (H): {body_swing['direccion']}")
 
     status_malo, body_malo = procesar({})
