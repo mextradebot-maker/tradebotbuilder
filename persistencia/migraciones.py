@@ -1,3 +1,5 @@
+import re
+
 from .conexion import get_conn
 
 _SQL = [
@@ -189,9 +191,50 @@ _SQL = [
     CREATE UNIQUE INDEX IF NOT EXISTS uq_licencia_demo_alumno ON licencias (correo)
         WHERE tipo = 'demo' AND origen = 'registro'
     """,
+    # ── Etapa 2: temporalidades canonicas (idempotente: se corre en cada arranque) ──
+    # 1) catalogo: 7 canonicas por simbolo con filas viejas, heredando fecha_inicio
+    #    (Scalping 30m entra inactiva); sin filas viejas no hace nada.
+    """
+    INSERT INTO catalogo_activos (simbolo, temporalidad, fecha_inicio, activo)
+    WITH m(nuevo, viejo, activo) AS (VALUES
+        ('Scalping 15m', 'Scalping',  true),
+        ('Scalping 30m', 'Scalping',  false),
+        ('Intraday 1H',  'Intraday',  true),
+        ('Intraday 4H',  'Swing (H)', true),
+        ('Intraday D',   'Intraday',  true),
+        ('Swing (S)',    'Swing (S)', true),
+        ('Swing (M)',    'Swing (M)', true))
+    SELECT s.simbolo, m.nuevo, COALESCE(v.fecha_inicio, s.fecha_min), m.activo
+    FROM (SELECT simbolo, MIN(fecha_inicio) AS fecha_min FROM catalogo_activos
+          WHERE simbolo IN (SELECT simbolo FROM catalogo_activos
+                            WHERE temporalidad IN ('Scalping', 'Intraday', 'Swing (H)'))
+          GROUP BY simbolo) s
+    CROSS JOIN m
+    LEFT JOIN catalogo_activos v ON v.simbolo = s.simbolo AND v.temporalidad = m.viejo
+    WHERE true
+    ON CONFLICT DO NOTHING
+    """,
+    """
+    DELETE FROM catalogo_activos WHERE temporalidad IN ('Scalping', 'Intraday', 'Swing (H)')
+    """,
+    # 2) cuentas demo: nombre viejo -> canonico
+    """
+    UPDATE cuentas_demo SET temporalidad = 'Scalping 15m' WHERE temporalidad = 'Scalping'
+    """,
+    """
+    UPDATE cuentas_demo SET temporalidad = 'Intraday 1H' WHERE temporalidad = 'Intraday'
+    """,
+    """
+    UPDATE cuentas_demo SET temporalidad = 'Intraday 4H' WHERE temporalidad = 'Swing (H)'
+    """,
+    # 3) snapshots con nombres viejos (se regeneran bajo el canonico en el refresco).
+    #    historico_tendencias, posiciones_abiertas, historial_posiciones y log_coordinador NO se tocan.
+    """
+    DELETE FROM smc_snapshot WHERE temporalidad IN ('Scalping', 'Intraday', 'Swing (H)', 'Swing', '')
+    """,
 ]
 
-# 36 simbolos × 5 temporalidades = 180 pares seeded en la primera migración
+# 36 simbolos × 7 temporalidades = 252 pares (Scalping 30m inactiva)
 _SIMBOLOS_SEED = [
     "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD",
     "XAUUSD", "XAGUSD", "EURGBP", "EURJPY", "GBPJPY", "AUDJPY", "EURAUD",
@@ -199,7 +242,8 @@ _SIMBOLOS_SEED = [
     "JP225", "XPTUSD", "XPDUSD", "WTIUSD", "BRENTUSD", "BTCUSD", "ETHUSD",
     "XRPUSD", "AMXL", "CEMEXCPO", "GOOGL", "NVDA", "META", "WMT",
 ]
-_TEMPORALIDADES_SEED = ["Scalping", "Intraday", "Swing (H)", "Swing (S)", "Swing (M)"]
+_TEMPORALIDADES_SEED = ["Scalping 15m", "Scalping 30m", "Intraday 1H", "Intraday 4H", "Intraday D", "Swing (S)", "Swing (M)"]
+_TEMPORALIDADES_INACTIVAS = {"Scalping 30m"}  # activar a mano tras medir tiempos en produccion
 _FECHA_SEED = "2026-09-20"
 
 
@@ -209,24 +253,80 @@ _FECHA_SEED = "2026-09-20"
 _CUENTAS_SEED = [
     # login,      server,              nombre,                   simbolo,   temporalidad,  pct_riesgo
     (318680674, "XMGlobal-MT5 7", "PETROLEO CRUDO SWING",   "WTIUSD",  "Swing (S)",   0.02),
-    (318735437, "XMGlobal-MT5 7", "EUR/USD SCALPING",       "EURUSD",  "Scalping",    0.01),
-    (336903105, "XMGlobal-MT5 9", "USD/JPY",                "USDJPY",  "Intraday",    0.01),
-    (336903102, "XMGlobal-MT5 9", "ORO INTRADAY",           "GOLD",    "Intraday",    0.02),
+    (318735437, "XMGlobal-MT5 7", "EUR/USD SCALPING",       "EURUSD",  "Scalping 15m", 0.01),
+    (336903105, "XMGlobal-MT5 9", "USD/JPY",                "USDJPY",  "Intraday 1H", 0.01),
+    (336903102, "XMGlobal-MT5 9", "ORO INTRADAY",           "GOLD",    "Intraday 1H", 0.02),
     (108460538, "XMGlobal-MT5 5", "ORO SWING",              "GOLD",    "Swing (S)",   0.02),
 ]
 
 
 def aplicar() -> None:
     with get_conn() as conn:
+        # serializa arranques concurrentes (padre + workers): el bloqueo se suelta al commit
+        conn.execute("SELECT pg_advisory_xact_lock(7204042901)")
         for sql in _SQL:
             conn.execute(sql)
         with conn.cursor() as cur:
             cur.executemany(
-                "INSERT INTO catalogo_activos (simbolo, temporalidad, fecha_inicio) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-                [(s, t, _FECHA_SEED) for s in _SIMBOLOS_SEED for t in _TEMPORALIDADES_SEED],
+                "INSERT INTO catalogo_activos (simbolo, temporalidad, fecha_inicio, activo) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                [(s, t, _FECHA_SEED, t not in _TEMPORALIDADES_INACTIVAS) for s in _SIMBOLOS_SEED for t in _TEMPORALIDADES_SEED],
             )
             cur.executemany(
                 """INSERT INTO cuentas_demo (login, server, nombre, simbolo, temporalidad, pct_riesgo)
                    VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING""",
                 _CUENTAS_SEED,
             )
+
+
+def demo() -> None:
+    """Simula las sentencias de la migracion Etapa 2 en sqlite (sin Postgres): 2 corridas, mismo resultado."""
+    import sqlite3
+    import sys
+
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE catalogo_activos (simbolo text, temporalidad text, fecha_inicio text, activo boolean default 1, PRIMARY KEY (simbolo, temporalidad))")
+    db.execute("CREATE TABLE cuentas_demo (login int primary key, temporalidad text)")
+    db.execute("CREATE TABLE smc_snapshot (simbolo text, temporalidad text)")
+    db.execute("CREATE TABLE historico_tendencias (temporalidad text)")
+    for i, t in enumerate(["Scalping", "Intraday", "Swing (H)", "Swing (S)", "Swing (M)"]):
+        db.execute("INSERT INTO catalogo_activos VALUES ('EURUSD', ?, ?, 1)", (t, f"2026-09-0{i + 1}"))
+    db.execute("INSERT INTO catalogo_activos VALUES ('GOLD', 'Swing (S)', '2026-08-01', 1)")  # solo Swing: hereda la minima
+    db.execute("INSERT INTO catalogo_activos VALUES ('GOLD', 'Intraday', '2026-08-15', 1)")
+    db.executemany("INSERT INTO cuentas_demo VALUES (?, ?)", [(1, "Scalping"), (2, "Intraday"), (3, "Swing (H)"), (4, "Swing (S)")])
+    db.executemany("INSERT INTO smc_snapshot VALUES ('EURUSD', ?)", [(t,) for t in ("Scalping", "Swing", "", "Intraday 1H")])
+    db.execute("INSERT INTO historico_tendencias VALUES ('Scalping')")
+    nuevas = _SQL[-6:]
+    assert "INSERT INTO catalogo_activos" in nuevas[0] and "smc_snapshot" in nuevas[-1]
+    tablas = {"catalogo_activos", "cuentas_demo", "smc_snapshot"}
+    for sql in nuevas:
+        assert set(re.findall(r"(?:INTO|FROM|UPDATE|JOIN)\s+(\w+)", sql)) <= tablas | {"m"}, sql
+    def estado():
+        return [db.execute(q).fetchall() for q in (
+            "SELECT * FROM catalogo_activos ORDER BY 1, 2", "SELECT * FROM cuentas_demo ORDER BY 1",
+            "SELECT * FROM smc_snapshot ORDER BY 2", "SELECT * FROM historico_tendencias")]
+    for _ in range(2):
+        ant = estado()
+        for sql in nuevas:
+            db.execute(sql)
+        ult = estado()
+    assert ant == ult, "segunda corrida cambio datos"
+    cat, cuentas, snap, hist = ult
+    canon = ["Intraday 1H", "Intraday 4H", "Intraday D", "Scalping 15m", "Scalping 30m", "Swing (M)", "Swing (S)"]
+    for sim in ("EURUSD", "GOLD"):
+        filas = [f for f in cat if f[0] == sim]
+        assert sorted(f[1] for f in filas) == canon, filas
+        assert [f[3] for f in filas if f[1] == "Scalping 30m"] == [0] * 1 or not [f[3] for f in filas if f[1] == "Scalping 30m"][0]
+        assert all(f[3] for f in filas if f[1] != "Scalping 30m")
+    fi = {(f[0], f[1]): f[2] for f in cat}
+    assert fi[("EURUSD", "Scalping 15m")] == fi[("EURUSD", "Scalping 30m")] == "2026-09-01"
+    assert fi[("EURUSD", "Intraday 1H")] == fi[("EURUSD", "Intraday D")] == "2026-09-02"
+    assert fi[("EURUSD", "Intraday 4H")] == "2026-09-03"
+    assert fi[("GOLD", "Scalping 15m")] == "2026-08-01"  # sin equivalente -> minima del simbolo
+    assert fi[("GOLD", "Intraday 1H")] == "2026-08-15"
+    assert [c[1] for c in cuentas] == ["Scalping 15m", "Intraday 1H", "Intraday 4H", "Swing (S)"]
+    assert [s[1] for s in snap] == ["Intraday 1H"] and hist == [("Scalping",)]
+    # las semillas ya no reintroducen nombres viejos
+    assert not {"Scalping", "Intraday", "Swing (H)"} & (set(_TEMPORALIDADES_SEED) | {c[4] for c in _CUENTAS_SEED})
+    from conectividad.historico import TEMPORALIDADES
+    assert list(TEMPORALIDADES) == _TEMPORALIDADES_SEED
+    print("persistencia.migraciones.demo() OK", file=sys.stdout)

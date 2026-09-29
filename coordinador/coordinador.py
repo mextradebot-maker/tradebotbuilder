@@ -32,6 +32,7 @@ from conectividad.xm import (
     cerrar_posicion as xm_cerrar_posicion,
     login_cuenta as xm_login_cuenta,
 )
+from conectividad.historico import resolver_temporalidad
 from conectividad.riesgo import calcular_lotes, es_swing
 from persistencia.conexion import get_conn
 from persistencia.licencias import kill_switch_activo
@@ -72,6 +73,14 @@ def password_de(login: int, env=os.environ) -> Optional[str]:
     return env.get("XM_PASSWORD")
 
 
+def _canonica(temporalidad: str) -> str:
+    """Resuelve alias viejos ('Scalping', 'Swing (H)'...) al nombre canonico; desconocidos pasan tal cual."""
+    try:
+        return resolver_temporalidad(temporalidad)
+    except ValueError:
+        return temporalidad
+
+
 def _cargar_cuentas_demo(conn) -> List[Dict[str, Any]]:
     """Lee las cuentas demo configuradas en la BD Postgres (`cuentas_demo`)."""
     rows = conn.execute(
@@ -89,7 +98,7 @@ def _cargar_cuentas_demo(conn) -> List[Dict[str, Any]]:
             "server": r[1],
             "nombre": r[2],
             "simbolo": r[3],
-            "temporalidad": r[4],
+            "temporalidad": _canonica(r[4]),
             "pct_riesgo": float(r[5]),
             "password": pw,
         })
