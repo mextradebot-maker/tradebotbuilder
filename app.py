@@ -7,7 +7,8 @@
   todo lo demás          → archivos estáticos de public/ (panel, master.html, manuales)
 
 Además arranca el refresco de snapshots SMC en segundo plano (refresco.py).
-Variables: PORT (8000), N8N_URL, REFRESCO_ACTIVO=0 para apagarlo, más las de la API
+Variables: PORT (8000), N8N_URL, REFRESCO_ACTIVO=0 para apagarlo, REFRESCO_WORKERS (procesos del
+refresco; por defecto min(3, CPUs - 1), 1 = en serie), más las de la API
 (DATABASE_URL, MTB_ADMIN_KEY, MTB_SERVICE_KEY).
 """
 

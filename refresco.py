@@ -1,5 +1,9 @@
 """Refresco de snapshots SMC dentro del servicio (reemplaza el cron n8n de 180 llamadas HTTP).
 
+Las combinaciones pendientes se procesan por prioridad (Scalping primero) en un pool pequeño de
+procesos `spawn` con prioridad baja (os.nice), para no ahogar al servidor HTTP en el VPS compartido.
+REFRESCO_WORKERS fija el tamaño (1 = en serie, en el mismo proceso, para depurar).
+
 Una combinación activo×temporalidad solo se refresca cuando cerró una vela nueva
 de SU temporalidad (Scalping 15m, Intraday 1h, Swing H 4h) y su snapshot es
 anterior a ese cierre; Swing S y M, una vez al día (su vela en curso cambia a diario). Con el mercado cerrado
@@ -7,8 +11,12 @@ anterior a ese cierre; Swing S y M, una vez al día (su vela en curso cambia a d
 """
 
 import logging
+import multiprocessing
+import os
 import threading
 import time
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from datetime import datetime, timedelta, timezone
 
 CRIPTO = {"BTCUSD", "ETHUSD", "XRPUSD"}
@@ -20,6 +28,8 @@ PAUSA_CICLO_S = 60
 # diaria ya publicada, antes del Análisis Diario de n8n (06:00 UTC).
 REFRESCO_DIARIO = {"Swing (S)", "Swing (M)"}
 HORA_REFRESCO_DIARIO = 3
+PRIORIDAD = ("Scalping", "Intraday", "Swing (H)", "Swing (S)", "Swing (M)")  # la vela más corta caduca antes
+_pool: ProcessPoolExecutor | None = None
 
 
 def inicio_vela(ahora: datetime, temporalidad: str) -> datetime:
@@ -75,13 +85,16 @@ def necesita_refresco(simbolo: str, temporalidad: str, refrescado_en: datetime |
     return refrescado_en < cierre + MARGEN_DATOS
 
 
-def ciclo() -> int:
-    """Refresca lo pendiente, uno por uno. Devuelve cuántos refrescó."""
-    import persistencia
-    from api.setups import SWING_LENGTH_POR_TEMPORALIDAD, procesar
+def ordenar(combos: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Por PRIORIDAD de temporalidad (estable: respeta el orden del catálogo dentro de cada una)."""
+    return sorted(combos, key=lambda c: PRIORIDAD.index(c[1]) if c[1] in PRIORIDAD else len(PRIORIDAD))
 
-    ahora = datetime.now(timezone.utc)
-    hechos = 0
+
+def pendientes(ahora: datetime) -> list[tuple[str, str]]:
+    import persistencia
+    from api.setups import SWING_LENGTH_POR_TEMPORALIDAD
+
+    salida = []
     for c in persistencia.listar_catalogo():
         if not c["activo"]:
             continue
@@ -89,15 +102,82 @@ def ciclo() -> int:
         r = (snap or {}).get("respuesta") or {}
         # vacío (descarga fallida) o calculado con otro swing_length (recalibración): rehacer, máx 1/hora
         vacio = bool(snap) and (not r.get("velas") or r.get("swing_length") != SWING_LENGTH_POR_TEMPORALIDAD.get(c["temporalidad"]))
-        if not necesita_refresco(c["simbolo"], c["temporalidad"], snap and snap["refrescado_en"], ahora, vacio):
-            continue
+        if necesita_refresco(c["simbolo"], c["temporalidad"], snap and snap["refrescado_en"], ahora, vacio):
+            salida.append((c["simbolo"], c["temporalidad"]))
+    return ordenar(salida)
+
+
+def refrescar_uno(simbolo: str, temporalidad: str) -> tuple:
+    """Worker (nivel de módulo: se ejecuta en un proceso spawn). (simbolo, temporalidad, status, error);
+    status None si procesar lanzó. procesar abre su propia conexión a Postgres por llamada."""
+    from api.setups import procesar
+
+    try:
+        status, body = procesar({"simbolo": simbolo, "temporalidad": temporalidad, "_force_refresh": True})
+        return simbolo, temporalidad, status, body.get("error") if status != 200 else None
+    except Exception as e:
+        return simbolo, temporalidad, None, f"{type(e).__name__}: {e}"
+
+
+def _workers() -> int:
+    return int(os.environ.get("REFRESCO_WORKERS") or max(1, min(3, (os.cpu_count() or 2) - 1)))
+
+
+def _bajar_prioridad() -> None:
+    try:
+        os.nice(10)
+    except (AttributeError, OSError):  # Windows no tiene os.nice
+        pass
+
+
+def _cerrar_pool() -> None:
+    global _pool
+    if _pool is not None:
+        _pool.shutdown(wait=False, cancel_futures=True)
+        _pool = None
+
+
+def refrescar_todos(combos: list[tuple[str, str]], workers: int, funcion=refrescar_uno) -> list[tuple]:
+    """Resultados en el orden de `combos`. El pool se crea una vez (perezoso) y se reutiliza; si se
+    rompe, se descarta y el siguiente ciclo crea uno nuevo. `funcion` debe ser de nivel de módulo."""
+    global _pool
+    if workers <= 1:
+        salida = []
+        for s, t in combos:
+            try:
+                salida.append(funcion(s, t))
+            except Exception as e:
+                salida.append((s, t, None, f"{type(e).__name__}: {e}"))
+        return salida
+    if _pool is None:
+        # spawn, no fork: el proceso padre tiene hilos (servidor HTTP) y conexiones abiertas
+        _pool = ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn"),
+                                    initializer=_bajar_prioridad)
+    futuros = [(s, t, _pool.submit(funcion, s, t)) for s, t in combos]  # la cola respeta el orden de envío
+    salida, roto = [], False
+    for s, t, f in futuros:
         try:
-            status, body = procesar({"simbolo": c["simbolo"], "temporalidad": c["temporalidad"], "_force_refresh": True})
-            if status != 200:
-                logging.warning("refresco %s %s -> %s %s", c["simbolo"], c["temporalidad"], status, body.get("error"))
-            hechos += 1
-        except Exception:
-            logging.exception("refresco %s %s falló", c["simbolo"], c["temporalidad"])
+            salida.append(f.result())
+        except BrokenProcessPool as e:
+            roto = True
+            salida.append((s, t, None, f"BrokenProcessPool: {e}"))
+        except Exception as e:
+            salida.append((s, t, None, f"{type(e).__name__}: {e}"))
+    if roto:
+        _cerrar_pool()
+    return salida
+
+
+def ciclo() -> int:
+    """Refresca lo pendiente por prioridad, en bloques paralelos pequeños. Devuelve cuántos refrescó."""
+    hechos = 0
+    for simbolo, temporalidad, status, error in refrescar_todos(pendientes(datetime.now(timezone.utc)), _workers()):
+        if status is None:
+            logging.error("refresco %s %s falló: %s", simbolo, temporalidad, error)
+            continue
+        if status != 200:
+            logging.warning("refresco %s %s -> %s %s", simbolo, temporalidad, status, error)
+        hechos += 1
     return hechos
 
 
@@ -149,7 +229,42 @@ def demo() -> None:
     assert not necesita_refresco("EURUSD", "Scalping", datetime(2026, 9, 26, 11, 30, tzinfo=u), sabado, vacio=True)
 
     # carga diaria por activo en días hábiles: 96 + 24 + 6 + ~0 = ~126 (antes: 48 × 5 = 240)
+
+    # prioridad: Scalping, Intraday, Swing (H), Swing (S), Swing (M); estable dentro de cada perfil
+    combos = [("EURUSD", "Swing (M)"), ("XAUUSD", "Intraday"), ("EURUSD", "Scalping"), ("BTCUSD", "Swing (S)"),
+              ("XAUUSD", "Scalping"), ("EURUSD", "Swing (H)")]
+    assert ordenar(combos) == [("EURUSD", "Scalping"), ("XAUUSD", "Scalping"), ("XAUUSD", "Intraday"),
+                               ("EURUSD", "Swing (H)"), ("BTCUSD", "Swing (S)"), ("EURUSD", "Swing (M)")]
+
+    # workers=1: en serie, en el mismo proceso, sin pool y en orden de prioridad
+    vistos = []
+    res = refrescar_todos(ordenar(combos), 1, lambda s, t: vistos.append((s, t)) or (s, t, 200, None))
+    assert vistos == ordenar(combos) and len(res) == 6 and _pool is None
+
+    # workers=3: pool spawn con prioridad baja; procesa todos y devuelve en el orden enviado
+    import time as _t
+    seis = [(f"S{n}", "Scalping") for n in range(6)]
+    t0 = _t.perf_counter()
+    res = refrescar_todos(seis, 3, _worker_prueba)
+    assert [(s, t) for s, t, *_ in res] == seis and all(st == 200 for _, _, st, _ in res), res
+    assert len({pid for *_, pid in res}) > 1  # corrió en más de un proceso
+    t0 = _t.perf_counter()
+    refrescar_todos(seis, 3, _worker_prueba)  # pool reutilizado (ya caliente)
+    paralelo = _t.perf_counter() - t0
+    assert paralelo < 6 * 0.3, paralelo  # en serie serían >= 1.8 s
+    assert refrescar_todos([("X", "Scalping")], 3, _worker_error)[0][2] is None  # excepción -> status None
+    _cerrar_pool()
     print("refresco.demo() OK")
+
+
+def _worker_prueba(simbolo: str, temporalidad: str):
+    import os as _os
+    time.sleep(0.3)
+    return simbolo, temporalidad, 200, _os.getpid()
+
+
+def _worker_error(simbolo: str, temporalidad: str):
+    raise RuntimeError("boom")
 
 
 if __name__ == "__main__":
