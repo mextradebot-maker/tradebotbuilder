@@ -5,7 +5,7 @@ No calcula nada: lee los snapshots que refresco.py ya mantiene al día en Postgr
 (36 activos × 5 temporalidades). Solo lo llama n8n (T-01) con X-MTB-Service-Key; Claude
 redacta el mensaje de Telegram con este JSON.
 
-"Vigente" = confirmado en las últimas VELAS_VIGENCIA velas de su temporalidad: la misma
+"Vigente" = conocido (indice_conocido; si no viene, confirmado) en las últimas VELAS_VIGENCIA velas de su temporalidad: la misma
 ventana en que el robot mantiene su orden pendiente (InpVelasExpiracion del EA).
 """
 
@@ -25,7 +25,7 @@ def setups_vigentes(snapshots: list[dict], max_velas: int = VELAS_VIGENCIA) -> d
         velas = int(r.get("velas") or 0)
         encontrados = []
         for st in r.get("setups_confirmados") or []:
-            hace = velas - 1 - int(st["indice_confirmacion"])
+            hace = velas - 1 - int(st.get("indice_conocido", st["indice_confirmacion"]))
             if 0 <= hace <= max_velas:
                 encontrados.append({
                     "simbolo": s["simbolo"],
@@ -33,6 +33,8 @@ def setups_vigentes(snapshots: list[dict], max_velas: int = VELAS_VIGENCIA) -> d
                     "direccion": _A_COMPRA_VENTA.get(st["direccion"], st["direccion"]),
                     "entrada": round(float(st["entrada"]), 5),
                     "stop": round(float(st["stop"]), 5),
+                    "tp": round(float(st["tp"]), 5) if st.get("tp") is not None else None,
+                    "tipo": st.get("tipo"),
                     "velas_desde_confirmacion": hace,
                     "order_block_confluente": bool(st.get("order_block_confluente")),
                     "liquidez_confluente": bool(st.get("liquidez_confluente")),
@@ -109,6 +111,11 @@ def demo() -> None:
     assert rep["tendencias"]["EURUSD"]["Scalping"] == "venta"
     assert rep["conteo_por_temporalidad"]["Intraday"] == {"compra": 1, "venta": 0, "sin_definir": 0}
     assert setups_vigentes([])["con_setup_vigente"] == 0
+    # v2: la vigencia cuenta desde indice_conocido (cuando el setup ya era visible), y salen tp/tipo
+    v2 = {**st(100), "indice_conocido": 495, "tp": 2660.0, "tipo": "reversion"}
+    rv = setups_vigentes([snap("XAUUSD", "Intraday", 500, [v2])])["vigentes"][0]
+    assert (rv["velas_desde_confirmacion"], rv["tp"], rv["tipo"]) == (4, 2660.0, "reversion"), rv
+    assert v["tp"] is None and v["tipo"] is None  # setups viejos sin tp/tipo
 
     previa = os.environ.pop("MTB_SERVICE_KEY", None)
     try:

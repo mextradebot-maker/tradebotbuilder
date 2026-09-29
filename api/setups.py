@@ -11,22 +11,15 @@ consulta en vivo el EA entregado a los alumnos (robots/MexTradeBot_SeguidorSMC.m
 en cada vela nueva.
 
 `temporalidad` es opcional. Sin ella, el comportamiento es exactamente el de
-antes (setups crudos, sin cruzar nada más) — para no romper a T-01 ni a EAs ya
-desplegados que no la mandan. Con ella, cada setup se cruza contra dos cosas
-que el sistema ya calcula por separado y que hasta ahora vivían desconectadas
-del punto donde el bot decide entrar:
+antes (setups crudos del detector viejo, sin cruzar nada más) — para no romper
+a T-01 ni a EAs ya desplegados que no la mandan.
 
-  1. La tendencia confirmada del día para ese símbolo+temporalidad
-     (motor_smc.obtener_tendencia sobre el mismo OHLC).
-  2. El historial de backtest de esa dirección específica
-     (backtesting.backtest.backtest_direccion sobre el mismo OHLC) —
-     ¿es rentable_sin_optimizar y con muestra suficiente?
-
-Un setup solo se marca "confirmado" si las dos coinciden con su dirección.
-Esto es lo mismo que ya hace "MTB Analisis Diario de Mercado" (n8n) y lo que
-alimenta la hoja Resumen_Temporalidades, aplicado ahora en el momento en que
-un bot decide si entra o no — sin eso, el bot podía tomar un setup técnicamente
-válido pero contra la tendencia del día o con historial no rentable.
+Con ella, la respuesta viene del motor SMC v2 (motor_smc/setups_v2.py): un
+setup queda "confirmado" (`setups_confirmados`) si cumple las reglas R1-R6 del
+motor v2 (spec docs/superpowers/specs/2026-09-28-motor-smc-v2-design.md), ya no
+por "tendencia + backtest rentable". El backtest v2 se devuelve como
+información, no gatea. `setups_confirmados` es SIEMPRE la última llave: el EA
+toma la última ocurrencia de "direccion" tras `"setups_confirmados":[`.
 """
 
 import json
@@ -34,18 +27,14 @@ from datetime import datetime, timedelta, timezone, time as _time
 
 import dukascopy_python as dp
 
-from backtesting.backtest import backtest_direccion, backtest_v2
+from backtesting.backtest import backtest_v2
 from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, obtener_velas
 from motor_smc import analizar, detectar_setups, obtener_tendencia
 from motor_smc.setups_v2 import detectar_setups_v2, embudo
 
 # ponytail: dias-por-temporalidad duplicado en api/mejor_indicador.py y en el
 # job n8n "MTB Analisis Diario de Mercado" (nodo Consultar Backtest) -- si se
-# ajusta aquí, ajustar ahí. swing_length y el umbral viven solo aquí.
-# Umbral 10 (antes 20): con las ventanas de DIAS_POR_TEMPORALIDAD ninguna combinación
-# símbolo×dirección llegaba a 20 casos → ningún setup podía confirmarse (barrido
-# 27 sep 2026, backtesting/calibrar_swing_length.py). Decisión de Ricardo.
-UMBRAL_SETUPS_SUFICIENTES = 10
+# ajusta aquí, ajustar ahí. swing_length vive solo aquí.
 
 # Cache Postgres (Fase 1 BD SMC persistente). Si DATABASE_URL no esta disponible
 # o Postgres esta caido, _persistencia queda None y se cae al compute fresco.
@@ -85,9 +74,7 @@ SWING_LENGTH_POR_TEMPORALIDAD = {
     "Swing (M)": 5,
 }
 
-DIRECCION_LONG_SHORT_A_COMPRA_VENTA = {"long": "compra", "short": "venta"}
-
-# Motor v2, Etapa 1 (modo sombra): mapa PROVISIONAL perfil -> (vela de entrada, temporalidad mayor).
+# Motor v2: mapa PROVISIONAL perfil -> (vela de entrada, temporalidad mayor).
 # La Etapa 2 lo reemplaza por el mapa definitivo en conectividad/historico.py
 # (spec docs/superpowers/specs/2026-09-28-motor-smc-v2-design.md).
 PERFIL_A_VELAS_V2 = {
@@ -105,8 +92,8 @@ VELA_A_INTERVALO = {
 
 
 def motor_v2(simbolo: str, temporalidad: str, ohlc, inicio, fin) -> dict:
-    """Modo sombra: calcula el motor v2 junto al actual. Nunca toca `setups`/`setups_confirmados`
-    (lo que reciben los EA) y nunca propaga una excepción al llamador."""
+    """Motor v2 (motor principal con temporalidad). Nunca propaga una excepción al llamador:
+    ante un fallo devuelve estado "error" y `procesar` responde sin setups confirmados."""
     try:
         vela, vela_mayor = PERFIL_A_VELAS_V2[temporalidad]
         if vela_mayor == vela:
@@ -208,15 +195,13 @@ def procesar(payload: dict) -> tuple[int, dict]:
             cuerpo.update({"temporalidad": temporalidad, "setups_confirmados": []})
         return 200, cuerpo
 
-    resultado_motor = analizar(ohlc, swing_length=swing_length)
-    setups = detectar_setups(ohlc, resultado_motor, ventana_fvg=ventana_fvg)
-    setups_dict = setups.to_dict(orient="records")
-
     if not temporalidad:
         # Comportamiento historico sin cambios -- llamadores que no piden
         # temporalidad (T-01 Detector Activos, o un EA viejo sin ese input)
         # siguen recibiendo setups crudos, sin confirmacion.
-        respuesta = {"simbolo": simbolo, "velas": len(ohlc), "setups": setups_dict}
+        resultado_motor = analizar(ohlc, swing_length=swing_length)
+        setups = detectar_setups(ohlc, resultado_motor, ventana_fvg=ventana_fvg)
+        respuesta = {"simbolo": simbolo, "velas": len(ohlc), "setups": setups.to_dict(orient="records")}
         if _persistencia is not None:
             try:
                 _persistencia.escribir_snapshot(simbolo, cache_key_temp, respuesta, None)
@@ -224,49 +209,34 @@ def procesar(payload: dict) -> tuple[int, dict]:
                 pass
         return 200, respuesta
 
+    # tendencia: la usan registrar_cambio_tendencia, /api/tendencia y T-01
     tendencia = obtener_tendencia(ohlc, swing_length=swing_length)
     tendencia_actual = tendencia.get("direccion")
 
-    # también la dirección de la tendencia: /api/backtest la pide y la sirve desde este snapshot
-    direcciones = {s["direccion"] for s in setups_dict}
-    direcciones |= {ls for ls, cv in DIRECCION_LONG_SHORT_A_COMPRA_VENTA.items() if cv == tendencia_actual}
-    reportes_por_direccion = {}
-    for direccion_ls in direcciones:
-        reportes_por_direccion[direccion_ls] = backtest_direccion(ohlc, direccion_ls, swing_length=swing_length)
-
-    confirmados = []
-    for s in setups_dict:
-        direccion_cv = DIRECCION_LONG_SHORT_A_COMPRA_VENTA[s["direccion"]]
-        reporte = reportes_por_direccion.get(s["direccion"], {})
-        coincide_tendencia = direccion_cv == tendencia_actual
-        muestra_suficiente = (reporte.get("n_setups") or 0) >= UMBRAL_SETUPS_SUFICIENTES
-        rentable = bool(reporte.get("rentable_sin_optimizar"))
-        s["confirmado"] = coincide_tendencia and muestra_suficiente and rentable
-
-        razones = []
-        if not coincide_tendencia:
-            razones.append(f"tendencia del dia es {tendencia_actual}, no {direccion_cv}")
-        if not muestra_suficiente:
-            razones.append(f"solo {reporte.get('n_setups', 0)} setups en el backtest de esta direccion (umbral {UMBRAL_SETUPS_SUFICIENTES})")
-        elif not rentable:
-            razones.append("el backtest de esta direccion no es rentable_sin_optimizar")
-        s["razon_confirmacion"] = "; ".join(razones) if razones else "coincide con la tendencia del dia y el backtest es rentable"
-
-        if s["confirmado"]:
-            confirmados.append(s)
-
+    v2 = motor_v2(simbolo, temporalidad, ohlc, inicio, fin)
+    backtests = v2.get("backtests") or {}
+    # `setups_confirmados` DEBE ser la ULTIMA llave: el EA toma la ultima ocurrencia de
+    # "direccion" tras `"setups_confirmados":[` en todo el JSON.
     respuesta = {
         "simbolo": simbolo,
         "temporalidad": temporalidad,
         "velas": len(ohlc),
+        "motor": "v2",
+        "estado_motor": v2["estado"],  # "ok" | "sin_datos_temporalidad_mayor" | "error"
+        "vela": v2.get("vela"),
+        "vela_mayor": v2.get("vela_mayor"),
         "tendencia_actual": tendencia_actual,
         "swing_length": swing_length,
         "tendencia": tendencia,
-        "backtests": {DIRECCION_LONG_SHORT_A_COMPRA_VENTA[ls]: r for ls, r in reportes_por_direccion.items()},
-        "setups": setups_dict,
-        "setups_confirmados": confirmados,
+        "embudo": v2.get("embudo"),
+        "backtests": backtests.get("total", {}),  # {"compra": {...}, "venta": {...}}
+        "backtests_por_tipo": {k: v for k, v in backtests.items() if k != "total"},
+        "setups": v2.get("setups", []),
+        "setups_confirmados": v2.get("setups_validos", []),
     }
-    respuesta["motor_v2"] = motor_v2(simbolo, temporalidad, ohlc, inicio, fin)
+    if v2["estado"] == "error":
+        respuesta = {**{k: v for k, v in respuesta.items() if k != "setups_confirmados"},
+                     "error_motor": v2.get("error"), "setups_confirmados": []}
     if _persistencia is not None:
         try:
             tendencia_prev = _persistencia.leer_ultima_tendencia(simbolo, cache_key_temp)
@@ -325,7 +295,7 @@ def demo() -> None:
     assert status == 200
     assert body["velas"] > 0
     assert "setups_confirmados" not in body  # sin temporalidad, comportamiento historico
-    assert "motor_v2" not in body  # sin temporalidad no hay motor v2
+    assert "motor" not in body  # sin temporalidad no hay motor v2
     print(f"api.setups.demo() OK — {body['velas']} velas XAUUSD, {len(body['setups'])} setups (sin temporalidad)")
 
     status_t, body_t = procesar({"simbolo": "XAUUSD", "temporalidad": "Swing (H)"})
@@ -336,14 +306,15 @@ def demo() -> None:
     print(f"api.setups.demo() OK — XAUUSD Swing (H): tendencia {body_t['tendencia_actual']}, "
           f"{len(body_t['setups'])} setups crudos, {len(body_t['setups_confirmados'])} confirmados")
 
-    v2 = body_t["motor_v2"]
-    assert v2["estado"] in ("ok", "sin_datos_temporalidad_mayor"), v2
-    assert (v2["vela"], v2["vela_mayor"]) == ("4H", "D")
-    json.dumps(v2, allow_nan=False)  # el snapshot va a jsonb: sin NaN ni tipos numpy
-    for s in v2["setups"]:
+    assert list(body_t)[-1] == "setups_confirmados"  # contrato del parser del EA
+    assert body_t["motor"] == "v2" and body_t["estado_motor"] in ("ok", "sin_datos_temporalidad_mayor")
+    assert (body_t["vela"], body_t["vela_mayor"]) == ("4H", "D")
+    json.dumps(body_t, allow_nan=False)  # el snapshot va a jsonb: sin NaN ni tipos numpy
+    assert all(s["valido"] for s in body_t["setups_confirmados"])
+    assert set(body_t["backtests"]) <= {"compra", "venta"}
+    for s in body_t["setups"]:
         assert s["valido"] or s["razon_descarte"], s  # todo descarte trae su razón
-    assert all(s["valido"] for s in v2["setups_validos"])
-    print(f"api.setups.demo() OK — motor_v2 {v2['vela']}->{v2['vela_mayor']}: embudo {v2.get('embudo')}")
+    print(f"api.setups.demo() OK — motor v2 {body_t['vela']}->{body_t['vela_mayor']}: embudo {body_t.get('embudo')}")
 
     status_malo, body_malo = procesar({})
     assert status_malo == 400 and "error" in body_malo
