@@ -15,6 +15,11 @@
 //| vieja), este EA no opera -- mas seguro que asumir el setup crudo   |
 //| sin confirmar.                                                     |
 //|                                                                    |
+//| RIESGO (v1.11, reglas de Ricardo 29 sep 2026): 2% por operacion   |
+//| (el servidor lo topa en 2%: si ni el lote minimo cabe, no abre).  |
+//| Swing (S) y Swing (M) abren SIN SL (aguantan el drawdown); su     |
+//| tamano usa el stop del motor solo como referencia de distancia.   |
+//|                                                                    |
 //| SL/TP fijos (sin break-even ni trailing) A PROPOSITO: el TP es el |
 //| que manda el motor (campo "tp" del setup) y es lo que simula      |
 //| backtesting/backtest.py -- si se agrega gestion dinamica aqui,    |
@@ -31,7 +36,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.10"
+#property version   "1.11"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -48,7 +53,8 @@ input int    InpDiasHistorico    = 0;             // 0 = usa el default calibrad
 
 //--- PARAMETROS DE OPERACION
 input ENUM_TIMEFRAMES InpTF      = PERIOD_H1;     // Timeframe del disparo (nueva vela = nueva consulta)
-input double InpRiskPercent      = 1.0;           // Riesgo por operacion (%) -- los lotes los calcula el servidor
+input double InpRiskPercent      = 2.0;           // Riesgo por operacion (%) -- maximo 2%, los lotes los calcula el servidor
+input double InpRiskPercentSwing = 1.0;           // Swing (S)/(M): % provisional sobre la distancia del stop del motor (sin SL real)
 input double InpTakeProfitR      = 2.0;           // Respaldo: TP en multiplos de R, solo si la API no manda "tp"
 input int    InpVelasExpiracion  = 20;            // Velas que la orden pendiente espera antes de cancelarse
 input int    InpMagicNumber      = 20260828;      // Numero magico unico del EA
@@ -111,6 +117,12 @@ bool TimeframeEsperado(string nombre, ENUM_TIMEFRAMES &tf)
    return true;
 }
 
+bool EsSwingSM()
+{
+   ENUM_TIMEFRAMES tf;
+   return TimeframeEsperado(InpTemporalidad, tf) && (tf == PERIOD_W1 || tf == PERIOD_MN1);
+}
+
 //+------------------------------------------------------------------+
 //| TICK PRINCIPAL                                                    |
 //+------------------------------------------------------------------+
@@ -146,7 +158,9 @@ void OnTick()
    double lotes;
    if(!AutorizarOrden(direccion, entrada, stop, lotes)) return;
 
-   if(ColocarOrdenPendiente(tipo, entrada, stop, tp, lotes))
+   // Swing (S)/(M): sin SL en la orden -- la salida la gestionan las reglas de swing
+   double sl_orden = EsSwingSM() ? 0.0 : stop;
+   if(ColocarOrdenPendiente(tipo, entrada, sl_orden, tp, lotes))
       g_ultima_entrada_operada = entrada;
 }
 
@@ -234,7 +248,7 @@ bool AutorizarOrden(const string direccion, double entrada, double stop, double 
       + "\"balance\":%.2f,\"riesgo_pct\":%.4f,\"entrada\":%.10f,\"stop\":%.10f,"
       + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f}",
       AccountInfoInteger(ACCOUNT_LOGIN), ModoCuenta(), MTB_ROBOT_ID, _Symbol, direccion == "long" ? "buy" : "sell",
-      AccountInfoDouble(ACCOUNT_BALANCE), InpRiskPercent, entrada, stop,
+      AccountInfoDouble(ACCOUNT_BALANCE), EsSwingSM() ? InpRiskPercentSwing : InpRiskPercent, entrada, stop,
       SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE), SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE),
       SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN), SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX),
       SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP));

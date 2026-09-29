@@ -25,7 +25,7 @@ Todo falla cerrado: sin BD, sin MTB_ADMIN_KEY o con datos incompletos → no se 
 import hmac
 import os
 
-from conectividad.riesgo import dimensionar
+from conectividad.riesgo import PCT_MAX_SL, dimensionar
 
 _CAMPOS_LOTES = ("balance", "riesgo_pct", "entrada", "stop", "tick_size", "tick_value", "vol_min", "vol_max", "vol_step")
 
@@ -88,7 +88,7 @@ def procesar_auth(datos: dict, headers: dict) -> tuple[int, dict]:
             if d["tick_size"] <= 0:
                 raise ValueError("tick_size inválido")
             costo = abs(d["entrada"] - d["stop"]) / d["tick_size"] * d["tick_value"]
-            lotaje = dimensionar(d["balance"], d["riesgo_pct"] / 100.0, costo, d["vol_min"], d["vol_max"], d["vol_step"])
+            lotaje = dimensionar(d["balance"], min(d["riesgo_pct"] / 100.0, PCT_MAX_SL), costo, d["vol_min"], d["vol_max"], d["vol_step"])
         except (TypeError, ValueError) as e:
             return 400, {"autorizado": False, "motivo": f"datos de lotes inválidos: {e}"}
         cuerpo.update(lotes=lotaje.lotes, viable=lotaje.viable, motivo_lotes=lotaje.motivo,
@@ -222,6 +222,10 @@ def demo() -> None:
                      "tick_size": 0.01, "tick_value": 1.0, "vol_min": 0.01, "vol_max": 100, "vol_step": 0.01}
         st, body = procesar_auth(con_lotes, {"Authorization": "Bearer MTB-BUENO"})
         assert st == 200 and body["lotes"] == 0.10 and body["viable"], body
+
+        # riesgo_pct por encima del 2% se recorta al 2%: $10,000 × 2% / $1,000 = 0.20, no 0.50
+        st, body = procesar_auth({**con_lotes, "riesgo_pct": 5.0}, {"Authorization": "Bearer MTB-BUENO"})
+        assert st == 200 and body["lotes"] == 0.20, body
 
         st, body = procesar_auth({**con_lotes, "balance": 50}, {"Authorization": "Bearer MTB-BUENO"})
         assert st == 200 and body["lotes"] == 0.0 and not body["viable"], body

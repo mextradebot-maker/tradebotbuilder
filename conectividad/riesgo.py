@@ -7,7 +7,8 @@ Swing (H/S/M) — sin SL en MT5, salida por CHoCH inverso (coordinador):
     lotes = (capital × pct) / margen_de_1_lote          pct default 2%, máximo 2%
 
 Scalping / Intraday — SL en la estructura:
-    lotes = (capital × pct) / pérdida_de_1_lote_en_el_SL          pct default 1%
+    lotes = (capital × pct) / pérdida_de_1_lote_en_el_SL          pct default 2%, máximo 2%
+    (regla de Ricardo 29 sep 2026: si el SL cuesta más del 2%, NO se abre)
     pérdida_de_1_lote = (|entrada − sl| / tick_size) × tick_value
 
 `tick_size` / `tick_value` / margen salen del broker (mt5.symbol_info /
@@ -25,7 +26,8 @@ from dataclasses import dataclass
 TEMPORALIDADES_SWING = {"Swing (S)", "Swing (M)"}
 PCT_RIESGO_SWING = 0.02
 PCT_MAX_SWING = 0.02
-PCT_RIESGO_DEFAULT = 0.01
+PCT_RIESGO_DEFAULT = 0.02
+PCT_MAX_SL = 0.02  # tope de pérdida en el SL para scalping/intraday
 
 
 @dataclass(frozen=True)
@@ -87,7 +89,7 @@ def calcular_lotes(simbolo: str, capital: float, temporalidad: str, precio_entra
     else:
         if sl_precio is None:
             raise ValueError("sl_precio requerido para scalping/intraday")
-        pct = PCT_RIESGO_DEFAULT if pct_riesgo is None else pct_riesgo
+        pct = min(PCT_RIESGO_DEFAULT if pct_riesgo is None else pct_riesgo, PCT_MAX_SL)
         costo = perdida_por_lote(precio_entrada, sl_precio, info.trade_tick_size, info.trade_tick_value)
 
     return dimensionar(capital, pct, costo, info.volume_min, info.volume_max, info.volume_step)
