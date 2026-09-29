@@ -26,10 +26,12 @@ import json
 from datetime import datetime, timedelta, timezone, time as _time
 
 import dukascopy_python as dp
+import pandas as pd
 
 from backtesting.backtest import backtest_v2, simular_v2
 from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, obtener_velas
 from motor_smc import analizar, detectar_setups, obtener_tendencia
+from motor_smc.reglas import DURACION_VELA
 from motor_smc.setups_v2 import detectar_setups_v2, embudo
 
 # ponytail: dias-por-temporalidad duplicado en api/mejor_indicador.py y en el
@@ -105,9 +107,13 @@ def _forma_ea(respuesta: dict) -> dict:
 
 def motor_v2(simbolo: str, temporalidad: str, ohlc, inicio, fin) -> dict:
     """Motor v2 (motor principal con temporalidad). Nunca propaga una excepción al llamador:
-    ante un fallo devuelve estado "error" y `procesar` responde sin setups confirmados."""
+    ante un fallo devuelve estado "error" y `procesar` responde sin setups confirmados.
+    `velas` = largo de la serie realmente analizada (sin la vela en formación)."""
     try:
         vela, vela_mayor = PERFIL_A_VELAS_V2[temporalidad]
+        # obtener_velas incluye la vela en curso (a propósito para la semanal/mensual): no está cerrada
+        if len(ohlc) and ohlc.index[-1] + DURACION_VELA[vela] > pd.Timestamp.now(tz="UTC"):
+            ohlc = ohlc.iloc[:-1]
         if vela_mayor == vela:
             ohlc_mayor = ohlc
         else:
@@ -118,7 +124,7 @@ def motor_v2(simbolo: str, temporalidad: str, ohlc, inicio, fin) -> dict:
                 ohlc_mayor, motivo = None, f"{type(e).__name__}: {e}"
             if ohlc_mayor is None or ohlc_mayor.empty:
                 sin = {"estado": "sin_datos_temporalidad_mayor", "vela": vela, "vela_mayor": vela_mayor,
-                       "setups": [], "setups_validos": []}
+                       "velas": len(ohlc), "setups": [], "setups_validos": []}
                 if motivo:
                     sin["error"] = motivo
                 return sin
@@ -130,7 +136,7 @@ def motor_v2(simbolo: str, temporalidad: str, ohlc, inicio, fin) -> dict:
         for s, res in zip(validos, simulados["resultado"]):  # simular_v2 conserva el orden de los válidos
             s["resultado"] = res
         resultado = {
-            "estado": "ok", "vela": vela, "vela_mayor": vela_mayor,
+            "estado": "ok", "vela": vela, "vela_mayor": vela_mayor, "velas": len(ohlc),
             "setups": registros,
             # al EA solo va la orden todavía vigente: ni llenada, ni cancelada, ni expirada
             "setups_validos": [s for s in validos if s["resultado"] == "sin_llenar"],
@@ -237,7 +243,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
     respuesta = {
         "simbolo": simbolo,
         "temporalidad": temporalidad,
-        "velas": len(ohlc),
+        "velas": v2.get("velas", len(ohlc)),  # la vigencia en reporte.py se mide sobre la serie analizada
         "motor": "v2",
         "estado_motor": v2["estado"],  # "ok" | "sin_datos_temporalidad_mayor" | "error"
         "vela": v2.get("vela"),
@@ -281,7 +287,7 @@ def _demo_aislamiento() -> None:
     def boom(*a, **k):
         raise RuntimeError("boom")
 
-    orig = {n: getattr(g, n) for n in ("detectar_setups_v2", "obtener_velas", "backtest_v2")}
+    orig = {n: getattr(g, n) for n in ("detectar_setups_v2", "obtener_velas", "backtest_v2", "_persistencia")}
     try:
         g.obtener_velas = lambda *a, **k: ohlc
         g.detectar_setups_v2 = boom
@@ -312,6 +318,18 @@ def _demo_aislamiento() -> None:
         assert [s["resultado"] for s in r["setups"]] == ["gano", "sin_llenar"], r["setups"]
         assert [s["indice_conocido"] for s in r["setups_validos"]] == [8], r["setups_validos"]
         assert r["backtests"]["total"]["compra"]["n_setups"] == 1
+
+        # la vela en formación (apertura + duración > ahora) no se analiza, y "velas" lo refleja
+        ahora = pd.Timestamp.now(tz="UTC").floor("h")
+        formando = ohlc.set_axis(pd.date_range(end=ahora, periods=len(ohlc), freq="h", tz="UTC"))
+        vistas = []
+        g.detectar_setups_v2 = lambda o, *a, **k: vistas.append(len(o)) or vacio
+        assert motor_v2("XAUUSD", "Intraday", formando, ini, fin)["velas"] == len(ohlc) - 1
+        assert vistas == [len(ohlc) - 1], vistas
+        assert motor_v2("XAUUSD", "Intraday", ohlc, ini, fin)["velas"] == len(ohlc)  # todas cerradas
+        g.obtener_velas, g._persistencia = (lambda *a, **k: formando), None
+        status, body = procesar({"simbolo": "XAUUSD", "temporalidad": "Intraday", "_force_refresh": True})
+        assert status == 200 and body["velas"] == len(ohlc) - 1, body
     finally:
         for n, v in orig.items():
             setattr(g, n, v)
