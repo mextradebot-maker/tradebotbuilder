@@ -121,6 +121,25 @@ _SQL = [
         ON log_coordinador (login, registrado_en DESC)
     """,
 
+    # ── Almacen de velas (conectividad/almacen.py) ────────────────────────
+    """
+    CREATE TABLE IF NOT EXISTS velas (
+        simbolo text NOT NULL, serie text NOT NULL, ts timestamptz NOT NULL,
+        open double precision, high double precision, low double precision,
+        close double precision, volume double precision,
+        PRIMARY KEY (simbolo, serie, ts)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS velas_carga (
+        simbolo text NOT NULL, serie text NOT NULL,
+        desde timestamptz, hasta timestamptz,
+        completa boolean NOT NULL DEFAULT false,
+        actualizado_en timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (simbolo, serie)
+    )
+    """,
+
     # Bloque 6 (peticiones_usuario / solicitar.py) retirado 2026-09-26: las
     # operaciones manuales se abren directo en MT5 y el coordinador las adopta.
 
