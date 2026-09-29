@@ -10,15 +10,17 @@
 //| interno.md Seccion 7.1 para la decision Opcion A vs Opcion B.     |
 //|                                                                    |
 //| Opera solo setups_confirmados -- /api/setups (con InpTemporalidad) |
-//| cruza cada setup crudo contra la tendencia del dia y el backtest  |
-//| de esa direccion antes de confirmarlo (ver api/setups.py). Si la  |
-//| API responde sin ese campo (version vieja), este EA no opera --   |
-//| mas seguro que asumir el setup crudo sin confirmar.                |
+//| responde con el motor SMC v2: confirmado = cumple las reglas R1-R6 |
+//| (ver api/setups.py). Si la API responde sin ese campo (version     |
+//| vieja), este EA no opera -- mas seguro que asumir el setup crudo   |
+//| sin confirmar.                                                     |
 //|                                                                    |
-//| SL/TP fijos (sin break-even ni trailing) A PROPOSITO: el TP a 2R  |
-//| es exactamente lo que se valido en backtesting/backtest.py -- si  |
-//| se agrega gestion dinamica aqui, los resultados en vivo dejan de  |
-//| ser comparables al backtest.                                      |
+//| SL/TP fijos (sin break-even ni trailing) A PROPOSITO: el TP es el |
+//| que manda el motor (campo "tp" del setup) y es lo que simula      |
+//| backtesting/backtest.py -- si se agrega gestion dinamica aqui,    |
+//| los resultados en vivo dejan de ser comparables al backtest.      |
+//| Si el precio toca el TP antes de llenar la entrada, la orden      |
+//| pendiente se cancela (igual que el backtest: "cancelado_tp").     |
 //|                                                                    |
 //| LICENCIA (v1.10): sin MTB_LICENSE_TOKEN valido no hay senales ni  |
 //| ordenes. Cada consulta a /api/setups va firmada con el token y    |
@@ -47,7 +49,7 @@ input int    InpDiasHistorico    = 0;             // 0 = usa el default calibrad
 //--- PARAMETROS DE OPERACION
 input ENUM_TIMEFRAMES InpTF      = PERIOD_H1;     // Timeframe del disparo (nueva vela = nueva consulta)
 input double InpRiskPercent      = 1.0;           // Riesgo por operacion (%) -- los lotes los calcula el servidor
-input double InpTakeProfitR      = 2.0;           // Take profit en multiplos de R (igual que el backtest)
+input double InpTakeProfitR      = 2.0;           // Respaldo: TP en multiplos de R, solo si la API no manda "tp"
 input int    InpVelasExpiracion  = 20;            // Velas que la orden pendiente espera antes de cancelarse
 input int    InpMagicNumber      = 20260828;      // Numero magico unico del EA
 input string InpComment          = "MTB-SMC";     // Comentario en operaciones
@@ -83,6 +85,8 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnTick()
 {
+   CancelarOrdenesPorTP(); // cada tick: el TP se puede tocar a mitad de vela
+
    // Solo procesar en vela nueva -- evita golpear la API en cada tick
    datetime vela_actual = iTime(_Symbol, InpTF, 0);
    if(vela_actual == g_ultima_vela) return;
@@ -93,8 +97,8 @@ void OnTick()
    if(CountPositions() > 0 || CountOrdenesPendientes() > 0) return; // ya hay algo abierto/pendiente de este EA
 
    string direccion;
-   double entrada, stop;
-   if(!ConsultarUltimoSetup(direccion, entrada, stop)) return;
+   double entrada, stop, tp_api;
+   if(!ConsultarUltimoSetup(direccion, entrada, stop, tp_api)) return;
    if(g_standby) return;
 
    // evita re-operar exactamente el mismo setup si ya se coloco antes
@@ -103,7 +107,9 @@ void OnTick()
    double riesgo = MathAbs(entrada - stop);
    if(riesgo <= 0) return; // geometria invalida, no deberia pasar (ya filtrado por detectar_setups)
 
-   double tp = (direccion == "long") ? entrada + InpTakeProfitR * riesgo : entrada - InpTakeProfitR * riesgo;
+   // TP del motor si viene y esta del lado correcto; si no, respaldo con InpTakeProfitR
+   bool tp_api_ok = (tp_api > 0) && ((direccion == "long") ? (tp_api > entrada) : (tp_api < entrada));
+   double tp = tp_api_ok ? tp_api : ((direccion == "long") ? entrada + InpTakeProfitR * riesgo : entrada - InpTakeProfitR * riesgo);
    ENUM_ORDER_TYPE tipo = (direccion == "long") ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_SELL_LIMIT;
 
    double lotes;
@@ -116,7 +122,7 @@ void OnTick()
 //+------------------------------------------------------------------+
 //| CONSULTA AL MOTOR PROPIO (/api/setups)                            |
 //+------------------------------------------------------------------+
-bool ConsultarUltimoSetup(string &direccion, double &entrada, double &stop)
+bool ConsultarUltimoSetup(string &direccion, double &entrada, double &stop, double &tp)
 {
    string url = InpApiUrl + "?simbolo=" + InpSimboloConsulta + "&temporalidad=" + CodificarParametroUrl(InpTemporalidad)
               + "&cuenta=" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "&modo=" + ModoCuenta() + "&robot=" + MTB_ROBOT_ID;
@@ -158,7 +164,7 @@ bool ConsultarUltimoSetup(string &direccion, double &entrada, double &stop)
    SalirStandby();
 
    string cuerpo = CharArrayToString(respuesta);
-   return ExtraerUltimoSetupConfirmado(cuerpo, direccion, entrada, stop);
+   return ExtraerUltimoSetupConfirmado(cuerpo, direccion, entrada, stop, tp);
 }
 
 //+------------------------------------------------------------------+
@@ -251,7 +257,8 @@ string CodificarParametroUrl(const string valor)
 //| El formato de /api/setups con InpTemporalidad es fijo y conocido  |
 //| (ver tradebotbuilder/api/setups.py): {..., "setups":[...],         |
 //| "setups_confirmados":[{...,"direccion":"long","entrada":F,         |
-//| "stop":F}, ...]} -- se busca el marcador de "setups_confirmados"   |
+//| "stop":F,"tp":F}, ...]} (setups_confirmados es la ULTIMA llave)  |
+//| -- se busca el marcador de "setups_confirmados"   |
 //| primero y SOLO se lee direccion/entrada/stop despues de ese punto, |
 //| nunca del arreglo "setups" crudo -- si "setups_confirmados" viene  |
 //| vacio ([]) no hay nada que leer despues del marcador y se regresa  |
@@ -288,7 +295,7 @@ bool ExtraerCampoNumeroDesde(const string &json, const string campo, int desde, 
    return true;
 }
 
-bool ExtraerUltimoSetupConfirmado(const string &json, string &direccion, double &entrada, double &stop)
+bool ExtraerUltimoSetupConfirmado(const string &json, string &direccion, double &entrada, double &stop, double &tp)
 {
    int marcador = StringFind(json, "\"setups_confirmados\":[");
    if(marcador < 0) return false; // API vieja sin confirmacion -- no operar por seguridad
@@ -307,6 +314,7 @@ bool ExtraerUltimoSetupConfirmado(const string &json, string &direccion, double 
    if(!ExtraerCampoStringDesde(json, "direccion", pos_ultimo, direccion)) return false;
    if(!ExtraerCampoNumeroDesde(json, "entrada", pos_ultimo, entrada)) return false;
    if(!ExtraerCampoNumeroDesde(json, "stop", pos_ultimo, stop)) return false;
+   if(!ExtraerCampoNumeroDesde(json, "tp", pos_ultimo, tp)) tp = 0; // sin tp -> respaldo InpTakeProfitR en OnTick
    return true;
 }
 
@@ -346,6 +354,35 @@ bool ColocarOrdenPendiente(ENUM_ORDER_TYPE tipo, double precio, double sl, doubl
 void CancelarOrdenesVencidas()
 {
    CancelarOrdenesPendientes(true);
+}
+
+//+------------------------------------------------------------------+
+//| CANCELAR ORDENES PENDIENTES CUYO TP YA SE TOCO SIN LLENAR         |
+//| Long: Bid >= TP; short: Ask <= TP (misma regla que el backtest).  |
+//+------------------------------------------------------------------+
+void CancelarOrdenesPorTP()
+{
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = OrderGetTicket(i);
+      if(!OrderSelect(ticket)) continue;
+      if(OrderGetInteger(ORDER_MAGIC) != InpMagicNumber) continue;
+      if(OrderGetString(ORDER_SYMBOL) != _Symbol) continue;
+      double tp_orden = OrderGetDouble(ORDER_TP);
+      if(tp_orden <= 0) continue;
+      ENUM_ORDER_TYPE tipo = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      bool toco_tp = (tipo == ORDER_TYPE_BUY_LIMIT  && SymbolInfoDouble(_Symbol, SYMBOL_BID) >= tp_orden)
+                  || (tipo == ORDER_TYPE_SELL_LIMIT && SymbolInfoDouble(_Symbol, SYMBOL_ASK) <= tp_orden);
+      if(!toco_tp) continue;
+      MqlTradeRequest request = {};
+      MqlTradeResult  result  = {};
+      request.action = TRADE_ACTION_REMOVE;
+      request.order   = ticket;
+      if(OrderSend(request, result))
+         Print("Orden pendiente #", ticket, " cancelada: el precio llego al TP (", tp_orden, ") antes de la entrada");
+      else
+         Print("ERROR al cancelar orden pendiente #", ticket, " por TP: ", GetLastError(), " (retcode ", result.retcode, ")");
+   }
 }
 
 void CancelarOrdenesPendientes(bool solo_vencidas)
