@@ -19,6 +19,10 @@
 //| (el servidor lo topa en 2%: si ni el lote minimo cabe, no abre).  |
 //| Swing (S) y Swing (M) abren SIN SL (aguantan el drawdown); su     |
 //| tamano usa el stop del motor solo como referencia de distancia.   |
+//| CIERRE FORZADO (v1.12): toda posicion de este EA (todas las       |
+//| temporalidades) se cierra si su perdida flotante llega al 3% del  |
+//| capital. En Swing S/M es el unico freno; en el resto, un seguro   |
+//| contra huecos de precio/deslizamiento.                            |
 //|                                                                    |
 //| SL/TP fijos (sin break-even ni trailing) A PROPOSITO: el TP es el |
 //| que manda el motor (campo "tp" del setup) y es lo que simula      |
@@ -36,7 +40,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.11"
+#property version   "1.12"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -57,6 +61,7 @@ input double InpRiskPercent      = 2.0;           // Riesgo por operacion (%) --
 input double InpRiskPercentSwing = 1.0;           // Swing (S)/(M): % provisional sobre la distancia del stop del motor (sin SL real)
 input double InpTakeProfitR      = 2.0;           // Respaldo: TP en multiplos de R, solo si la API no manda "tp"
 input int    InpVelasExpiracion  = 20;            // Velas que la orden pendiente espera antes de cancelarse
+input double InpPerdidaMaxPct    = 3.0;           // Cierre forzado: perdida flotante maxima (% del capital)
 input int    InpMagicNumber      = 20260828;      // Numero magico unico del EA
 input string InpComment          = "MTB-SMC";     // Comentario en operaciones
 
@@ -128,6 +133,7 @@ bool EsSwingSM()
 //+------------------------------------------------------------------+
 void OnTick()
 {
+   CerrarPorPerdidaMaxima(); // cada tick: el freno del -3% no espera a la vela
    CancelarOrdenesPorTP(); // cada tick: el TP se puede tocar a mitad de vela
 
    // Solo procesar en vela nueva -- evita golpear la API en cada tick
@@ -453,6 +459,50 @@ void CancelarOrdenesPendientes(bool solo_vencidas)
 //+------------------------------------------------------------------+
 //| CONTEO DE POSICIONES / ORDENES DE ESTE EA                         |
 //+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+//| Cierra a mercado las posiciones de este EA cuya perdida flotante  |
+//| (profit + swap) llega a InpPerdidaMaxPct del capital.             |
+//+------------------------------------------------------------------+
+void CerrarPorPerdidaMaxima()
+{
+   // ponytail: capital = balance actual; con una posicion por EA es el balance al abrir,
+   // salvo que otro EA de la misma cuenta cierre operaciones en medio.
+   double limite = -AccountInfoDouble(ACCOUNT_BALANCE) * InpPerdidaMaxPct / 100.0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket) || PositionGetInteger(POSITION_MAGIC) != InpMagicNumber) continue;
+      double perdida = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      if(perdida > limite) continue;
+
+      bool larga = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY;
+      MqlTradeRequest request = {};
+      MqlTradeResult  result  = {};
+      request.action    = TRADE_ACTION_DEAL;
+      request.position  = ticket;
+      request.symbol    = PositionGetString(POSITION_SYMBOL);
+      request.volume    = PositionGetDouble(POSITION_VOLUME);
+      request.type      = larga ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+      request.price     = larga ? SymbolInfoDouble(request.symbol, SYMBOL_BID) : SymbolInfoDouble(request.symbol, SYMBOL_ASK);
+      request.deviation = 50;
+      request.magic     = InpMagicNumber;
+      request.comment   = "MTB-perdida-max";
+      request.type_filling = FillingDelSimbolo(request.symbol);
+      if(OrderSend(request, result))
+         Print("CIERRE FORZADO -", InpPerdidaMaxPct, "%: ticket ", ticket, " perdida ", perdida, " (limite ", limite, ")");
+      else
+         Print("ERROR cierre forzado ticket ", ticket, ": ", GetLastError(), " retcode ", result.retcode);
+   }
+}
+
+ENUM_ORDER_TYPE_FILLING FillingDelSimbolo(const string simbolo)
+{
+   long modos = SymbolInfoInteger(simbolo, SYMBOL_FILLING_MODE);
+   if((modos & SYMBOL_FILLING_FOK) != 0) return ORDER_FILLING_FOK;
+   if((modos & SYMBOL_FILLING_IOC) != 0) return ORDER_FILLING_IOC;
+   return ORDER_FILLING_RETURN;
+}
+
 int CountPositions()
 {
    int count = 0;
