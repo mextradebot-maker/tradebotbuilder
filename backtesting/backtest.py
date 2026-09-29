@@ -141,6 +141,7 @@ def _simular_v2_uno(ohlc: pd.DataFrame, s) -> dict:
     - Vela que llena: si toca el stop -> perdió (peor caso); si cierra más allá de
       `zona_extremo` -> invalidado, sale al cierre (§1.3); el TP no cuenta en esa vela
       (el orden intrabar es desconocido).
+    - Si antes de llenar el precio toca el TP, la orden se cancela ("cancelado_tp", no cuenta).
     - Después: stop antes que TP si ambos se tocan en la misma vela (peor caso)."""
     long = s["direccion"] == "long"
     entrada, stop, tp, extremo = s["entrada"], s["stop"], s["tp"], s["zona_extremo"]
@@ -152,6 +153,8 @@ def _simular_v2_uno(ohlc: pd.DataFrame, s) -> dict:
         toca_stop = v["low"] <= stop if long else v["high"] >= stop
         if lleno_en is None:
             if not (v["low"] <= entrada if long else v["high"] >= entrada):
+                if v["high"] >= tp if long else v["low"] <= tp:  # el TP llegó antes que la entrada: orden cancelada
+                    return {"resultado": "cancelado_tp", "r": 0.0, "velas": 0, "riesgo_pct": riesgo_pct}
                 continue
             lleno_en = p
             if toca_stop:
@@ -187,6 +190,10 @@ def backtest_v2(ohlc: pd.DataFrame, setups: pd.DataFrame) -> dict:
         for ls, cv in (("long", "compra"), ("short", "venta")):
             sub = resultados[(resultados["tipo"] == tipo) & (resultados["direccion"] == ls)] if len(resultados) else resultados
             salida[tipo][cv] = reporte(sub)
+    salida["total"] = {}
+    for ls, cv in (("long", "compra"), ("short", "venta")):
+        sub = resultados[resultados["direccion"] == ls] if len(resultados) else resultados
+        salida["total"][cv] = reporte(sub)
     return salida
 
 
@@ -207,19 +214,22 @@ def demo() -> None:
     gana = serie([(105, 106, 104, 105, 1), (102, 103, 99, 101, 1), (101, 104, 100, 103, 1), (103, 111, 102, 110, 1)])
     r = _simular_v2_uno(gana, s)
     assert r["resultado"] == "gano" and r["r"] == 2.0, r
-    assert _simular_v2_uno(serie([(105, 106, 104, 105, 1), (106, 112, 105, 111, 1)]), s)["resultado"] == "sin_llenar"
+    assert _simular_v2_uno(serie([(105, 106, 104, 105, 1), (106, 109, 105, 108, 1)]), s)["resultado"] == "sin_llenar"
     inval = _simular_v2_uno(serie([(105, 106, 104, 105, 1), (101, 101, 95.5, 96, 1)]), s)
     assert inval["resultado"] == "invalidado" and round(inval["r"], 2) == -0.8, inval  # sale al cierre 96
     ambos = serie([(105, 106, 104, 105, 1), (102, 103, 99, 101, 1), (101, 111, 94, 100, 1)])
     assert _simular_v2_uno(ambos, s)["resultado"] == "perdio"  # stop y TP en la misma vela: peor caso
     tp_en_llenado = serie([(105, 106, 104, 105, 1), (101, 111, 99, 108, 1), (108, 112, 107, 111, 1)])
     assert _simular_v2_uno(tp_en_llenado, s)["velas"] == 2  # el TP de la vela que llena no cuenta
+    tp_antes = serie([(105, 106, 104, 105, 1), (105, 111, 104, 110, 1), (110, 110, 99, 100, 1)])
+    assert _simular_v2_uno(tp_antes, s)["resultado"] == "cancelado_tp"  # el TP llegó antes que la entrada
     corto = pd.Series({**base, "direccion": "short", "stop": 105.0, "tp": 90.0, "zona_extremo": 103.0})
     assert _simular_v2_uno(serie([(95, 96, 94, 95, 1), (98, 101, 97, 99, 1), (99, 100, 89, 90, 1)]), corto)["resultado"] == "gano"
     rep = backtest_v2(gana, pd.DataFrame([base, {**base, "valido": False}]))
     assert rep["continuacion"]["compra"]["n_setups"] == 1 and rep["continuacion"]["compra"]["expectativa_r"] == 2.0
     assert rep["reversion"]["compra"]["n_setups"] == 0
-    sin_llenar = backtest_v2(serie([(105, 106, 104, 105, 1), (106, 112, 105, 111, 1)]), pd.DataFrame([base]))
+    assert rep["total"]["compra"]["n_setups"] == 1
+    sin_llenar = backtest_v2(serie([(105, 106, 104, 105, 1), (106, 109, 105, 108, 1)]), pd.DataFrame([base]))
     assert sin_llenar["continuacion"]["compra"]["n_setups"] == 0  # sin_llenar no cuenta como resuelto
     print("backtest v2 OK")
 
