@@ -101,8 +101,22 @@ def registrar_carga(simbolo: str, serie: str, desde, hasta, sincronizado=None) -
                  desde = LEAST(velas_carga.desde, EXCLUDED.desde),
                  hasta = GREATEST(velas_carga.hasta, EXCLUDED.hasta),
                  actualizado_en = GREATEST(velas_carga.actualizado_en, EXCLUDED.actualizado_en)
-               WHERE EXCLUDED.desde <= velas_carga.hasta AND EXCLUDED.hasta >= velas_carga.desde""",
+               WHERE velas_carga.hasta IS NULL
+                  OR (EXCLUDED.desde <= velas_carga.hasta AND EXCLUDED.hasta >= velas_carga.desde)""",
             (simbolo, serie, _utc(desde), _utc(hasta), None if sincronizado is None else _utc(sincronizado)))
+
+
+def marcar_completa(simbolo: str, serie: str) -> None:
+    """La carga historica llego a su objetivo o al inicio de la historia de Dukascopy."""
+    with get_conn() as conn:
+        conn.execute("INSERT INTO velas_carga (simbolo, serie, completa) VALUES (%s, %s, true) "
+                     "ON CONFLICT (simbolo, serie) DO UPDATE SET completa = true", (simbolo, serie))
+
+
+def completas() -> set:
+    """{(simbolo, serie)} con la carga historica terminada."""
+    with get_conn() as conn:
+        return set(conn.execute("SELECT simbolo, serie FROM velas_carga WHERE completa").fetchall())
 
 
 # = refresco.MARGEN_DATOS: Dukascopy publica la vela cerrada con hasta ~2 min de retraso. Una sincronizacion

@@ -19,7 +19,7 @@ import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 
-from conectividad.historico import TEMPORALIDADES, resolver_temporalidad
+from conectividad.historico import ALIAS_TEMPORALIDAD, TEMPORALIDADES, resolver_temporalidad
 
 CRIPTO = {"BTCUSD", "ETHUSD", "XRPUSD"}
 MARGEN_DATOS = timedelta(minutes=2)
@@ -99,12 +99,19 @@ def ordenar(combos: list[tuple[str, str]]) -> list[tuple[str, str]]:
     return sorted(combos, key=lambda c: PRIORIDAD.index(c[1]) if c[1] in PRIORIDAD else len(PRIORIDAD))
 
 
-def pendientes(ahora: datetime) -> list[tuple[str, str]]:
+# La carga historica del almacen cede el paso mientras haya algo de esto pendiente.
+URGENTES = ("Scalping 15m", "Scalping 30m", "Intraday 1H")
+
+
+def pendientes(ahora: datetime, solo: tuple | None = None) -> list[tuple[str, str]]:
+    """Combinaciones a refrescar; `solo` limita a esas temporalidades (canonicas) sin leer los demas snapshots."""
     import persistencia
 
     salida = []
     for c in persistencia.listar_catalogo():
         if not c["activo"]:
+            continue
+        if solo is not None and ALIAS_TEMPORALIDAD.get(c["temporalidad"], c["temporalidad"]) not in solo:
             continue
         try:  # una temporalidad desconocida en el catálogo no debe abortar el ciclo completo
             canon = resolver_temporalidad(c["temporalidad"])
@@ -119,6 +126,11 @@ def pendientes(ahora: datetime) -> list[tuple[str, str]]:
         except ValueError as e:
             logging.warning("refresco: fila de catálogo omitida %s %s: %s", c["simbolo"], c["temporalidad"], e)
     return ordenar(list(dict.fromkeys(salida)))  # alias + canónico del mismo símbolo -> una sola vez
+
+
+def hay_pendientes_urgentes(ahora: datetime) -> bool:
+    """Barato (solo lee los snapshots de 15m/30m/1H): ¿hay algo de Scalping/Intraday 1H por refrescar?"""
+    return bool(pendientes(ahora, URGENTES))
 
 
 def refrescar_uno(simbolo: str, temporalidad: str) -> tuple:
@@ -383,6 +395,23 @@ def demo() -> None:
         # Bogus omitida; EURUSD pendiente una sola vez aunque el catálogo tenga también su alias;
         # XAUUSD alias lee el snapshot canónico (fresco) -> no se repite
         assert pendientes(ahora2) == [("EURUSD", "Scalping 15m")], pendientes(ahora2)
+    finally:
+        if previo is None:
+            del sys.modules["persistencia"]
+        else:
+            sys.modules["persistencia"] = previo
+    # hay_pendientes_urgentes: solo mira 15m/30m/1H (un 4H/D pendiente no frena la carga historica)
+    snaps[("EURUSD", "Scalping 15m")]["refrescado_en"] = datetime(2026, 9, 23, 14, 33, tzinfo=u)  # fresco
+    falso.listar_catalogo = lambda: [{"simbolo": "EURUSD", "temporalidad": "Scalping 15m", "activo": True},
+                                     {"simbolo": "EURUSD", "temporalidad": "Swing (M)", "activo": True},
+                                     {"simbolo": "EURUSD", "temporalidad": "Intraday 4H", "activo": True},
+                                     {"simbolo": "XAUUSD", "temporalidad": "Scalping", "activo": False}]
+    sys.modules["persistencia"] = falso
+    try:
+        assert len(pendientes(ahora2)) == 2 and not hay_pendientes_urgentes(ahora2)  # M y 4H pendientes: no urgen
+        snaps[("EURUSD", "Scalping 15m")]["refrescado_en"] = viejo
+        assert hay_pendientes_urgentes(ahora2)
+        assert not hay_pendientes_urgentes(datetime(2026, 9, 26, 12, 5, tzinfo=u))  # sabado: nada (no cripto)
     finally:
         if previo is None:
             del sys.modules["persistencia"]

@@ -7,7 +7,8 @@
   todo lo demás          → archivos estáticos de public/ (panel, master.html, manuales)
 
 Además arranca el refresco de snapshots SMC en segundo plano (refresco.py).
-Variables: PORT (8000), N8N_URL, REFRESCO_ACTIVO=0 para apagarlo, REFRESCO_HILOS (hilos del
+Variables: PORT (8000), N8N_URL, REFRESCO_ACTIVO=0 para apagarlo, ALMACEN_CARGA_ACTIVA=0 apaga la carga
+historica de velas (carga_historica.py), REFRESCO_HILOS (hilos del
 refresco, I/O-bound; por defecto 6, 1 = en serie; REFRESCO_WORKERS es alias obsoleto), más las de la API
 (DATABASE_URL, MTB_ADMIN_KEY, MTB_SERVICE_KEY).
 """
@@ -107,6 +108,11 @@ def main() -> None:
 
         refresco.iniciar_en_segundo_plano()
         logging.info("refresco de snapshots SMC activo")
+    if os.environ.get("ALMACEN_CARGA_ACTIVA", "1") != "0" and os.environ.get("DATABASE_URL"):
+        import carga_historica
+
+        carga_historica.iniciar_en_segundo_plano()
+        logging.info("carga historica del almacen de velas activa")
     puerto = int(os.environ.get("PORT", 8000))
     logging.info("MexTradeBot escuchando en :%d", puerto)
     ThreadingHTTPServer(("0.0.0.0", puerto), Handler).serve_forever()

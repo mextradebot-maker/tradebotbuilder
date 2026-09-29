@@ -187,9 +187,53 @@ class _ErrDescarga(Exception):
     """Envuelve un error de dp.fetch dentro del camino del almacen (causa = error original)."""
 
 
-def _descargar(instrumento, intervalo, a, b):
+# Simbolos sin calendario 24h forex (indices y acciones: cierran cada noche/dia): la guarda contra descargas
+# truncadas no aplica (no hay forma barata de saber si esperaban mas velas).
+_SIN_GUARDA = {"US30", "US100", "US500", "GER40", "UK100", "JP225", "AMXL", "CEMEXCPO", "GOOGL", "NVDA", "META", "WMT"}
+_CRIPTO = {"BTCUSD", "ETHUSD", "XRPUSD"}
+_PASO = {iv: paso for iv, paso in _BASE.values()}
+
+
+def _tiempo_abierto(simbolo, a, b):
+    """Tiempo con el mercado abierto en [a, b]: forex/metales/energia cierran vie 21:00 - dom 21:00 UTC."""
+    import pandas as pd
+    total = max(b - a, pd.Timedelta(0))
+    if simbolo in _CRIPTO or total == pd.Timedelta(0):
+        return total
+    vie = a.normalize() - pd.Timedelta(days=(a.weekday() - 4) % 7) + pd.Timedelta(hours=21)  # viernes 21:00 de la semana de a
+    while vie < b:
+        total -= max(min(b, vie + pd.Timedelta(days=2)) - max(a, vie), pd.Timedelta(0))
+        vie += pd.Timedelta(days=7)
+    return total
+
+
+def truncada(simbolo, df, paso, hasta, ahora=None) -> bool:
+    """True si una descarga que pidio hasta `hasta` termina mas de 2 velas antes (y con al menos una vela de
+    mercado abierto entre medias): Dukascopy a veces responde vacio a mitad de rango y dukascopy_python lo toma
+    como fin de datos, cortando la descarga en silencio. `hasta` en el futuro se recorta a ahora."""
+    import pandas as pd
+    if df.empty or simbolo in _SIN_GUARDA:
+        return False
+    ahora = pd.Timestamp.now(tz="UTC") if ahora is None else ahora
+    if isinstance(hasta, datetime):  # naive = hora local, como dp.fetch
+        hasta = datetime.fromtimestamp(hasta.timestamp(), timezone.utc)
+    hasta = min(pd.Timestamp(hasta), ahora)
+    ultima, paso = df.index[-1], pd.Timedelta(paso)
+    return hasta - ultima > 2 * paso and _tiempo_abierto(simbolo, ultima + paso, hasta) >= paso
+
+
+def _descargar(instrumento, intervalo, a, b, simbolo=None):
+    """dp.fetch con guarda de truncamiento (la usan el sync incremental y la carga historica): si termina
+    mucho antes de `b` con el mercado abierto, se pide una vez mas y se queda la descarga que llegue mas lejos."""
     try:
-        return dp.fetch(instrumento, intervalo, dp.OFFER_SIDE_BID, a, b)
+        df = dp.fetch(instrumento, intervalo, dp.OFFER_SIDE_BID, a, b)
+        if simbolo and intervalo in _PASO and truncada(simbolo, df, _PASO[intervalo], b):
+            log.warning("descarga %s %s truncada (termina %s, pedido hasta %s): se reintenta una vez",
+                        simbolo, intervalo, df.index[-1], b)
+            otra = dp.fetch(instrumento, intervalo, dp.OFFER_SIDE_BID, a, b)
+            if not otra.empty and otra.index[-1] > df.index[-1]:
+                df = otra
+        return df
     except Exception as e:
         raise _ErrDescarga() from e
 
@@ -205,7 +249,7 @@ def _velas_almacen(simbolo, instrumento, inicio, fin, intervalo):
     f = pd.Timestamp(datetime.fromtimestamp(fin.timestamp(), timezone.utc))
     lo = ini.floor(_VELA_QUE_CONTIENE[intervalo]) if intervalo in _VELA_QUE_CONTIENE else ini
     base = almacen.sincronizar(simbolo, serie, lo, f + _EXTRA_FIN.get(intervalo, timedelta(0)),
-                               lambda a, b: _descargar(instrumento, iv_base, a, b), paso)
+                               lambda a, b: _descargar(instrumento, iv_base, a, b, simbolo), paso)
     if derivada is None:
         return base
     out = almacen.agregar(base, derivada)
@@ -265,9 +309,61 @@ def _demo_error_descarga() -> None:
     print("conectividad.historico._demo_error_descarga() OK")
 
 
+def _demo_truncamiento() -> None:
+    """Sin red ni BD: descarga truncada con el mercado abierto se reintenta UNA vez; fin de semana, indices y
+    fechas futuras no."""
+    import pandas as pd
+    U = timezone.utc
+
+    def velas(fin, n, freq="15min"):
+        ix = pd.date_range(end=fin, periods=n, freq=freq, tz="UTC", name="timestamp", unit="ms")
+        return pd.DataFrame({c: 1.0 for c in ("open", "high", "low", "close", "volume")}, index=ix)
+
+    orig, llamadas, resp = dp.fetch, [], []
+
+    def fake(*a, **k):
+        llamadas.append(a)
+        return resp[min(len(llamadas), len(resp)) - 1]
+
+    def pide(simbolo, b, *r):
+        llamadas.clear(); resp[:] = r
+        return _descargar("X", dp.INTERVAL_MIN_15, b - timedelta(hours=4), b, simbolo)
+
+    dp.fetch = fake
+    try:
+        b = datetime(2026, 9, 16, 12, 0, tzinfo=U)  # miercoles
+        completo, corto = velas(b, 17), velas(b - timedelta(hours=2), 9)
+        assert pide("EURUSD", b, completo) is completo and len(llamadas) == 1  # completa: 1 sola peticion
+        assert pide("EURUSD", b, corto, completo).index[-1] == completo.index[-1] and len(llamadas) == 2
+        assert pide("EURUSD", b, corto, corto) is corto and len(llamadas) == 2  # nunca mas de 1 reintento
+        assert len(pide("EURUSD", b, velas(b - timedelta(minutes=30), 15))) == 15 and len(llamadas) == 1  # 2 velas de holgura
+        assert len(pide("EURUSD", b, velas(b - timedelta(minutes=45), 15))) == 15 and len(llamadas) == 2  # 3 velas de menos
+        # fin de semana: vela del viernes 20:45, pedido hasta el domingo 12:00 -> no hay nada que esperar
+        dom = datetime(2026, 9, 20, 12, 0, tzinfo=U)
+        pide("EURUSD", dom, velas(datetime(2026, 9, 18, 20, 45, tzinfo=U), 16))
+        assert len(llamadas) == 1
+        pide("BTCUSD", dom, velas(datetime(2026, 9, 18, 20, 45, tzinfo=U), 16), completo)
+        assert len(llamadas) == 2  # cripto opera el fin de semana
+        pide("US30", b, corto)
+        assert len(llamadas) == 1  # indices/acciones: sin guarda
+        ahora = datetime.now(U)  # fin en el futuro (30m/4H piden +3h): se recorta a ahora
+        pide("EURUSD", ahora + timedelta(hours=3), velas(pd.Timestamp(ahora).floor("15min") - pd.Timedelta(minutes=15), 16))
+        assert len(llamadas) == 1
+        resp[:] = [pd.DataFrame(columns=["open"])]  # vacio no dispara la guarda (lo maneja quien llama)
+        llamadas.clear(); _descargar("X", dp.INTERVAL_MIN_15, b - timedelta(hours=4), b, "EURUSD")
+        assert len(llamadas) == 1
+        # tiempo con mercado abierto: vie 20:00 -> lun 00:00 = 1 h + 3 h
+        assert _tiempo_abierto("EURUSD", pd.Timestamp("2026-09-18 20:00", tz="UTC"), pd.Timestamp("2026-09-21", tz="UTC")) == pd.Timedelta(hours=4)
+        assert _tiempo_abierto("BTCUSD", pd.Timestamp("2026-09-18 20:00", tz="UTC"), pd.Timestamp("2026-09-21", tz="UTC")) == pd.Timedelta(hours=52)
+    finally:
+        dp.fetch = orig
+    print("conectividad.historico._demo_truncamiento() OK")
+
+
 def demo() -> None:
     _demo_temporalidades()
     _demo_error_descarga()
+    _demo_truncamiento()
     from motor_smc import analizar, detectar_setups
 
     # rango fijo en el pasado (dukascopy es dato historico real, no hay datos
@@ -372,6 +468,7 @@ if __name__ == "__main__":
     import os as _os
     if _os.environ.get("HISTORICO_DEMO_ALMACEN") == "1":
         _demo_error_descarga()
+        _demo_truncamiento()
         demo_almacen()
     else:
         demo()
