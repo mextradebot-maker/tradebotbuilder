@@ -31,9 +31,12 @@ válido pero contra la tendencia del día o con historial no rentable.
 
 from datetime import datetime, timedelta, timezone, time as _time
 
-from backtesting.backtest import backtest_direccion
+import dukascopy_python as dp
+
+from backtesting.backtest import backtest_direccion, backtest_v2
 from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, obtener_velas
 from motor_smc import analizar, detectar_setups, obtener_tendencia
+from motor_smc.setups_v2 import detectar_setups_v2, embudo
 
 # ponytail: dias-por-temporalidad duplicado en api/mejor_indicador.py y en el
 # job n8n "MTB Analisis Diario de Mercado" (nodo Consultar Backtest) -- si se
@@ -82,6 +85,51 @@ SWING_LENGTH_POR_TEMPORALIDAD = {
 }
 
 DIRECCION_LONG_SHORT_A_COMPRA_VENTA = {"long": "compra", "short": "venta"}
+
+# Motor v2, Etapa 1 (modo sombra): mapa PROVISIONAL perfil -> (vela de entrada, temporalidad mayor).
+# La Etapa 2 lo reemplaza por el mapa definitivo en conectividad/historico.py
+# (spec docs/superpowers/specs/2026-09-28-motor-smc-v2-design.md).
+PERFIL_A_VELAS_V2 = {
+    "Scalping": ("15m", "1H"),
+    "Intraday": ("1H", "D"),
+    "Swing (H)": ("4H", "D"),
+    "Swing": ("4H", "D"),
+    "Swing (S)": ("S", "M"),
+    "Swing (M)": ("M", "M"),
+}
+VELA_A_INTERVALO = {
+    "15m": dp.INTERVAL_MIN_15, "30m": dp.INTERVAL_MIN_30, "1H": dp.INTERVAL_HOUR_1, "4H": dp.INTERVAL_HOUR_4,
+    "D": dp.INTERVAL_DAY_1, "S": dp.INTERVAL_WEEK_1, "M": dp.INTERVAL_MONTH_1,
+}
+
+
+def motor_v2(simbolo: str, temporalidad: str, ohlc, inicio, fin) -> dict:
+    """Modo sombra: calcula el motor v2 junto al actual. Nunca toca `setups`/`setups_confirmados`
+    (lo que reciben los EA) y nunca propaga una excepción al llamador."""
+    try:
+        vela, vela_mayor = PERFIL_A_VELAS_V2[temporalidad]
+        if vela_mayor == vela:
+            ohlc_mayor = ohlc
+        else:
+            try:
+                ohlc_mayor = obtener_velas(simbolo, inicio, fin, intervalo=VELA_A_INTERVALO[vela_mayor])
+            except Exception:
+                ohlc_mayor = None
+            if ohlc_mayor is None or ohlc_mayor.empty:
+                return {"estado": "sin_datos_temporalidad_mayor", "vela": vela, "vela_mayor": vela_mayor,
+                        "setups": [], "setups_validos": []}
+        setups = detectar_setups_v2(ohlc, ohlc_mayor, vela, vela_mayor)
+        # jsonb no acepta NaN: celdas vacías -> None
+        registros = setups.astype(object).where(setups.notna(), None).to_dict(orient="records")
+        return {
+            "estado": "ok", "vela": vela, "vela_mayor": vela_mayor,
+            "setups": registros,
+            "setups_validos": [s for s in registros if s["valido"]],
+            "embudo": embudo(setups),
+            "backtests": backtest_v2(ohlc, setups),
+        }
+    except Exception as e:
+        return {"estado": "error", "error": f"{type(e).__name__}: {e}"}
 
 
 def desde_snapshot(simbolo: str, temporalidad: str, dias: int, swing_length: int) -> dict | None:
@@ -210,6 +258,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
         "setups": setups_dict,
         "setups_confirmados": confirmados,
     }
+    respuesta["motor_v2"] = motor_v2(simbolo, temporalidad, ohlc, inicio, fin)
     if _persistencia is not None:
         try:
             tendencia_prev = _persistencia.leer_ultima_tendencia(simbolo, cache_key_temp)
@@ -225,6 +274,7 @@ def demo() -> None:
     assert status == 200
     assert body["velas"] > 0
     assert "setups_confirmados" not in body  # sin temporalidad, comportamiento historico
+    assert "motor_v2" not in body  # sin temporalidad no hay motor v2
     print(f"api.setups.demo() OK — {body['velas']} velas XAUUSD, {len(body['setups'])} setups (sin temporalidad)")
 
     status_t, body_t = procesar({"simbolo": "XAUUSD", "temporalidad": "Swing (H)"})
@@ -234,6 +284,16 @@ def demo() -> None:
     assert len(body_t["setups_confirmados"]) <= len(body_t["setups"])
     print(f"api.setups.demo() OK — XAUUSD Swing (H): tendencia {body_t['tendencia_actual']}, "
           f"{len(body_t['setups'])} setups crudos, {len(body_t['setups_confirmados'])} confirmados")
+
+    import json
+    v2 = body_t["motor_v2"]
+    assert v2["estado"] in ("ok", "sin_datos_temporalidad_mayor"), v2
+    assert (v2["vela"], v2["vela_mayor"]) == ("4H", "D")
+    json.dumps(v2, allow_nan=False)  # el snapshot va a jsonb: sin NaN ni tipos numpy
+    for s in v2["setups"]:
+        assert s["valido"] or s["razon_descarte"], s  # todo descarte trae su razón
+    assert all(s["valido"] for s in v2["setups_validos"])
+    print(f"api.setups.demo() OK — motor_v2 {v2['vela']}->{v2['vela_mayor']}: embudo {v2.get('embudo')}")
 
     status_malo, body_malo = procesar({})
     assert status_malo == 400 and "error" in body_malo
