@@ -160,7 +160,8 @@ def desde_snapshot(simbolo: str, temporalidad: str, dias: int, swing_length: int
         snap = _persistencia.leer_snapshot(simbolo, temporalidad)
     except Exception:
         return None
-    return snap["respuesta"] if snap and snap.get("respuesta") else None
+    # un snapshot de antes del motor v2 no sirve: el llamador recalcula
+    return snap["respuesta"] if snap and (snap.get("respuesta") or {}).get("motor") == "v2" else None
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -187,7 +188,10 @@ def procesar(payload: dict) -> tuple[int, dict]:
         try:
             snap = _persistencia.leer_snapshot(simbolo, cache_key_temp)
             if snap is not None and not _snapshot_viejo(snap):
-                return 200, _forma_ea(snap["respuesta"]) if temporalidad else snap["respuesta"]
+                if not temporalidad:
+                    return 200, snap["respuesta"]
+                if (snap.get("respuesta") or {}).get("motor") == "v2":  # uno de antes del motor v2 se recalcula
+                    return 200, _forma_ea(snap["respuesta"])
         except Exception:
             pass  # Postgres caido -> compute fresco
 
@@ -330,6 +334,19 @@ def _demo_aislamiento() -> None:
         g.obtener_velas, g._persistencia = (lambda *a, **k: formando), None
         status, body = procesar({"simbolo": "XAUUSD", "temporalidad": "Intraday", "_force_refresh": True})
         assert status == 200 and body["velas"] == len(ohlc) - 1, body
+
+        # snapshot fresco pero de antes del motor v2: se recalcula (cache hit y desde_snapshot)
+        from types import SimpleNamespace
+        viejo = {"simbolo": "XAUUSD", "velas": 3, "setups_confirmados": [], "viejo": True}
+        g._persistencia = SimpleNamespace(leer_snapshot=lambda *a: {
+            "respuesta": viejo, "refrescado_en": datetime.now(timezone.utc)})
+        status, body = procesar({"simbolo": "XAUUSD", "temporalidad": "Intraday"})
+        assert status == 200 and "viejo" not in body and body["motor"] == "v2", body
+        assert desde_snapshot("XAUUSD", "Intraday", DIAS_POR_TEMPORALIDAD["Intraday"],
+                              SWING_LENGTH_POR_TEMPORALIDAD["Intraday"]) is None
+        g._persistencia = SimpleNamespace(leer_snapshot=lambda *a: {
+            "respuesta": {**viejo, "motor": "v2"}, "refrescado_en": datetime.now(timezone.utc)})
+        assert procesar({"simbolo": "XAUUSD", "temporalidad": "Intraday"})[1].get("viejo") is True
     finally:
         for n, v in orig.items():
             setattr(g, n, v)
