@@ -138,6 +138,18 @@ def aplicar_confluencia(ohlc: pd.DataFrame, setups: pd.DataFrame, resultado_moto
     return setups[confirma].reset_index(drop=True)
 
 
+def divergencia(ohlc: pd.DataFrame, oscilador: pd.Series, i: int, p: int, direccion: str) -> bool | None:
+    """Divergencia (§4.3 RSI, §4.8 MACD): el precio hace un extremo nuevo en `i` respecto al
+    swing previo `p` pero el oscilador no lo acompaña. Motor v2: solo anota, nunca filtra
+    ni es entrada por sí sola (regla explícita del curso)."""
+    a, b = oscilador.iloc[p], oscilador.iloc[i]
+    if pd.isna(a) or pd.isna(b):
+        return None
+    if direccion == "long":
+        return bool(ohlc["low"].iloc[i] < ohlc["low"].iloc[p] and b > a)
+    return bool(ohlc["high"].iloc[i] > ohlc["high"].iloc[p] and b < a)
+
+
 def demo() -> None:
     import numpy as np
 
@@ -181,6 +193,16 @@ def demo() -> None:
     ohlc_rsi_alto = subida.assign(open=subida["close"], high=subida["close"] + 1, low=subida["close"] - 1, volume=100)
     no_pasa = aplicar_confluencia(ohlc_rsi_alto, setups, resultado_falso, "RSI")
     assert len(no_pasa) == 0, "RSI sobrecomprado en el barrido NO debe confirmar un setup long"
+
+    # divergencia (§4.3, §4.8): solo anotación
+    idx_div = pd.date_range("2026-01-05", periods=6, freq="h", tz="UTC")
+    ohlc_div = pd.DataFrame({"open": 10.0, "high": [11, 11, 11, 11, 11, 13], "low": [9, 9, 9, 9, 9, 8.0],
+                             "close": 10.0, "volume": 1.0}, index=idx_div)
+    osc = pd.Series([float("nan"), 30.0, 50, 50, 50, 40.0], index=idx_div)
+    assert divergencia(ohlc_div, osc, 5, 1, "long") is True    # mínimo más bajo, oscilador más alto
+    assert divergencia(ohlc_div, osc, 5, 2, "long") is False   # oscilador más bajo: sin divergencia
+    assert divergencia(ohlc_div, osc, 5, 2, "short") is True   # máximo más alto, oscilador más bajo
+    assert divergencia(ohlc_div, osc, 5, 0, "long") is None    # oscilador sin calcular
 
     print("motor_smc.indicadores.demo() OK —", {
         "rsi_sube": round(float(rsi_sube), 2),
