@@ -52,7 +52,8 @@ def candidatos_reversion(ohlc: pd.DataFrame, res: dict, swing_length: int) -> li
         if conocido is None:
             continue
         ventana = fvg.iloc[i : min(i + VENTANA_FVG_VELAS, k) + 1]
-        js = ventana.index[ventana["FVG"] == d]
+        # el FVG en j (vela central) solo está completo tras la vela j+1: debe ser <= conocido
+        js = ventana.index[(ventana["FVG"] == d) & (ventana.index + 1 <= conocido)]
         if len(js) == 0:
             continue
         j = int(js[0])
@@ -137,6 +138,8 @@ def evaluar(c: dict, ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, ve
     fallas = [f"{nombre}: {r['razon']}" for nombre, r in reglas.items() if r["cumple"] is False]
     div_rsi, div_macd = _divergencias(ohlc, res["swings"], c["indice_barrido"], d) if es_reversion else (None, None)
     direccion_num = 1 if d == "long" else -1
+    liq = res["liquidez"]
+    liq = liq[liq["Swept"] <= conocido]  # sin barridos posteriores a indice_conocido
     return {
         **{col: c[col] for col in COLUMNAS if col in c},
         "tp": reglas["R6"]["dato"]["tp"] if isinstance(reglas["R6"]["dato"], dict) else None,
@@ -150,7 +153,7 @@ def evaluar(c: dict, ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, ve
         "divergencia_macd": div_macd,
         "order_block_confluente": (_hay_order_block_confluente(res["order_blocks"], direccion_num, c["fvg_top"], c["fvg_bottom"], k)
                                    if es_reversion else None),
-        "liquidez_confluente": _hay_liquidez_confluente(res["liquidez"], direccion_num, c["indice_barrido"]) if es_reversion else None,
+        "liquidez_confluente": _hay_liquidez_confluente(liq, direccion_num, c["indice_barrido"]) if es_reversion else None,
     }
 
 
@@ -239,6 +242,25 @@ def demo() -> None:
     e = embudo(pd.DataFrame([ev, ev_futuro], columns=COLUMNAS))
     assert e["continuacion"]["candidatos"] == 2 and e["continuacion"]["descartados_por_regla"]["R4"] == 1
     assert e["reversion"]["candidatos"] == 0
+    # anti-anticipación: un FVG que termina de formarse después de indice_conocido no cuenta
+    ohlc_f, res_f = _res_prueba()
+    ohlc_f.iloc[20, ohlc_f.columns.get_loc("low")] = 90.0
+    res_f["swings"].loc[20, ["HighLow", "Level"]] = [-1, 90.0]
+    res_f["swings"].loc[22, ["HighLow", "Level"]] = [1, 110.0]      # siguiente swing 22 + sl 1 = 23
+    res_f["estructura"].loc[20, ["CHOCH", "BrokenIndex"]] = [1, 24]  # conocido = max(24, 23) = 24
+    res_f["fvg"].loc[24, ["FVG", "Top", "Bottom"]] = [1, 105.0, 103.0]  # j = 24: necesita la vela 25
+    assert candidatos_reversion(ohlc_f, res_f, swing_length=1) == []
+    res_f["fvg"].loc[23, ["FVG", "Top", "Bottom"]] = [1, 105.0, 103.0]  # j = 23: completo en 24
+    assert [c["indice_zona"] for c in candidatos_reversion(ohlc_f, res_f, swing_length=1)] == [23]
+
+    # la anotación de liquidez no usa barridos posteriores a indice_conocido
+    ev_rev = evaluar(rev[0], ohlc, mayor_pasado, "15m", "1H", res, 3)          # conocido 29
+    assert ev_rev["liquidez_confluente"] is False
+    res["liquidez"].loc[0, ["Liquidity", "Swept"]] = [-1, 20]                 # barrido en 20 <= 29
+    assert evaluar(rev[0], ohlc, mayor_pasado, "15m", "1H", res, 3)["liquidez_confluente"] is True
+    res["liquidez"].loc[0, ["Liquidity", "Swept"]] = [-1, 35]                 # "barrido" en 35 > 29: futuro
+    res["liquidez"].loc[1, ["Liquidity", "Swept"]] = [-1, 35]
+    assert evaluar(rev[0], ohlc, mayor_pasado, "15m", "1H", res, 3)["liquidez_confluente"] is False
     print("setups_v2.demo() OK")
 
 
