@@ -11,7 +11,16 @@ Orden de trabajo: **Etapa 1 motor → Etapa 2 migración de temporalidades → (
 
 ## Reglas del setup
 
-Un candidato = barrido + CHoCH + FVG (setup insignia, L20, §7.4). Es **válido** solo si cumple las 6 reglas; si no, se conserva con la razón de descarte.
+Hay **dos tipos de apertura** (L32: "la liquidez interna se necesita para continuar la tendencia, y la liquidez externa se necesita para cambiar la tendencia"). Cada setup lleva `tipo: "reversion" | "continuacion"` y el backtest los mide por separado.
+
+| Tipo | Candidato | Reglas que debe cumplir |
+|---|---|---|
+| **Reversión** | barrido de liquidez externa + CHoCH + FVG (setup insignia, L20, §7.4) | R1, R2, R3, R4, R5, R6 |
+| **Continuación** | BOS a favor de la tendencia tras un retroceso (liquidez interna) — zona de mitigación, L52/§3.6 | R3, R4, R5, R6 (R1 y R2 **no aplican**) |
+
+Un candidato es **válido** si cumple todas las reglas de su tipo; si no, se conserva con la razón de descarte. Las reglas que no aplican a un tipo se registran como `no_aplica`.
+
+**Continuación — definición:** tras un BOS a favor de la tendencia de la vela de entrada, la *zona de mitigación* son las 2–3 últimas velas de color contrario del retroceso previo al impulso que hizo el BOS. Entrada = punto medio de esa zona (del máximo al mínimo de esas velas); stop = mínimo (compra) / máximo (venta) del retroceso completo. Si el retroceso tiene 1 sola vela contraria, la zona es esa vela.
 
 | # | Regla | Cómo se evalúa | Fuente |
 |---|---|---|---|
@@ -23,9 +32,9 @@ Un candidato = barrido + CHoCH + FVG (setup insignia, L20, §7.4). Es **válido*
 | R6 | TP en liquidez | TP = siguiente swing sin buscar en la dirección del trade (vela de entrada). Si `(TP − entrada) / riesgo < 2` → descartado | L6, §10.5 |
 
 Reglas de ejecución, no de filtro:
-- **Entrada** = Consequent Encroachment (50% del FVG), orden límite. El 0 y el 1 del FVG se anotan. (L11, L21)
-- **Invalidación**: si una vela **cierra** más allá del extremo lejano del FVG antes de tocar el CE, el setup se cancela; una mecha no lo cancela. (§1.3)
-- **Stop**: extremo de la vela del barrido (sin cambios).
+- **Entrada** (orden límite): reversión = Consequent Encroachment (50% del FVG; el 0 y el 1 se anotan, L11, L21); continuación = punto medio de la zona de mitigación (L52).
+- **Invalidación**: si una vela **cierra** más allá del extremo lejano de la zona (FVG o zona de mitigación) antes de tocar la entrada, el setup se cancela; una mecha no lo cancela. (§1.3)
+- **Stop**: reversión = extremo de la vela del barrido (sin cambios); continuación = extremo del retroceso.
 - **Solo compras** en Swing (S) y Swing (M) (`TIPOS_SOLO_ALCISTA`); todo lo demás permite compras y ventas.
 
 Indicadores: MACD y RSI dejan de ser filtros intercambiables y se corrigen a su uso del curso (divergencia contra el precio en el barrido, §4.3/§4.8); quedan como anotación. Fibonacci queda cubierto por R5 + CE. Order Block sigue como anotación (se medirá en el backtest).
@@ -51,8 +60,8 @@ Indicadores: MACD y RSI dejan de ser filtros intercambiables y se corrigen a su 
 ```
 motor_smc/reglas.py (nuevo)   una función pura por regla R1..R6; umbrales en dicts por VELA
                               (15m,30m,1H,4H,D,S,M), no por nombre de perfil
-motor_smc/setup_ob_fvg.py     detectar_setups(ohlc_entrada, ohlc_mayor, vela) → candidatos
-                              con `reglas: {R1: {cumple, dato, razon}, ...}` y `valido`
+motor_smc/setup_ob_fvg.py     detectar_setups(ohlc_entrada, ohlc_mayor, vela) → candidatos de reversión (barrido+CHoCH+FVG) y de continuación (BOS+zona de mitigación)
+                              con `tipo`, `reglas: {R1: {cumple|no_aplica, dato, razon}, ...}` y `valido`
 motor_smc/indicadores.py      RSI/MACD a divergencia; solo anotan
 backtesting/backtest.py       entrada límite en CE (no se llena si no toca), invalidación por
                               cierre, TP en liquidez; solo simula setups válidos
@@ -79,7 +88,7 @@ Errores:
 ## Pruebas
 
 `demo()` con `assert` en cada módulo (estilo del repo):
-1. `reglas.py`: por regla, un caso sintético que cumple y uno que no; cadena EMA 200→50→20→no aplica.
+1. `reglas.py`: por regla, un caso sintético que cumple y uno que no; cadena EMA 200→50→20→no aplica; R1/R2 marcan `no_aplica` en continuación.
 2. Anti-anticipación: una vela mayor posterior a la confirmación que contradice la señal debe ignorarse.
 3. Backtest: sin llenado si el precio no toca el CE; invalidación por cierre cancela; TP < 2R se descarta.
 4. Real contra Dukascopy (XAUUSD, EURUSD, cada perfil): todo descarte trae razón, más una **tabla de embudo** (cuántos candidatos elimina cada regla). Si alguna regla deja un perfil en cero, se revisa con Ricardo antes de cerrar la Etapa 1.
