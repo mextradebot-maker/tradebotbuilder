@@ -17,9 +17,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # 5 cuentas demo principales
 PARES_PRINCIPALES = [
     ("WTIUSD", "Swing (S)"),
-    ("EURUSD", "Scalping"),
-    ("USDJPY", "Intraday"),
-    ("GOLD", "Intraday"),
+    ("EURUSD", "Scalping 15m"),
+    ("USDJPY", "Intraday 1H"),
+    ("GOLD", "Intraday 1H"),
     ("GOLD", "Swing (S)"),
 ]
 

@@ -1,13 +1,14 @@
 """Refresco de snapshots SMC dentro del servicio (reemplaza el cron n8n de 180 llamadas HTTP).
 
-Las combinaciones pendientes se procesan por prioridad (Scalping primero) en un pool pequeño de
+Las combinaciones pendientes se procesan por prioridad (vela más corta primero) en un pool pequeño de
 procesos `spawn` con prioridad baja (os.nice), para no ahogar al servidor HTTP en el VPS compartido.
 REFRESCO_WORKERS fija el tamaño (1 = en serie, en el mismo proceso, para depurar).
 
 Una combinación activo×temporalidad solo se refresca cuando cerró una vela nueva
-de SU temporalidad (Scalping 15m, Intraday 1h, Swing H 4h) y su snapshot es
-anterior a ese cierre; Swing S y M, una vez al día (su vela en curso cambia a diario). Con el mercado cerrado
-(fin de semana forex) no se refresca nada salvo cripto.
+de SU temporalidad (15m, 30m, 1H, 4H) y su snapshot es anterior a ese cierre; las
+`diaria` del mapa conectividad.TEMPORALIDADES (Intraday D, Swing S y M) una vez al día a las 08:00 México.
+Con el mercado cerrado (fin de semana forex) no se refresca nada salvo cripto. Cada ciclo tiene un tope
+de tiempo (PRESUPUESTO_CICLO_S): lo que no alcanza queda para el siguiente ciclo.
 """
 
 import logging
@@ -19,34 +20,41 @@ from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from datetime import datetime, timedelta, timezone
 
+from conectividad.historico import TEMPORALIDADES, resolver_temporalidad
+
 CRIPTO = {"BTCUSD", "ETHUSD", "XRPUSD"}
 MARGEN_DATOS = timedelta(minutes=2)
 REINTENTO_VACIO = timedelta(hours=1)  # el proveedor publica la vela cerrada con un poco de retraso
 PAUSA_CICLO_S = 60
-# Swing S/M se recalculan a diario (no solo al cerrar su vela) para detectar un cambio
-# de tendencia a tiempo. 03:00 UTC: tras el cierre diario forex (21:00) y con la vela
-# diaria ya publicada, antes del Análisis Diario de n8n (06:00 UTC).
-REFRESCO_DIARIO = {"Swing (S)", "Swing (M)"}
-HORA_REFRESCO_DIARIO = 3
-PRIORIDAD = ("Scalping", "Intraday", "Swing (H)", "Swing (S)", "Swing (M)")  # la vela más corta caduca antes
+# Las temporalidades `diaria` (Intraday D, Swing S/M) se recalculan una vez al día, no al cerrar su
+# vela, para detectar un cambio de tendencia a tiempo: 14:00 UTC = 08:00 México (México no tiene
+# horario de verano desde 2022, así que la hora UTC es fija), con la vela diaria ya publicada.
+HORA_REFRESCO_DIARIO = 14
+# Tope de tiempo por ciclo: no se inicia un cálculo nuevo pasado este presupuesto (nunca se interrumpe
+# uno en curso); lo pendiente queda para el siguiente ciclo, donde lo de mayor prioridad va primero.
+PRESUPUESTO_CICLO_S = 300
+PRIORIDAD = tuple(TEMPORALIDADES)  # orden del mapa = vela más corta primero (caduca antes)
 _pool: ProcessPoolExecutor | None = None
 
 
 def inicio_vela(ahora: datetime, temporalidad: str) -> datetime:
     """Inicio de la vela en curso; la vela anterior cerró justo en este instante."""
+    vela = TEMPORALIDADES[resolver_temporalidad(temporalidad)]["vela"]
     t = ahora.astimezone(timezone.utc).replace(second=0, microsecond=0)
-    if temporalidad == "Scalping":
+    if vela == "15m":
         return t.replace(minute=t.minute - t.minute % 15)
-    if temporalidad == "Intraday":
+    if vela == "30m":
+        return t.replace(minute=t.minute - t.minute % 30)
+    if vela == "1H":
         return t.replace(minute=0)
-    if temporalidad in ("Swing (H)", "Swing"):
+    if vela == "4H":
         return t.replace(minute=0, hour=t.hour - t.hour % 4)
     dia = t.replace(minute=0, hour=0)
-    if temporalidad == "Swing (S)":
+    if vela == "D":
+        return dia
+    if vela == "S":
         return dia - timedelta(days=dia.weekday())  # lunes 00:00 UTC
-    if temporalidad == "Swing (M)":
-        return dia.replace(day=1)
-    raise ValueError(f"temporalidad desconocida: {temporalidad}")
+    return dia.replace(day=1)  # "M"
 
 
 def mercado_abierto(simbolo: str, ahora: datetime) -> bool:
@@ -71,7 +79,7 @@ def necesita_refresco(simbolo: str, temporalidad: str, refrescado_en: datetime |
         return ahora - refrescado_en >= REINTENTO_VACIO
     if not mercado_abierto(simbolo, ahora) and refrescado_en is not None:
         return False
-    if temporalidad in REFRESCO_DIARIO:  # la vela semanal/mensual en curso cambia cada día
+    if TEMPORALIDADES[resolver_temporalidad(temporalidad)]["diaria"]:  # la vela D/S/M en curso cambia cada día
         hoy = ahora.astimezone(timezone.utc).replace(hour=HORA_REFRESCO_DIARIO, minute=0, second=0, microsecond=0)
         cierre = hoy if ahora >= hoy else hoy - timedelta(days=1)
     else:
@@ -92,7 +100,6 @@ def ordenar(combos: list[tuple[str, str]]) -> list[tuple[str, str]]:
 
 def pendientes(ahora: datetime) -> list[tuple[str, str]]:
     import persistencia
-    from api.setups import SWING_LENGTH_POR_TEMPORALIDAD
 
     salida = []
     for c in persistencia.listar_catalogo():
@@ -101,7 +108,7 @@ def pendientes(ahora: datetime) -> list[tuple[str, str]]:
         snap = persistencia.leer_snapshot(c["simbolo"], c["temporalidad"])
         r = (snap or {}).get("respuesta") or {}
         # vacío (descarga fallida) o calculado con otro swing_length (recalibración): rehacer, máx 1/hora
-        vacio = bool(snap) and (not r.get("velas") or r.get("motor") != "v2" or r.get("swing_length") != SWING_LENGTH_POR_TEMPORALIDAD.get(c["temporalidad"]))
+        vacio = bool(snap) and (not r.get("velas") or r.get("motor") != "v2" or r.get("swing_length") != TEMPORALIDADES.get(c["temporalidad"], {}).get("swing_length"))
         if necesita_refresco(c["simbolo"], c["temporalidad"], snap and snap["refrescado_en"], ahora, vacio):
             salida.append((c["simbolo"], c["temporalidad"]))
     return ordenar(salida)
@@ -145,13 +152,22 @@ def _cerrar_pool() -> None:
         _pool = None
 
 
-def refrescar_todos(combos: list[tuple[str, str]], workers: int, funcion=refrescar_uno) -> list[tuple]:
+def refrescar_todos(combos: list[tuple[str, str]], workers: int, funcion=None,
+                    limite: float | None = None) -> list[tuple]:
     """Resultados en el orden de `combos`. El pool se crea una vez (perezoso) y se reutiliza; si se
-    rompe, se descarta y el siguiente ciclo crea uno nuevo. `funcion` debe ser de nivel de módulo."""
+    rompe, se descarta y el siguiente ciclo crea uno nuevo. `funcion` debe ser de nivel de módulo.
+    `limite` (time.monotonic) es el tope del ciclo: se revisa ANTES de iniciar cada cálculo (en serie) o
+    cada tanda de `workers` (pool); pasado el límite se deja de iniciar trabajo y lo que falta se omite
+    (no aparece en el resultado). Nunca se interrumpe un cálculo en curso ni se abandonan futuros ya
+    enviados: cada tanda se espera completa, así que todo lo enviado se devuelve (y se registra)."""
     global _pool
+    funcion = funcion or refrescar_uno
+    vencido = lambda: limite is not None and time.monotonic() >= limite
     if workers <= 1:
         salida = []
         for s, t in combos:
+            if vencido():
+                break
             try:
                 salida.append(funcion(s, t))
             except Exception as e:
@@ -161,25 +177,31 @@ def refrescar_todos(combos: list[tuple[str, str]], workers: int, funcion=refresc
         # spawn, no fork: el proceso padre tiene hilos (servidor HTTP) y conexiones abiertas
         _pool = ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn"),
                                     initializer=_bajar_prioridad)
-    futuros = [(s, t, _pool.submit(funcion, s, t)) for s, t in combos]  # la cola respeta el orden de envío
     salida, roto = [], False
-    for s, t, f in futuros:
-        try:
-            salida.append(f.result())
-        except BrokenProcessPool as e:
-            roto = True
-            salida.append((s, t, None, f"BrokenProcessPool: {e}"))
-        except Exception as e:
-            salida.append((s, t, None, f"{type(e).__name__}: {e}"))
+    for i in range(0, len(combos), workers):
+        if vencido():
+            break
+        futuros = [(s, t, _pool.submit(funcion, s, t)) for s, t in combos[i:i + workers]]
+        for s, t, f in futuros:
+            try:
+                salida.append(f.result())
+            except BrokenProcessPool as e:
+                roto = True
+                salida.append((s, t, None, f"BrokenProcessPool: {e}"))
+            except Exception as e:
+                salida.append((s, t, None, f"{type(e).__name__}: {e}"))
+        if roto:
+            break
     if roto:
         _cerrar_pool()
     return salida
 
 
-def ciclo() -> int:
-    """Refresca lo pendiente por prioridad, en bloques paralelos pequeños. Devuelve cuántos refrescó."""
+def ciclo(presupuesto: float = PRESUPUESTO_CICLO_S) -> int:
+    """Refresca lo pendiente por prioridad hasta agotar el presupuesto. Devuelve cuántos refrescó."""
     hechos = 0
-    for simbolo, temporalidad, status, error in refrescar_todos(pendientes(datetime.now(timezone.utc)), _workers()):
+    pend = pendientes(datetime.now(timezone.utc))
+    for simbolo, temporalidad, status, error in refrescar_todos(pend, _workers(), limite=time.monotonic() + presupuesto):
         if status is None:
             logging.error("refresco %s %s falló: %s", simbolo, temporalidad, error)
             continue
@@ -209,49 +231,61 @@ def iniciar_en_segundo_plano() -> threading.Thread:
 def demo() -> None:
     u = timezone.utc
     ahora = datetime(2026, 9, 23, 14, 37, tzinfo=u)  # miércoles
-    assert inicio_vela(ahora, "Scalping") == datetime(2026, 9, 23, 14, 30, tzinfo=u)
-    assert inicio_vela(ahora, "Intraday") == datetime(2026, 9, 23, 14, 0, tzinfo=u)
-    assert inicio_vela(ahora, "Swing (H)") == datetime(2026, 9, 23, 12, 0, tzinfo=u)
+    esperado = {"Scalping 15m": (14, 30), "Scalping 30m": (14, 30), "Intraday 1H": (14, 0), "Intraday 4H": (12, 0),
+                "Intraday D": (0, 0)}
+    for n, (h, m) in esperado.items():
+        assert inicio_vela(ahora, n) == datetime(2026, 9, 23, h, m, tzinfo=u), n
+    assert inicio_vela(datetime(2026, 9, 23, 14, 44, tzinfo=u), "Scalping 15m") == datetime(2026, 9, 23, 14, 30, tzinfo=u)
+    assert inicio_vela(datetime(2026, 9, 23, 14, 44, tzinfo=u), "Scalping 30m") == datetime(2026, 9, 23, 14, 30, tzinfo=u)
+    assert inicio_vela(datetime(2026, 9, 23, 15, 5, tzinfo=u), "Scalping 30m") == datetime(2026, 9, 23, 15, 0, tzinfo=u)
     assert inicio_vela(ahora, "Swing (S)") == datetime(2026, 9, 21, 0, 0, tzinfo=u)
     assert inicio_vela(ahora, "Swing (M)") == datetime(2026, 9, 1, 0, 0, tzinfo=u)
+    assert inicio_vela(ahora, "Scalping") == inicio_vela(ahora, "Scalping 15m")  # alias aceptado
+    assert PRIORIDAD == ("Scalping 15m", "Scalping 30m", "Intraday 1H", "Intraday 4H", "Intraday D", "Swing (S)", "Swing (M)")
 
     # snapshot de antes del cierre de la vela 14:30 → refrescar; de después → no
-    assert necesita_refresco("EURUSD", "Scalping", datetime(2026, 9, 23, 14, 20, tzinfo=u), ahora)
-    assert not necesita_refresco("EURUSD", "Scalping", datetime(2026, 9, 23, 14, 33, tzinfo=u), ahora)
-    # Swing S/M: una vez al día, pasadas las 03:00 UTC (no esperar al cierre semanal/mensual)
-    assert necesita_refresco("EURUSD", "Swing (M)", datetime(2026, 9, 22, 4, tzinfo=u), ahora)
-    assert not necesita_refresco("EURUSD", "Swing (S)", datetime(2026, 9, 23, 3, 10, tzinfo=u), ahora)
-    assert not necesita_refresco("EURUSD", "Swing (S)", datetime(2026, 9, 22, 4, tzinfo=u), datetime(2026, 9, 23, 2, 0, tzinfo=u))
+    assert necesita_refresco("EURUSD", "Scalping 15m", datetime(2026, 9, 23, 14, 20, tzinfo=u), ahora)
+    assert not necesita_refresco("EURUSD", "Scalping 15m", datetime(2026, 9, 23, 14, 33, tzinfo=u), ahora)
+    # Intraday D / Swing S/M: una vez al día, pasadas las 14:00 UTC (08:00 México)
+    assert necesita_refresco("EURUSD", "Swing (M)", datetime(2026, 9, 22, 15, tzinfo=u), ahora)
+    assert necesita_refresco("EURUSD", "Intraday D", datetime(2026, 9, 22, 15, tzinfo=u), ahora)
+    assert not necesita_refresco("EURUSD", "Intraday D", datetime(2026, 9, 23, 14, 10, tzinfo=u), ahora)
+    antes, despues = datetime(2026, 9, 23, 13, 59, tzinfo=u), datetime(2026, 9, 23, 14, 3, tzinfo=u)
+    ayer = datetime(2026, 9, 22, 14, 10, tzinfo=u)  # refrescado ayer tras las 14:00
+    assert not necesita_refresco("EURUSD", "Swing (S)", ayer, antes)
+    assert necesita_refresco("EURUSD", "Swing (S)", ayer, despues)
+    assert not necesita_refresco("EURUSD", "Swing (S)", datetime(2026, 9, 23, 14, 10, tzinfo=u), datetime(2026, 9, 23, 15, tzinfo=u))
     assert necesita_refresco("EURUSD", "Swing (M)", None, ahora)
     # vela de 15m recién cerrada (14:31, dentro del margen de 2 min) → esperar
-    assert not necesita_refresco("EURUSD", "Scalping", datetime(2026, 9, 23, 14, 10, tzinfo=u), datetime(2026, 9, 23, 14, 31, tzinfo=u))
+    assert not necesita_refresco("EURUSD", "Scalping 15m", datetime(2026, 9, 23, 14, 10, tzinfo=u), datetime(2026, 9, 23, 14, 31, tzinfo=u))
 
     sabado = datetime(2026, 9, 26, 12, 5, tzinfo=u)
     assert not mercado_abierto("EURUSD", sabado) and mercado_abierto("BTCUSD", sabado)
-    assert not necesita_refresco("EURUSD", "Intraday", datetime(2026, 9, 25, 20, 0, tzinfo=u), sabado)
-    assert necesita_refresco("BTCUSD", "Intraday", datetime(2026, 9, 26, 10, 0, tzinfo=u), sabado)
+    assert not necesita_refresco("EURUSD", "Intraday 1H", datetime(2026, 9, 25, 20, 0, tzinfo=u), sabado)
+    assert necesita_refresco("BTCUSD", "Intraday 1H", datetime(2026, 9, 26, 10, 0, tzinfo=u), sabado)
     assert mercado_abierto("EURUSD", datetime(2026, 9, 27, 21, 30, tzinfo=u))  # domingo reapertura
 
     # snapshot vacío (descarga fallida): se reintenta aun en fin de semana, máximo 1 vez por hora
-    assert necesita_refresco("EURUSD", "Scalping", datetime(2026, 9, 26, 10, 0, tzinfo=u), sabado, vacio=True)
-    assert not necesita_refresco("EURUSD", "Scalping", datetime(2026, 9, 26, 11, 30, tzinfo=u), sabado, vacio=True)
+    assert necesita_refresco("EURUSD", "Scalping 15m", datetime(2026, 9, 26, 10, 0, tzinfo=u), sabado, vacio=True)
+    assert not necesita_refresco("EURUSD", "Scalping 15m", datetime(2026, 9, 26, 11, 30, tzinfo=u), sabado, vacio=True)
 
     # carga diaria por activo en días hábiles: 96 + 24 + 6 + ~0 = ~126 (antes: 48 × 5 = 240)
 
     # prioridad: Scalping, Intraday, Swing (H), Swing (S), Swing (M); estable dentro de cada perfil
-    combos = [("EURUSD", "Swing (M)"), ("XAUUSD", "Intraday"), ("EURUSD", "Scalping"), ("BTCUSD", "Swing (S)"),
-              ("XAUUSD", "Scalping"), ("EURUSD", "Swing (H)")]
-    assert ordenar(combos) == [("EURUSD", "Scalping"), ("XAUUSD", "Scalping"), ("XAUUSD", "Intraday"),
-                               ("EURUSD", "Swing (H)"), ("BTCUSD", "Swing (S)"), ("EURUSD", "Swing (M)")]
+    combos = [("EURUSD", "Swing (M)"), ("XAUUSD", "Intraday 1H"), ("EURUSD", "Scalping 15m"), ("BTCUSD", "Swing (S)"),
+              ("XAUUSD", "Scalping 15m"), ("EURUSD", "Intraday 4H"), ("EURUSD", "Intraday D"), ("EURUSD", "Scalping 30m")]
+    assert ordenar(combos) == [("EURUSD", "Scalping 15m"), ("XAUUSD", "Scalping 15m"), ("EURUSD", "Scalping 30m"),
+                               ("XAUUSD", "Intraday 1H"), ("EURUSD", "Intraday 4H"), ("EURUSD", "Intraday D"),
+                               ("BTCUSD", "Swing (S)"), ("EURUSD", "Swing (M)")]
 
     # workers=1: en serie, en el mismo proceso, sin pool y en orden de prioridad
     vistos = []
     res = refrescar_todos(ordenar(combos), 1, lambda s, t: vistos.append((s, t)) or (s, t, 200, None))
-    assert vistos == ordenar(combos) and len(res) == 6 and _pool is None
+    assert vistos == ordenar(combos) and len(res) == 8 and _pool is None
 
     # workers=3: pool spawn con prioridad baja; procesa todos y devuelve en el orden enviado
     import time as _t
-    seis = [(f"S{n}", "Scalping") for n in range(6)]
+    seis = [(f"S{n}", "Scalping 15m") for n in range(6)]
     t0 = _t.perf_counter()
     res = refrescar_todos(seis, 3, _worker_prueba)
     assert [(s, t) for s, t, *_ in res] == seis and all(st == 200 for _, _, st, _ in res), res
@@ -260,7 +294,30 @@ def demo() -> None:
     refrescar_todos(seis, 3, _worker_prueba)  # pool reutilizado (ya caliente)
     paralelo = _t.perf_counter() - t0
     assert paralelo < 6 * 0.3, paralelo  # en serie serían >= 1.8 s
-    assert refrescar_todos([("X", "Scalping")], 3, _worker_error)[0][2] is None  # excepción -> status None
+    assert refrescar_todos([("X", "Scalping 15m")], 3, _worker_error)[0][2] is None  # excepción -> status None
+
+    # tope de tiempo: en serie no inicia cálculos nuevos pasado el límite y no interrumpe el que corre
+    lento = lambda s, t: time.sleep(0.2) or (s, t, 200, None)
+    orden = ordenar(combos)
+    res = refrescar_todos(orden, 1, lento, limite=time.monotonic() + 0.3)
+    assert [(s, t) for s, t, *_ in res] == orden[:2], res  # 0.2 s ok, 0.4 s > tope: el 3.º ya no inicia
+    assert len(refrescar_todos(orden, 1, lento, limite=time.monotonic() - 1)) == 0  # ya vencido: nada
+    # pool: por tandas de `workers`, todo lo enviado se espera y se devuelve, prioridad respetada
+    res = refrescar_todos(seis, 2, _worker_prueba, limite=time.monotonic() + 0.4)
+    assert [(s, t) for s, t, *_ in res] == seis[:4], res  # tandas 1 (t=0) y 2 (t=0.3) inician; la 3 (t=0.6) no
+    # ciclo(): pendientes por prioridad y presupuesto pequeño con refrescar_uno sustituido
+    g = globals()
+    orig = {n: g[n] for n in ("pendientes", "refrescar_uno", "_workers")}
+    llamadas = []
+    try:
+        g["pendientes"] = lambda ahora: orden
+        g["refrescar_uno"] = lambda s, t: llamadas.append((s, t)) or time.sleep(0.2) or (s, t, 200, None)
+        g["_workers"] = lambda: 1
+        assert ciclo(presupuesto=0.3) == 2 and llamadas == orden[:2], llamadas
+        llamadas.clear()
+        assert ciclo() == len(orden) and llamadas == orden
+    finally:
+        g.update(orig)
     _cerrar_pool()
     print("refresco.demo() OK")
 

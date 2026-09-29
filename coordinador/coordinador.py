@@ -173,7 +173,7 @@ def _revisar_cierre(conn, cuenta: Dict[str, Any], mt5_posiciones: List[dict], sn
             logging.info(f"[{login}] Auto-sincronizada posición viva en MT5 ticket #{ticket} {p['symbol']} {direccion_str}")
 
     # 2. Regla de Oro Swing: Salida por CHoCH inverso
-    if "Swing" in temp and snapshot:
+    if es_swing(temp) and snapshot:
         pos_activa = next((p for p in mt5_posiciones if p["symbol"] == simbolo), None)
         if pos_activa:
             ticket = pos_activa["ticket"]

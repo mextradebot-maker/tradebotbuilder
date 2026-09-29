@@ -34,10 +34,6 @@ from motor_smc import analizar, detectar_setups, obtener_tendencia
 from motor_smc.reglas import DURACION_VELA
 from motor_smc.setups_v2 import detectar_setups_v2, embudo
 
-# ponytail: dias-por-temporalidad duplicado en api/mejor_indicador.py y en el
-# job n8n "MTB Analisis Diario de Mercado" (nodo Consultar Backtest) -- si se
-# ajusta aquí, ajustar ahí. swing_length vive solo aquí.
-
 # Cache Postgres (Fase 1 BD SMC persistente). Si DATABASE_URL no esta disponible
 # o Postgres esta caido, _persistencia queda None y se cae al compute fresco.
 TOLERANCIA_SNAPSHOT_MIN = 10

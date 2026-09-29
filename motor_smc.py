@@ -11,14 +11,17 @@ load_dotenv()
 
 import MetaTrader5 as mt5
 from persistencia.conexion import get_conn
+from conectividad.historico import resolver_temporalidad
 from conectividad.xm import conectar, desconectar
 
 TIMEFRAMES = {
-    "Scalping":  mt5.TIMEFRAME_M15,
-    "Intraday":  mt5.TIMEFRAME_H1,
-    "Swing (H)": mt5.TIMEFRAME_H4,
-    "Swing (S)": mt5.TIMEFRAME_D1,
-    "Swing (M)": mt5.TIMEFRAME_W1,
+    "Scalping 15m": mt5.TIMEFRAME_M15,
+    "Scalping 30m": mt5.TIMEFRAME_M30,
+    "Intraday 1H":  mt5.TIMEFRAME_H1,
+    "Intraday 4H":  mt5.TIMEFRAME_H4,
+    "Intraday D":   mt5.TIMEFRAME_D1,
+    "Swing (S)":    mt5.TIMEFRAME_W1,
+    "Swing (M)":    mt5.TIMEFRAME_MN1,
 }
 N_CANDLES = 100
 SWING_LOOKBACK = 3
@@ -62,8 +65,9 @@ def _tendencia(sh, sl) -> str | None:
 
 
 def _analizar(simbolo: str, temporalidad: str) -> dict | None:
-    tf = TIMEFRAMES.get(temporalidad)
-    if tf is None:
+    try:
+        tf = TIMEFRAMES[resolver_temporalidad(temporalidad)]  # acepta alias de nombres viejos
+    except ValueError:
         return None
     mt5.symbol_select(simbolo, True)
     rates = mt5.copy_rates_from_pos(simbolo, tf, 0, N_CANDLES)
