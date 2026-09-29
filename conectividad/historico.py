@@ -6,10 +6,15 @@ exactamente lo que pide `motor_smc.analizar()` — así que no hace falta
 transformar nada, solo dar nombres de símbolo cómodos y fechas por defecto.
 """
 
-from datetime import datetime
+import logging
+import os
+import time
+from datetime import datetime, timedelta, timezone
 
 import dukascopy_python as dp
 from dukascopy_python import instruments as inst
+
+log = logging.getLogger(__name__)
 
 # Catálogo (ampliado 14 sep 2026 — spec docs/panel-alumnos-catalogo-indicadores-spec.md
 # §5, cerrado con Ricardo tras cruzar cada símbolo contra dukascopy Y la cuenta real
@@ -130,8 +135,24 @@ def obtener_velas(
     offer_side: str = dp.OFFER_SIDE_BID,
 ):
     """Descarga velas históricas. `simbolo` acepta una clave de SIMBOLOS o un
-    instrumento crudo de dukascopy_python.instruments (ej. "XAU/USD")."""
+    instrumento crudo de dukascopy_python.instruments (ej. "XAU/USD").
+
+    Con BD (DATABASE_URL) y un símbolo del catálogo lee del almacén de velas y solo baja de Dukascopy lo
+    nuevo (conectividad/almacen.py); mismo resultado que la descarga directa. Si el almacén falla → directa."""
     instrumento = SIMBOLOS.get(simbolo, simbolo)
+    if (simbolo in SIMBOLOS and intervalo in _ALMACEN and offer_side == dp.OFFER_SIDE_BID
+            and os.environ.get("DATABASE_URL") and time.monotonic() >= _ALMACEN_FALLA[0]):
+        try:
+            return _velas_almacen(simbolo, instrumento, inicio, fin, intervalo)
+        except Exception:
+            # ponytail: pausa global de 60 s tras cualquier falla (BD caida no cuesta un timeout por llamada)
+            _ALMACEN_FALLA[0] = time.monotonic() + 60
+            log.warning("almacen de velas fallo (%s %s); descarga directa", simbolo, intervalo, exc_info=True)
+    return _velas_directo(instrumento, inicio, fin, intervalo, offer_side)
+
+
+def _velas_directo(instrumento, inicio, fin, intervalo, offer_side=dp.OFFER_SIDE_BID):
+    """Comportamiento previo al almacén: todo de Dukascopy en cada llamada."""
     regla = _AGREGAR_DESDE_DIARIO.get(intervalo)
     if regla is None:
         return dp.fetch(instrumento, intervalo, offer_side, inicio, fin)
@@ -144,6 +165,38 @@ def obtener_velas(
     return (diario.resample(regla, label="left", closed="left")
             .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
             .dropna(subset=["open"]))
+
+
+# intervalo pedido -> (serie base guardada, serie derivada o None). Solo se guardan 15m, 1H y D.
+_ALMACEN = {dp.INTERVAL_MIN_15: ("15m", None), dp.INTERVAL_MIN_30: ("15m", "30m"),
+            dp.INTERVAL_HOUR_1: ("1H", None), dp.INTERVAL_HOUR_4: ("1H", "4H"),
+            dp.INTERVAL_DAY_1: ("D", None), dp.INTERVAL_WEEK_1: ("D", "S"), dp.INTERVAL_MONTH_1: ("D", "M")}
+_BASE = {"15m": (dp.INTERVAL_MIN_15, timedelta(minutes=15)), "1H": (dp.INTERVAL_HOUR_1, timedelta(hours=1)),
+         "D": (dp.INTERVAL_DAY_1, timedelta(days=1))}
+# Bordes de dp.fetch (medido 29 sep 2026): 15m/30m/4H devuelven la vela que CONTIENE `inicio`; 1H y D
+# empiezan en la primera vela >= `inicio`; todas terminan en la última vela <= `fin`.
+_VELA_QUE_CONTIENE = {dp.INTERVAL_MIN_15: "15min", dp.INTERVAL_MIN_30: "30min", dp.INTERVAL_HOUR_4: "4h"}
+# 30m/4H nativas traen la vela completa aunque pase de `fin`: se leen las velas base de ese bloque.
+_EXTRA_FIN = {dp.INTERVAL_MIN_30: timedelta(minutes=15), dp.INTERVAL_HOUR_4: timedelta(hours=3)}
+_ALMACEN_FALLA = [0.0]  # time.monotonic() hasta el que no se intenta el almacén
+
+
+def _velas_almacen(simbolo, instrumento, inicio, fin, intervalo):
+    from conectividad import almacen
+    import pandas as pd
+
+    serie, derivada = _ALMACEN[intervalo]
+    iv_base, paso = _BASE[serie]
+    # .timestamp() = misma interpretación que dp.fetch (naive = hora local de la máquina)
+    ini = pd.Timestamp(datetime.fromtimestamp(inicio.timestamp(), timezone.utc))
+    f = pd.Timestamp(datetime.fromtimestamp(fin.timestamp(), timezone.utc))
+    lo = ini.floor(_VELA_QUE_CONTIENE[intervalo]) if intervalo in _VELA_QUE_CONTIENE else ini
+    base = almacen.sincronizar(simbolo, serie, lo, f + _EXTRA_FIN.get(intervalo, timedelta(0)),
+                               lambda a, b: dp.fetch(instrumento, iv_base, dp.OFFER_SIDE_BID, a, b), paso)
+    if derivada is None:
+        return base
+    out = almacen.agregar(base, derivada)
+    return out[out.index <= f]
 
 
 _AGREGAR_DESDE_DIARIO = {dp.INTERVAL_WEEK_1: "W-MON", dp.INTERVAL_MONTH_1: "MS"}
@@ -184,5 +237,72 @@ def demo() -> None:
         print(setups.head())
 
 
+def demo_almacen() -> None:
+    """Red + Postgres (DATABASE_URL): con almacen frio y luego incremental, obtener_velas == descarga
+    directa de hoy (_velas_directo) para las 7 temporalidades; sin BD disponible cae a la directa."""
+    import pandas as pd
+    from conectividad import almacen
+
+    logging.disable(logging.INFO)
+    U, s = timezone.utc, "XAUUSD"
+
+    def limpiar():
+        with almacen.get_conn() as conn:
+            conn.execute("DELETE FROM velas WHERE simbolo = %s", (s,))
+            conn.execute("DELETE FROM velas_carga WHERE simbolo = %s", (s,))
+
+    def igual(a, b, que):
+        assert len(a) > 10, que
+        pd.testing.assert_frame_equal(a[["open", "high", "low", "close"]], b[["open", "high", "low", "close"]],
+                                      check_freq=False, check_dtype=False, rtol=0, atol=0, obj=que)
+        pd.testing.assert_series_equal(a.volume, b.volume, check_freq=False, check_dtype=False, rtol=1e-9, obj=que)
+        assert a.index.name == b.index.name and str(a.index.tz) == "UTC" and (a.dtypes == "float64").all(), que
+
+    import persistencia  # noqa: F401  (migraciones)
+    fin = datetime(2026, 9, 25, 13, 7, tzinfo=U)  # fin y cortes sin alinear: prueba los bordes de Dukascopy
+    casos = [(dp.INTERVAL_MIN_15, 30), (dp.INTERVAL_MIN_30, 30), (dp.INTERVAL_HOUR_1, 120),
+             (dp.INTERVAL_HOUR_4, 120), (dp.INTERVAL_DAY_1, 1095), (dp.INTERVAL_WEEK_1, 1095),
+             (dp.INTERVAL_MONTH_1, 1095)]
+    for iv, dias in casos:
+        limpiar()
+        ini1, fin1 = fin - timedelta(days=dias, minutes=-37), fin - timedelta(days=5, minutes=22)
+        ini2 = ini1 + timedelta(days=2, hours=3, minutes=11)
+        igual(obtener_velas(s, ini1, fin1, iv), _velas_directo(SIMBOLOS[s], ini1, fin1, iv), f"{iv} frio")
+        assert almacen.carga(s, _ALMACEN[iv][0]) is not None, f"{iv}: la llamada fria debe poblar el almacen"
+        igual(obtener_velas(s, ini2, fin, iv), _velas_directo(SIMBOLOS[s], ini2, fin, iv), f"{iv} incremental")
+        # misma ventana otra vez (tambien incremental) y fechas naive (hora local, como dukascopy)
+        n1, n2 = ini2.astimezone().replace(tzinfo=None), fin.astimezone().replace(tzinfo=None)
+        igual(obtener_velas(s, n1, n2, iv), _velas_directo(SIMBOLOS[s], n1, n2, iv), f"{iv} naive")
+        print(f"  {iv}: frio e incremental == directo")
+
+    # sin BD alcanzable: cae a la descarga directa, sin romper
+    url = os.environ["DATABASE_URL"]
+    os.environ["DATABASE_URL"] = "postgresql://postgres@localhost:1/nada?connect_timeout=2"
+    try:
+        _ALMACEN_FALLA[0] = 0.0
+        igual(obtener_velas(s, fin - timedelta(days=3), fin, dp.INTERVAL_HOUR_1),
+              _velas_directo(SIMBOLOS[s], fin - timedelta(days=3), fin, dp.INTERVAL_HOUR_1), "sin BD")
+        assert _ALMACEN_FALLA[0] > time.monotonic(), "tras una falla el almacen se pausa un rato"
+    finally:
+        os.environ["DATABASE_URL"], _ALMACEN_FALLA[0] = url, 0.0
+
+    # tiempos: ventana del refresco (hasta ahora), almacen frio vs incremental
+    for iv, dias in ((dp.INTERVAL_MIN_15, 60), (dp.INTERVAL_HOUR_1, 365)):
+        limpiar()
+        t = []
+        for _ in range(2):
+            ahora = datetime.now(U)
+            t0 = time.perf_counter()
+            obtener_velas(s, ahora - timedelta(days=dias), ahora, iv)
+            t.append(time.perf_counter() - t0)
+        print(f"  tiempo {iv}/{dias}d: frio {t[0]:.1f} s, incremental {t[1]:.2f} s")
+    limpiar()
+    print("conectividad.historico.demo_almacen() OK")
+
+
 if __name__ == "__main__":
-    demo()
+    import os as _os
+    if _os.environ.get("HISTORICO_DEMO_ALMACEN") == "1":
+        demo_almacen()
+    else:
+        demo()
