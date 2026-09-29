@@ -204,7 +204,7 @@ _SQL = [
         ('Intraday D',   'Intraday',  true),
         ('Swing (S)',    'Swing (S)', true),
         ('Swing (M)',    'Swing (M)', true))
-    SELECT s.simbolo, m.nuevo, COALESCE(v.fecha_inicio, s.fecha_min), m.activo
+    SELECT s.simbolo, m.nuevo, COALESCE(v.fecha_inicio, s.fecha_min), m.activo AND COALESCE(v.activo, true)
     FROM (SELECT simbolo, MIN(fecha_inicio) AS fecha_min FROM catalogo_activos
           WHERE simbolo IN (SELECT simbolo FROM catalogo_activos
                             WHERE temporalidad IN ('Scalping', 'Intraday', 'Swing (H)'))

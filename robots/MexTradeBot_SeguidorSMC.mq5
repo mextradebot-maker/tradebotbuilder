@@ -80,7 +80,8 @@ int OnInit()
       Print("ERROR: temporalidad desconocida '", InpTemporalidad, "'. Usa: Scalping 15m, Scalping 30m, Intraday 1H, Intraday 4H, Intraday D, Swing (S) o Swing (M).");
       return INIT_PARAMETERS_INCORRECT;
    }
-   if(tf_esperado != InpTF)
+   ENUM_TIMEFRAMES tf_grafico = (InpTF == PERIOD_CURRENT) ? (ENUM_TIMEFRAMES)Period() : InpTF;
+   if(tf_esperado != tf_grafico)
    {
       Print("ERROR: la temporalidad '", InpTemporalidad, "' requiere InpTF = ", EnumToString(tf_esperado), " pero InpTF = ", EnumToString(InpTF), ". Ajusta InpTF o InpTemporalidad; el EA no inicia.");
       return INIT_PARAMETERS_INCORRECT;

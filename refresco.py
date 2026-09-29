@@ -105,17 +105,19 @@ def pendientes(ahora: datetime) -> list[tuple[str, str]]:
     for c in persistencia.listar_catalogo():
         if not c["activo"]:
             continue
-        snap = persistencia.leer_snapshot(c["simbolo"], c["temporalidad"])
-        r = (snap or {}).get("respuesta") or {}
         try:  # una temporalidad desconocida en el catálogo no debe abortar el ciclo completo
             canon = resolver_temporalidad(c["temporalidad"])
+            # el snapshot se guarda siempre bajo el nombre canónico (una fila vieja con alias,
+            # p. ej. re-sembrada por código viejo en el VPS, no debe recalcularse en cada ciclo)
+            snap = persistencia.leer_snapshot(c["simbolo"], canon)
+            r = (snap or {}).get("respuesta") or {}
             # vacío (descarga fallida) o calculado con otro swing_length (recalibración): rehacer, máx 1/hora
             vacio = bool(snap) and (not r.get("velas") or r.get("motor") != "v2" or r.get("swing_length") != TEMPORALIDADES[canon]["swing_length"])
             if necesita_refresco(c["simbolo"], canon, snap and snap["refrescado_en"], ahora, vacio):
-                salida.append((c["simbolo"], c["temporalidad"]))
+                salida.append((c["simbolo"], canon))
         except ValueError as e:
             logging.warning("refresco: fila de catálogo omitida %s %s: %s", c["simbolo"], c["temporalidad"], e)
-    return ordenar(salida)
+    return ordenar(list(dict.fromkeys(salida)))  # alias + canónico del mismo símbolo -> una sola vez
 
 
 def refrescar_uno(simbolo: str, temporalidad: str) -> tuple:
@@ -329,17 +331,19 @@ def demo() -> None:
     ahora2 = datetime(2026, 9, 23, 14, 37, tzinfo=u)
     viejo = datetime(2026, 9, 23, 10, 0, tzinfo=u)
     snaps = {("EURUSD", "Scalping 15m"): {"refrescado_en": viejo, "respuesta": {"velas": [1], "motor": "v2", "swing_length": 8}},
-             ("XAUUSD", "Scalping"): {"refrescado_en": datetime(2026, 9, 23, 14, 33, tzinfo=u),
-                                      "respuesta": {"velas": [1], "motor": "v2", "swing_length": 8}}}
+             ("XAUUSD", "Scalping 15m"): {"refrescado_en": datetime(2026, 9, 23, 14, 33, tzinfo=u),
+                                          "respuesta": {"velas": [1], "motor": "v2", "swing_length": 8}}}
     falso = types.SimpleNamespace(
         listar_catalogo=lambda: [{"simbolo": "EURUSD", "temporalidad": "Scalping 15m", "activo": True},
                                  {"simbolo": "EURUSD", "temporalidad": "Bogus 7m", "activo": True},
-                                 {"simbolo": "XAUUSD", "temporalidad": "Scalping", "activo": True}],
+                                 {"simbolo": "XAUUSD", "temporalidad": "Scalping", "activo": True},
+                                 {"simbolo": "EURUSD", "temporalidad": "Scalping", "activo": True}],
         leer_snapshot=lambda s, t: snaps.get((s, t)))
     previo = sys.modules.get("persistencia")
     sys.modules["persistencia"] = falso
     try:
-        # Bogus omitida; EURUSD pendiente; XAUUSD alias con swing_length 8 fresco: no es vacío -> no se repite
+        # Bogus omitida; EURUSD pendiente una sola vez aunque el catálogo tenga también su alias;
+        # XAUUSD alias lee el snapshot canónico (fresco) -> no se repite
         assert pendientes(ahora2) == [("EURUSD", "Scalping 15m")], pendientes(ahora2)
     finally:
         if previo is None:
