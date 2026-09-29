@@ -91,6 +91,18 @@ VELA_A_INTERVALO = {
 }
 
 
+_PRIMERO_EA = ("direccion", "entrada", "stop", "tp")
+
+
+def _forma_ea(respuesta: dict) -> dict:
+    """Copia con el orden que exige el parser del EA: en cada setup confirmado direccion,
+    entrada, stop, tp primero (los busca HACIA ADELANTE desde la última "direccion"), y
+    `setups_confirmados` al final. El snapshot vive en jsonb, que reordena las llaves."""
+    confirmados = [{**{k: s[k] for k in _PRIMERO_EA if k in s}, **{k: v for k, v in s.items() if k not in _PRIMERO_EA}}
+                   for s in respuesta.get("setups_confirmados") or []]
+    return {**{k: v for k, v in respuesta.items() if k != "setups_confirmados"}, "setups_confirmados": confirmados}
+
+
 def motor_v2(simbolo: str, temporalidad: str, ohlc, inicio, fin) -> dict:
     """Motor v2 (motor principal con temporalidad). Nunca propaga una excepción al llamador:
     ante un fallo devuelve estado "error" y `procesar` responde sin setups confirmados."""
@@ -164,7 +176,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
         try:
             snap = _persistencia.leer_snapshot(simbolo, cache_key_temp)
             if snap is not None and not _snapshot_viejo(snap):
-                return 200, snap["respuesta"]
+                return 200, _forma_ea(snap["respuesta"]) if temporalidad else snap["respuesta"]
         except Exception:
             pass  # Postgres caido -> compute fresco
 
@@ -192,7 +204,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
     if ohlc.empty:
         cuerpo = {"simbolo": simbolo, "velas": 0, "setups": []}
         if temporalidad:
-            cuerpo.update({"temporalidad": temporalidad, "setups_confirmados": []})
+            cuerpo = _forma_ea({**cuerpo, "temporalidad": temporalidad, "setups_confirmados": []})
         return 200, cuerpo
 
     if not temporalidad:
@@ -244,7 +256,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
             _persistencia.registrar_cambio_tendencia(simbolo, cache_key_temp, tendencia_actual, tendencia_prev)
         except Exception:
             pass
-    return 200, respuesta
+    return 200, _forma_ea(respuesta)
 
 
 def _demo_aislamiento() -> None:
@@ -289,7 +301,61 @@ def _demo_aislamiento() -> None:
     print("api.setups._demo_aislamiento() OK — motor_v2 no propaga y devuelve JSON estricto")
 
 
+def _parser_ea(texto: str):
+    """Copia en Python de ExtraerUltimoSetupConfirmado (robots/MexTradeBot_SeguidorSMC.mq5)."""
+    marcador = texto.find('"setups_confirmados":[')
+    if marcador < 0:
+        return None
+    ultimo, desde = -1, marcador
+    while (p := texto.find('"direccion":"', desde)) >= 0:
+        ultimo, desde = p, p + 1
+    if ultimo < 0:
+        return None
+
+    def numero(campo):
+        buscar = f'"{campo}":'
+        pos = texto.find(buscar, ultimo)
+        if pos < 0:
+            return None
+        pos += len(buscar)
+        fin = pos
+        while fin < len(texto) and (texto[fin].isdigit() or texto[fin] in ".-"):
+            fin += 1
+        return float(texto[pos:fin]) if fin > pos else None
+
+    ini = ultimo + len('"direccion":"')
+    return texto[ini : texto.find('"', ini)], numero("entrada"), numero("stop"), numero("tp")
+
+
+def _demo_forma_ea() -> None:
+    """Sin red: una respuesta que pasó por jsonb (llaves reordenadas) sigue siendo legible para el EA."""
+    def jsonb(x):  # Postgres jsonb ordena las llaves por longitud y luego por bytes
+        if isinstance(x, dict):
+            return {k: jsonb(x[k]) for k in sorted(x, key=lambda k: (len(k), k))}
+        return [jsonb(v) for v in x] if isinstance(x, list) else x
+
+    def setup(d, e, s, tp):
+        return {"tipo": "reversion", "direccion": d, "indice_conocido": 90, "entrada": e, "stop": s,
+                "zona_extremo": s, "tp": tp, "valido": True, "razon_descarte": "",
+                "reglas": {"R6": {"cumple": True, "dato": {"tp": tp, "rr": 2.5}, "razon": "x"}}}
+
+    confirmados = [setup("short", 2650.5, 2660.0, 2620.0), setup("long", 2642.5, 2635.0, 2665.0)]
+    respuesta = {"simbolo": "XAUUSD", "temporalidad": "Intraday", "velas": 100, "motor": "v2",
+                 "setups": confirmados, "setups_confirmados": confirmados}
+    compacto = lambda r: json.dumps(r, separators=(",", ":"))  # igual que api/analizar.py
+    esperado = ("long", 2642.5, 2635.0, 2665.0)
+    assert _parser_ea(compacto(respuesta)) == esperado
+    cacheada = jsonb(respuesta)
+    assert _parser_ea(compacto(cacheada)) != esperado  # el bug: jsonb rompe el parser del EA
+    forma = _forma_ea(cacheada)
+    assert _parser_ea(compacto(forma)) == esperado, compacto(forma)
+    assert list(forma)[-1] == "setups_confirmados"
+    assert _parser_ea(compacto(_forma_ea({**respuesta, "setups_confirmados": []}))) is None
+    print("api.setups._demo_forma_ea() OK — el EA lee respuestas cacheadas en jsonb")
+
+
 def demo() -> None:
+    _demo_forma_ea()
     _demo_aislamiento()
     status, body = procesar({"simbolo": "XAUUSD", "dias": 90})
     assert status == 200
