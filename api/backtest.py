@@ -14,12 +14,14 @@ símbolo/dirección en distintas temporalidades (ver n8n "MTB Analisis Diario
 de Mercado", que llama /api/tendencia + este endpoint 3 veces por símbolo —
 una por temporalidad, cada una con su propia dirección — para elegir la más
 rentable).
+
+Con snapshot o sin él, el reporte es el backtest del motor v2 (el mismo de /api/setups): en un
+miss se llama a api.setups.procesar con _force_refresh, que además deja el snapshot al día.
 """
 
 from datetime import datetime, timedelta, timezone, time as _time
 
-from backtesting.backtest import backtest_direccion
-from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO, obtener_velas
+from conectividad import SIMBOLOS, TEMPORALIDAD_A_INTERVALO
 from api.setups import SWING_LENGTH_POR_TEMPORALIDAD
 
 try:
@@ -49,39 +51,64 @@ def procesar(payload: dict) -> tuple[int, dict]:
         return 400, {"error": "'dias'/'swing_length' deben ser enteros"}
 
     desde_catalogo = str(payload.get("desde_catalogo", "")).lower() in ("1", "true", "yes")
+    import api.setups as setups
+
     if not desde_catalogo:
-        from api.setups import desde_snapshot
-        snap = desde_snapshot(simbolo, temporalidad, dias, swing_length)
+        snap = setups.desde_snapshot(simbolo, temporalidad, dias, swing_length)
         reporte = (snap or {}).get("backtests", {}).get(direccion)
         if reporte is not None:
             return 200, {"simbolo": simbolo, "direccion": direccion, "temporalidad": temporalidad, "velas": snap.get("velas", 0), **reporte}
 
-    fin = datetime.now(timezone.utc)
-    inicio = None
-    if desde_catalogo and _persistencia is not None:
-        try:
-            fecha = _persistencia.leer_fecha_inicio(simbolo, temporalidad)
-            if fecha is not None:
-                inicio = datetime.combine(fecha, _time.min, tzinfo=timezone.utc)
-        except Exception:
-            pass
-    if inicio is None:
+    status, respuesta = setups.procesar({"simbolo": simbolo, "temporalidad": temporalidad, "dias": dias,
+                                         "swing_length": swing_length, "desde_catalogo": desde_catalogo,
+                                         "_force_refresh": True})
+    if status != 200:
+        return status, respuesta
+    # sin velas o motor v2 en error: no hay backtest de esa dirección
+    reporte = (respuesta.get("backtests") or {}).get(direccion) or {"n_setups": 0, "rentable_sin_optimizar": None}
+    extra = {}
+    if desde_catalogo:  # misma fecha de inicio que usó procesar
+        fin = datetime.now(timezone.utc)
         inicio = fin - timedelta(days=dias)
+        if _persistencia is not None:
+            try:
+                fecha = _persistencia.leer_fecha_inicio(simbolo, temporalidad)
+                if fecha is not None:
+                    inicio = datetime.combine(fecha, _time.min, tzinfo=timezone.utc)
+            except Exception:
+                pass
+        extra = {"desde_catalogo": True, "inicio": inicio.date().isoformat()}
+    return 200, {"simbolo": simbolo, "direccion": direccion, "temporalidad": temporalidad,
+                 "velas": respuesta.get("velas", 0), **reporte, **extra}
 
+
+def _demo_miss_usa_motor_v2() -> None:
+    """Sin red: en un miss la respuesta sale del mismo cálculo que /api/setups (motor v2)."""
+    import api.setups as setups
+
+    llamadas = []
+
+    def falso(payload):
+        llamadas.append(payload)
+        return 200, {"velas": 42, "backtests": {"compra": {"n_setups": 7, "rentable_sin_optimizar": True},
+                                                "venta": {"n_setups": 0, "rentable_sin_optimizar": None}}}
+
+    orig = setups.procesar, setups.desde_snapshot
     try:
-        ohlc = obtener_velas(simbolo, inicio, fin, intervalo=TEMPORALIDAD_A_INTERVALO[temporalidad])
-    except Exception as e:
-        return 502, {"error": f"no se pudieron obtener velas de {simbolo}: {e}"}
-
-    if ohlc.empty:
-        return 200, {"simbolo": simbolo, "direccion": direccion, "temporalidad": temporalidad, "velas": 0, "n_setups": 0, "rentable_sin_optimizar": None}
-
-    reporte = backtest_direccion(ohlc, DIRECCION_A_LONG_SHORT[direccion], swing_length=swing_length)
-    extra = {"desde_catalogo": desde_catalogo, "inicio": inicio.date().isoformat()} if desde_catalogo else {}
-    return 200, {"simbolo": simbolo, "direccion": direccion, "temporalidad": temporalidad, "velas": len(ohlc), **reporte, **extra}
+        setups.procesar, setups.desde_snapshot = falso, (lambda *a, **k: None)
+        status, body = procesar({"simbolo": "XAUUSD", "direccion": "compra", "dias": 30, "temporalidad": "Scalping"})
+        assert status == 200 and body == {"simbolo": "XAUUSD", "direccion": "compra", "temporalidad": "Scalping",
+                                          "velas": 42, "n_setups": 7, "rentable_sin_optimizar": True}, body
+        assert llamadas[0]["dias"] == 30 and llamadas[0]["_force_refresh"] is True, llamadas
+        setups.procesar = lambda p: (502, {"error": "sin datos"})
+        assert procesar({"simbolo": "XAUUSD", "direccion": "venta"})[0] == 502
+    finally:
+        setups.procesar, setups.desde_snapshot = orig
+    print("api.backtest._demo_miss_usa_motor_v2() OK")
 
 
 def demo() -> None:
+    _demo_miss_usa_motor_v2()
     status, body = procesar({"simbolo": "XAUUSD", "direccion": "compra", "dias": 365})
     assert status == 200
     assert "n_setups" in body
