@@ -434,7 +434,7 @@ function cargarPersonalizado(){
   var simboloInicial = window.mtbSimboloPreseleccionado || '';
   cont.innerHTML = '<form id="personalizadoForm" class="space-y-3">' +
     '<div><label class="text-sm font-semibold text-slate-700">Simbolo</label><input required name="simbolo" value="' + esc(simboloInicial) + '" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 uppercase" /></div>' +
-    '<div><label class="text-sm font-semibold text-slate-700">Tipo</label><select name="tipoRobot" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option>Scalping</option><option>Intraday</option><option>Swing (H)</option><option>Swing (S)</option><option>Swing (M)</option></select></div>' +
+    '<div><label class="text-sm font-semibold text-slate-700">Tipo</label><select name="tipoRobot" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option>Scalping 15m</option><option>Scalping 30m</option><option selected>Intraday 1H</option><option>Intraday 4H</option><option>Intraday D</option><option>Swing (S)</option><option>Swing (M)</option></select></div>' +
     '<div><label class="text-sm font-semibold text-slate-700">Riesgo</label><select name="riesgo" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option>Bajo</option><option>Medio</option><option>Alto</option></select></div>' +
     '<div><label class="text-sm font-semibold text-slate-700">Capital</label><select name="capital" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option value="300">$300 - $500</option><option value="500">$500 - $1,000</option><option value="1000">$1,000 - $3,000</option><option value="3000">$3,000+</option></select></div>' +
     '<button type="submit" class="mtb-btn w-full bg-green-500 text-white font-bold py-2.5 rounded-lg">Entregar</button>' +
@@ -525,7 +525,7 @@ function cargarValidaciones(){
       '</div>' +
       '<form id="validacionesForm" class="space-y-3">' +
         '<div><label class="text-sm font-semibold text-slate-700">Simbolo</label><input required name="simbolo" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 uppercase" /></div>' +
-        '<div><label class="text-sm font-semibold text-slate-700">Temporalidad</label><select name="temporalidad" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option>Scalping</option><option selected>Intraday</option><option>Swing (H)</option><option>Swing (S)</option><option>Swing (M)</option></select></div>' +
+        '<div><label class="text-sm font-semibold text-slate-700">Temporalidad</label><select name="temporalidad" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option>Scalping 15m</option><option>Scalping 30m</option><option selected>Intraday 1H</option><option>Intraday 4H</option><option>Intraday D</option><option>Swing (S)</option><option>Swing (M)</option></select></div>' +
         camposDireccion +
         '<div><label class="text-sm font-semibold text-slate-700">Dias de historico</label><select name="dias" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"><option value="90">90</option><option value="180">180</option><option value="365" selected>365</option><option value="730">730</option></select></div>' +
         '<button type="submit" class="mtb-btn w-full bg-green-500 text-white font-bold py-2.5 rounded-lg">Correr backtest</button>' +
@@ -625,7 +625,7 @@ function tarjetaResumenHtml(a){
         rankBadge +
         '<div class="min-w-0">' +
           '<div class="mtb-symbol-title">' + sim + '</div>' +
-          '<div class="mtb-symbol-sub">' + nom + ' &middot; ' + esc(a.temporalidad || 'Intraday') + '</div>' +
+          '<div class="mtb-symbol-sub">' + nom + ' &middot; ' + esc(a.temporalidad || 'Intraday 1H') + '</div>' +
         '</div>' +
       '</div>' +
       chipRiesgo +
@@ -763,11 +763,11 @@ function renderResumen(data){
   } else if (modo === 'tarjetas') {
     // 2. VISTA TARJETAS POR ACTIVO SPEC
     var list = (data && data.tarjetas) || [
-      { rank: 1, simbolo: 'XAUUSD', nombre: 'Oro Spot USD', temporalidad: 'Swing (H)', winrate: 61, expectativa_r: '+0.35', r_total: '+14.7', n_setups: 42, veredicto: 'RECOMENDABLE', riesgo: 'Medio', descripcion_larga: 'Análisis Swing (H) para XAUUSD. Mantiene un 61% de acierto y expectativa altamente positiva con confluencia de Order Block.' },
-      { rank: 2, simbolo: 'EURUSD', nombre: 'Euro / Dólar US', temporalidad: 'Intraday', winrate: 58, expectativa_r: '+0.28', r_total: '+12.4', n_setups: 56, veredicto: 'RECOMENDABLE', riesgo: 'Bajo', descripcion_larga: 'Análisis Intraday para EURUSD. 58% de winrate con riesgo controlado y barridos de liquidez limpios en sesión de Londres.' },
-      { rank: 3, simbolo: 'USDJPY', nombre: 'Dólar US / Yen', temporalidad: 'Intraday', winrate: 54, expectativa_r: '+0.22', r_total: '+8.3', n_setups: 38, veredicto: 'RECOMENDABLE', riesgo: 'Bajo', descripcion_larga: 'Análisis Intraday para USDJPY. Respetando zonas FVG en gráficos H1 con excelente relación beneficio-riesgo.' },
+      { rank: 1, simbolo: 'XAUUSD', nombre: 'Oro Spot USD', temporalidad: 'Intraday 4H', winrate: 61, expectativa_r: '+0.35', r_total: '+14.7', n_setups: 42, veredicto: 'RECOMENDABLE', riesgo: 'Medio', descripcion_larga: 'Análisis Swing (H) para XAUUSD. Mantiene un 61% de acierto y expectativa altamente positiva con confluencia de Order Block.' },
+      { rank: 2, simbolo: 'EURUSD', nombre: 'Euro / Dólar US', temporalidad: 'Intraday 1H', winrate: 58, expectativa_r: '+0.28', r_total: '+12.4', n_setups: 56, veredicto: 'RECOMENDABLE', riesgo: 'Bajo', descripcion_larga: 'Análisis Intraday para EURUSD. 58% de winrate con riesgo controlado y barridos de liquidez limpios en sesión de Londres.' },
+      { rank: 3, simbolo: 'USDJPY', nombre: 'Dólar US / Yen', temporalidad: 'Intraday 1H', winrate: 54, expectativa_r: '+0.22', r_total: '+8.3', n_setups: 38, veredicto: 'RECOMENDABLE', riesgo: 'Bajo', descripcion_larga: 'Análisis Intraday para USDJPY. Respetando zonas FVG en gráficos H1 con excelente relación beneficio-riesgo.' },
       { rank: 4, simbolo: 'GBPUSD', nombre: 'Libra / Dólar US', temporalidad: 'Swing (S)', winrate: 52, expectativa_r: '+0.15', r_total: '+4.2', n_setups: 29, veredicto: 'RECOMENDABLE', riesgo: 'Medio', descripcion_larga: 'Análisis Swing para GBPUSD. 52% de acierto y expectativa positiva constante.' },
-      { rank: 5, simbolo: 'EURJPY', nombre: 'Euro / Yen', temporalidad: 'Scalping', winrate: 29, expectativa_r: '-0.12', r_total: '-4.4', n_setups: 37, veredicto: 'NO_RECOMENDABLE', riesgo: 'Alto', descripcion_larga: 'Expectativa negativa en gráfico de Scalping — no se recomienda operar en esta temporalidad.' },
+      { rank: 5, simbolo: 'EURJPY', nombre: 'Euro / Yen', temporalidad: 'Scalping 15m', winrate: 29, expectativa_r: '-0.12', r_total: '-4.4', n_setups: 37, veredicto: 'NO_RECOMENDABLE', riesgo: 'Alto', descripcion_larga: 'Expectativa negativa en gráfico de Scalping — no se recomienda operar en esta temporalidad.' },
       { rank: 6, simbolo: 'NZDJPY', nombre: 'Dólar NZ / Yen', temporalidad: 'Swing (M)', winrate: 0, expectativa_r: '0.00', r_total: '0.0', n_setups: 3, veredicto: 'INSUFICIENTE', riesgo: 'Medio', descripcion_larga: 'Muestra de backtest insuficiente (menos de 10 setups) — se requieren más datos históricos.' }
     ];
 
