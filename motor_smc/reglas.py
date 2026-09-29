@@ -16,6 +16,7 @@ UMBRAL_VOLUMEN = {"15m": 3.0, "30m": 3.0, "1H": 2.5, "4H": 2.0, "D": 1.0, "S": N
 VENTANA_VOLUMEN = 20
 FACTOR_ATR_FVG = 0.5  # ponytail: el curso (L20) no da número para "gap imperceptible"; punto de partida acordado 28 sep
 PERIODO_ATR = 14
+FACTOR_ATR_STOP = 0.5  # ponytail: el curso pide "espacio prudente" (§10.3, MACD) sin número; margen acordado con Ricardo 28 sep
 EMAS_SESGO = (200, 50, 20)  # cadena de respaldo acordada con Ricardo
 RR_MINIMO = 2.0  # §10.5
 # ponytail: 30m y D no se calibraron en el barrido del 27 sep; heredan el valor de su vecina.

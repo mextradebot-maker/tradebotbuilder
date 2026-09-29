@@ -47,8 +47,21 @@ def _anclaje(swings: pd.DataFrame, i: int, k: int, swing_length: int, n: int) ->
     return (int(siguientes[0]), conocido) if conocido < n else None
 
 
-def candidatos_reversion(ohlc: pd.DataFrame, res: dict, swing_length: int) -> list[dict]:
+def _stop_con_margen(ohlc: pd.DataFrame, atr_serie: pd.Series, ini: int, s: int, d: int) -> float | None:
+    """§10.3: el stop va MÁS ALLÁ de todo el clúster (velas ini..s), con 0.5 x ATR(14) medido en s-1
+    (solo velas previas). None si no hay ATR todavía: el candidato se descarta."""
+    margen = atr_serie.iloc[s - 1] if s >= 1 else float("nan")
+    if pd.isna(margen):
+        return None
+    margen = R.FACTOR_ATR_STOP * float(margen)
+    if d == 1:
+        return float(ohlc["low"].iloc[ini : s + 1].min()) - margen
+    return float(ohlc["high"].iloc[ini : s + 1].max()) + margen
+
+
+def candidatos_reversion(ohlc: pd.DataFrame, res: dict, swing_length: int, atr_serie: pd.Series | None = None) -> list[dict]:
     estructura, fvg, swings = res["estructura"], res["fvg"], res["swings"]
+    atr_serie = R.atr(ohlc) if atr_serie is None else atr_serie
     salida = []
     for i in estructura.index[estructura["CHOCH"].notna() & (estructura["CHOCH"] != 0)]:
         d = int(estructura.at[i, "CHOCH"])
@@ -68,8 +81,8 @@ def candidatos_reversion(ohlc: pd.DataFrame, res: dict, swing_length: int) -> li
         j = int(js[0])
         top, bottom = float(fvg.at[j, "Top"]), float(fvg.at[j, "Bottom"])
         entrada = (top + bottom) / 2
-        stop = float(ohlc["low"].iloc[s] if d == 1 else ohlc["high"].iloc[s])
-        if (d == 1 and stop >= entrada) or (d == -1 and stop <= entrada):
+        stop = _stop_con_margen(ohlc, atr_serie, s, s, d)  # clúster del FVG = la vela del barrido
+        if stop is None or (d == 1 and stop >= entrada) or (d == -1 and stop <= entrada):
             continue
         salida.append({
             "tipo": "reversion", "direccion": "long" if d == 1 else "short",
@@ -80,8 +93,9 @@ def candidatos_reversion(ohlc: pd.DataFrame, res: dict, swing_length: int) -> li
     return salida
 
 
-def candidatos_continuacion(ohlc: pd.DataFrame, res: dict, swing_length: int) -> list[dict]:
+def candidatos_continuacion(ohlc: pd.DataFrame, res: dict, swing_length: int, atr_serie: pd.Series | None = None) -> list[dict]:
     estructura, swings = res["estructura"], res["swings"]
+    atr_serie = R.atr(ohlc) if atr_serie is None else atr_serie
     salida = []
     for i in estructura.index[estructura["BOS"].notna() & (estructura["BOS"] != 0)]:
         d = int(estructura.at[i, "BOS"])
@@ -103,8 +117,8 @@ def candidatos_continuacion(ohlc: pd.DataFrame, res: dict, swing_length: int) ->
         zona = ohlc.iloc[ini : fin + 1]
         alto, bajo = float(zona["high"].max()), float(zona["low"].min())
         entrada = (alto + bajo) / 2
-        stop = float(ohlc["low"].iloc[s] if d == 1 else ohlc["high"].iloc[s])
-        if (d == 1 and stop >= entrada) or (d == -1 and stop <= entrada):
+        stop = _stop_con_margen(ohlc, atr_serie, ini, s, d)
+        if stop is None or (d == 1 and stop >= entrada) or (d == -1 and stop <= entrada):
             continue
         salida.append({
             "tipo": "continuacion", "direccion": "long" if d == 1 else "short",
@@ -225,7 +239,8 @@ def demo() -> None:
     res["fvg"].loc[22, ["FVG", "Top", "Bottom"]] = [1, 105.0, 103.0]
     rev = candidatos_reversion(ohlc, res, swing_length=3)
     assert len(rev) == 1, rev
-    assert rev[0]["entrada"] == 104.0 and rev[0]["stop"] == 90.0
+    # stop = extremo del clúster (low 90 en s) - 0.5 x ATR(14) en s-1 (velas de rango 2 -> ATR 2)
+    assert rev[0]["entrada"] == 104.0 and rev[0]["stop"] == 89.0, rev[0]
     assert rev[0]["zona_extremo"] == 103.0 and rev[0]["indice_conocido"] == 29 and rev[0]["indice_barrido"] == 20
     # sin el swing t el CHoCH todavía no se conoce -> no hay candidato
     ohlc_b, res_b = _res_prueba()
@@ -247,7 +262,18 @@ def demo() -> None:
     cont = candidatos_continuacion(ohlc_c, res_c, swing_length=3)
     assert len(cont) == 1, cont
     assert cont[0]["indice_zona"] == 18  # máximo 3 velas: 18, 19, 20 (la 17 queda fuera)
-    assert cont[0]["entrada"] == 100.0 and cont[0]["stop"] == 95.0 and cont[0]["zona_extremo"] == 95.0
+    margen = R.FACTOR_ATR_STOP * float(R.atr(ohlc_c).iloc[19])  # ATR medido en s-1
+    assert cont[0]["entrada"] == 100.0 and cont[0]["stop"] == 95.0 - margen and cont[0]["zona_extremo"] == 95.0
+    assert margen > 0 and cont[0]["stop"] < 95.0  # estrictamente más allá del extremo del clúster
+    # el extremo es el de TODO el clúster (zona 18..s), no solo low[s]
+    ohlc_c2 = ohlc_c.copy()
+    ohlc_c2.iloc[19, ohlc_c2.columns.get_loc("low")] = 94.0
+    cont2 = candidatos_continuacion(ohlc_c2, res_c, swing_length=3)
+    assert cont2[0]["stop"] == 94.0 - R.FACTOR_ATR_STOP * float(R.atr(ohlc_c2).iloc[19]), cont2
+    assert cont2[0]["zona_extremo"] == 94.0  # zona_extremo no cambia de definición (mínimo de la zona)
+    # sin ATR en s-1 (historia insuficiente) el candidato se descarta
+    sin_atr = pd.Series(float("nan"), index=ohlc_c.index)
+    assert candidatos_continuacion(ohlc_c, res_c, swing_length=3, atr_serie=sin_atr) == []
 
     # Evaluación: R1/R2 no aplican a continuación; anti-anticipación con la temporalidad mayor
     mayor_pasado = R.zigzag(R.ALCISTA, inicio="2025-12-20 00:00")  # cierra antes del setup
@@ -292,11 +318,14 @@ def demo() -> None:
     assert r["estructura"].at[37, "CHOCH"] == -1 and r["estructura"].at[111, "BOS"] == 1
     choch = [c for c in candidatos_reversion(o, r, 5) if c["indice_confirmacion"] == 86]
     assert len(choch) == 1, candidatos_reversion(o, r, 5)
-    assert choch[0]["indice_barrido"] == 61 and choch[0]["stop"] == float(o["high"].iloc[61])
+    atr_o = R.atr(o)
+    assert choch[0]["indice_barrido"] == 61
+    assert choch[0]["stop"] == float(o["high"].iloc[61]) + R.FACTOR_ATR_STOP * float(atr_o.iloc[60]), choch[0]
     assert choch[0]["indice_conocido"] == 96 and 61 <= choch[0]["indice_zona"] <= 66  # max(86, 91 + 5)
     bos = [c for c in candidatos_continuacion(o, r, 5) if c["indice_confirmacion"] == 138]
     assert len(bos) == 1, candidatos_continuacion(o, r, 5)
-    assert bos[0]["indice_barrido"] == 125 and bos[0]["stop"] == float(o["low"].iloc[125])
+    assert bos[0]["indice_barrido"] == 125
+    assert bos[0]["stop"] == float(o["low"].iloc[123:126].min()) - R.FACTOR_ATR_STOP * float(atr_o.iloc[124]), bos[0]
     assert bos[0]["indice_conocido"] == 154 and bos[0]["indice_zona"] == 123  # max(138, 149 + 5); zona 123-125
 
     # R6 sin look-ahead: con toda la serie la librería borra el máximo 49 (130.5) porque después
