@@ -332,16 +332,38 @@ def demo_almacen() -> None:
     finally:
         os.environ["DATABASE_URL"], _ALMACEN_FALLA[0] = url, 0.0
 
-    # tiempos: ventana del refresco (hasta ahora), almacen frio vs incremental
-    for iv, dias in ((dp.INTERVAL_MIN_15, 60), (dp.INTERVAL_HOUR_1, 365)):
-        limpiar()
-        t = []
-        for _ in range(2):
-            ahora = datetime.now(U)
-            t0 = time.perf_counter()
-            obtener_velas(s, ahora - timedelta(days=dias), ahora, iv)
-            t.append(time.perf_counter() - t0)
-        print(f"  tiempo {iv}/{dias}d: frio {t[0]:.1f} s, incremental {t[1]:.2f} s")
+    # tiempos: ventana del refresco (hasta ahora): frio, mismo periodo (sin red), incremental con red
+    orig_fetch, n_fetch = dp.fetch, [0]
+
+    def contar(*a, **k):
+        n_fetch[0] += 1
+        return orig_fetch(*a, **k)
+
+    dp.fetch = contar
+    try:
+        for iv, dias in ((dp.INTERVAL_MIN_15, 60), (dp.INTERVAL_HOUR_1, 365)):
+            limpiar()
+            t, redes, datos = [], [], []
+            for paso in ("frio", "mismo periodo", "incremental"):
+                if paso == "incremental":  # simula que ya cerro otra vela: fuerza la descarga
+                    with almacen.get_conn() as conn:
+                        conn.execute("UPDATE velas_carga SET actualizado_en = 'epoch' WHERE simbolo = %s", (s,))
+                ahora, n_fetch[0] = datetime.now(U), 0
+                t0 = time.perf_counter()
+                datos.append(obtener_velas(s, ahora - timedelta(days=dias), ahora, iv))
+                t.append(time.perf_counter() - t0)
+                redes.append(n_fetch[0])
+                if paso == "frio":
+                    c, base = almacen.carga(s, _ALMACEN[iv][0]), _BASE[_ALMACEN[iv][0]][1]
+                    fresca = [c[2] >= pd.Timestamp(datetime.now(U)).floor(base) + almacen.MARGEN_PUBLICACION]
+            if fresca[0]:  # Dukascopy a veces publica la vela cerrada con > 2 min de retraso: entonces no
+                assert redes[1] == 0, f"{iv}: mismo periodo no debe tocar la red ({redes})"
+            comun = datos[1].index.intersection(datos[0].index)  # la ventana se corre unos segundos
+            assert len(comun) >= len(datos[1]) - 1 and datos[1].loc[comun].equals(datos[0].loc[comun])
+            print(f"  tiempo {iv}/{dias}d: frio {t[0]:.2f} s ({redes[0]} fetch), mismo periodo {t[1]:.2f} s "
+                  f"({redes[1]} fetch, fresca={fresca[0]}), incremental con red {t[2]:.2f} s ({redes[2]} fetch)")
+    finally:
+        dp.fetch = orig_fetch
     limpiar()
     print("conectividad.historico.demo_almacen() OK")
 

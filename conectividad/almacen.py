@@ -79,42 +79,63 @@ def rango(simbolo: str, serie: str):
 
 
 def carga(simbolo: str, serie: str):
-    """(desde, hasta) de la cobertura contigua registrada en velas_carga, o None.
+    """(desde, hasta, sincronizado) de la cobertura contigua registrada en velas_carga, o None.
     desde = inicio pedido de la descarga (no la primera vela: un fin de semana no rompe la cobertura);
-    hasta = ultima vela guardada."""
+    hasta = ultima vela guardada; sincronizado (columna actualizado_en) = ultima vez que una descarga llego
+    hasta el cierre mas reciente de la serie."""
     with get_conn() as conn:
-        f = conn.execute("SELECT desde, hasta FROM velas_carga WHERE simbolo = %s AND serie = %s",
+        f = conn.execute("SELECT desde, hasta, actualizado_en FROM velas_carga WHERE simbolo = %s AND serie = %s",
                          (simbolo, serie)).fetchone()
-    return None if f is None or f[0] is None else (pd.Timestamp(f[0]), pd.Timestamp(f[1]))
+    return None if f is None or f[0] is None else tuple(_utc(x) for x in f)
 
 
-def registrar_carga(simbolo: str, serie: str, desde, hasta) -> None:
-    """Amplia la cobertura con [desde, hasta] solo si se traslapa (no salta huecos); nunca la achica,
-    aunque escriban varios hilos/procesos a la vez (LEAST/GREATEST en una sola sentencia). No toca `completa`."""
+def registrar_carga(simbolo: str, serie: str, desde, hasta, sincronizado=None) -> None:
+    """Amplia la cobertura con [desde, hasta] solo si se traslapa (no salta huecos); nunca la achica ni
+    atrasa `sincronizado`, aunque escriban varios hilos/procesos a la vez (LEAST/GREATEST en una sola
+    sentencia). `sincronizado=None` (descarga que no llego al cierre actual) no lo toca. No toca `completa`."""
     with get_conn() as conn:
         conn.execute(
-            """INSERT INTO velas_carga (simbolo, serie, desde, hasta) VALUES (%s, %s, %s, %s)
+            """INSERT INTO velas_carga (simbolo, serie, desde, hasta, actualizado_en)
+               VALUES (%s, %s, %s, %s, COALESCE(%s, 'epoch'::timestamptz))
                ON CONFLICT (simbolo, serie) DO UPDATE SET
                  desde = LEAST(velas_carga.desde, EXCLUDED.desde),
-                 hasta = GREATEST(velas_carga.hasta, EXCLUDED.hasta), actualizado_en = now()
+                 hasta = GREATEST(velas_carga.hasta, EXCLUDED.hasta),
+                 actualizado_en = GREATEST(velas_carga.actualizado_en, EXCLUDED.actualizado_en)
                WHERE EXCLUDED.desde <= velas_carga.hasta AND EXCLUDED.hasta >= velas_carga.desde""",
-            (simbolo, serie, _utc(desde), _utc(hasta)))
+            (simbolo, serie, _utc(desde), _utc(hasta), None if sincronizado is None else _utc(sincronizado)))
 
 
-def sincronizar(simbolo: str, serie: str, lo, hi, descargar, paso) -> pd.DataFrame:
-    """Velas base con lo <= ts <= hi. Si velas_carga cubre `lo`, solo baja con `descargar(a, b)` desde la
-    ultima vela guardada (se vuelve a pedir la anterior a esa, pudo quedar incompleta) hasta `hi` y lee
-    del almacen; si no, baja la ventana completa (como antes) y la guarda para que la siguiente sea
-    incremental. `paso` = duracion de una vela base."""
+# = refresco.MARGEN_DATOS: Dukascopy publica la vela cerrada con hasta ~2 min de retraso. Una sincronizacion
+# antes de cierre + margen no cuenta como fresca (la vela recien cerrada pudo faltar o venir parcial).
+MARGEN_PUBLICACION = pd.Timedelta(minutes=2)
+
+
+def sincronizar(simbolo: str, serie: str, lo, hi, descargar, paso, ahora=None) -> pd.DataFrame:
+    """Velas base con lo <= ts <= hi. Si velas_carga cubre `lo`:
+    - fresca (sincronizada despues del ultimo cierre + margen) o `hi` antes de la ultima vela guardada →
+      solo lee de Postgres, sin red (la unica vela que puede faltar es la que se esta formando, que el motor
+      descarta);
+    - si no, baja con `descargar(a, b)` desde la vela anterior a la ultima guardada hasta `hi`.
+    Si no cubre `lo`: baja la ventana completa (como antes) y la guarda → la siguiente sera incremental.
+    `paso` = duracion de una vela base (15m, 1H o 1D; el cierre de D es 00:00 UTC)."""
     lo, hi = _utc(lo), _utc(hi)
+    ahora = _utc(pd.Timestamp.now(tz="UTC") if ahora is None else ahora)
+    cierre = ahora.floor(paso)
+
+    def sinc(df):
+        # "al dia" solo si la descarga pidio hasta el cierre mas reciente Y trajo la ultima vela cerrada:
+        # Dukascopy a veces corta una descarga (respuesta vacia) y con mercado cerrado no hay vela nueva;
+        # en ambos casos no se marca fresca y la siguiente llamada vuelve a preguntar.
+        return ahora if hi >= cierre and df.index[-1] >= cierre - paso else None
     c = carga(simbolo, serie)
     if c is not None and c[0] <= lo:
-        if hi >= c[1]:  # >=: la ultima vela guardada pudo quedar parcial, se vuelve a pedir
+        fresca = c[2] >= cierre + MARGEN_PUBLICACION
+        if hi >= c[1] and not fresca:  # >=: la ultima vela guardada pudo quedar parcial, se vuelve a pedir
             desde = c[1] - paso
             nuevas = descargar(desde.to_pydatetime(), hi.to_pydatetime())
             if not nuevas.empty:
                 guardar(simbolo, serie, nuevas)
-                registrar_carga(simbolo, serie, desde, nuevas.index[-1])
+                registrar_carga(simbolo, serie, desde, nuevas.index[-1], sinc(nuevas))
         return leer(simbolo, serie, lo, hi)
     df = descargar(lo.to_pydatetime(), hi.to_pydatetime())
     if not df.empty and serie in ("15m", "1H") and df.index[0] - lo > pd.Timedelta(days=4):
@@ -122,7 +143,7 @@ def sincronizar(simbolo: str, serie: str, lo, hi, descargar, paso) -> pd.DataFra
                     simbolo, serie, lo, df.index[0])
     if not df.empty:
         guardar(simbolo, serie, df)
-        registrar_carga(simbolo, serie, lo, df.index[-1])
+        registrar_carga(simbolo, serie, lo, df.index[-1], sinc(df))
     return df
 
 
@@ -196,13 +217,13 @@ def _demo_sincronizar(sim: str) -> None:
     # 1) frio: baja la ventana completa, la guarda y registra la cobertura
     got = sincronizar(sim, "15m", t[10], t[200], descargar, paso)
     assert pedidos == [(t[10], t[200])] and got.equals(todo.iloc[10:201])
-    assert carga(sim, "15m") == (t[10], t[200])
+    assert carga(sim, "15m")[:2] == (t[10], t[200])
     # 2) cubierto: solo pide desde la ultima vela guardada (menos una) hasta fin; resultado = directo
     pedidos.clear()
     got = sincronizar(sim, "15m", t[50], t[300], descargar, paso)
     assert pedidos == [(t[199], t[300])], pedidos
     pd.testing.assert_frame_equal(got, todo.iloc[50:301], check_freq=False)
-    assert carga(sim, "15m") == (t[10], t[300])
+    assert carga(sim, "15m")[:2] == (t[10], t[300])
     # 3) ventana dentro de lo guardado: no pide nada a Dukascopy
     pedidos.clear()
     assert sincronizar(sim, "15m", t[20], t[250], descargar, paso).equals(todo.iloc[20:251]) and pedidos == []
@@ -213,13 +234,53 @@ def _demo_sincronizar(sim: str) -> None:
     pedidos.clear()
     # 4) ventana anterior sin traslape: bajada directa, la cobertura no salta el hueco
     got = sincronizar(sim, "15m", t[0], t[5], descargar, paso)
-    assert pedidos == [(t[0], t[5])] and carga(sim, "15m") == (t[10], t[300])
+    assert pedidos == [(t[0], t[5])] and carga(sim, "15m")[:2] == (t[10], t[300])
     # 5) traslape por la izquierda: amplia desde; nunca achica (LEAST/GREATEST)
     pedidos.clear()
     sincronizar(sim, "15m", t[3], t[100], descargar, paso)
-    assert pedidos == [(t[3], t[100])] and carga(sim, "15m") == (t[3], t[300])
+    assert pedidos == [(t[3], t[100])] and carga(sim, "15m")[:2] == (t[3], t[300])
     registrar_carga(sim, "15m", t[250], t[260])
-    assert carga(sim, "15m") == (t[3], t[300])
+    assert carga(sim, "15m")[:2] == (t[3], t[300])
+    # 7) frescura: en el mismo periodo ya sincronizado no se toca la red
+    limpiar()
+    m = MARGEN_PUBLICACION
+    ahora0 = t[200] + m + pd.Timedelta(minutes=1)            # vela t[199] cerrada y publicada
+    sincronizar(sim, "15m", t[10], t[200], descargar, paso, ahora=ahora0)
+    assert carga(sim, "15m")[2] == ahora0
+    pedidos.clear()
+    got = sincronizar(sim, "15m", t[20], t[200], descargar, paso, ahora=t[200] + pd.Timedelta(minutes=10))
+    assert pedidos == [] and got.equals(todo.iloc[20:201]), pedidos
+    # (b) fin en el pasado dentro de la cobertura: sin red aunque ya no este fresca
+    assert sincronizar(sim, "15m", t[20], t[150], descargar, paso, ahora=t[390]).equals(todo.iloc[20:151])
+    assert pedidos == []
+    # dentro del margen tras el siguiente cierre: todavia no cuenta como fresca → pide
+    ahora1 = t[201] + pd.Timedelta(minutes=1)
+    sincronizar(sim, "15m", t[20], t[201], descargar, paso, ahora=ahora1)
+    assert pedidos == [(t[199], t[201])] and carga(sim, "15m")[2] == ahora1, pedidos
+    pedidos.clear()
+    sincronizar(sim, "15m", t[20], t[201], descargar, paso, ahora=t[201] + m + pd.Timedelta(seconds=30))
+    assert pedidos == [(t[200], t[201])], pedidos
+    pedidos.clear()
+    assert sincronizar(sim, "15m", t[20], t[201], descargar, paso, ahora=t[201] + pd.Timedelta(minutes=9)).equals(
+        todo.iloc[20:202]) and pedidos == []
+    # sincronizado nunca retrocede; una descarga que no llega al cierre actual no la marca fresca
+    ult = carga(sim, "15m")[2]
+    registrar_carga(sim, "15m", t[20], t[201], ahora0)
+    assert carga(sim, "15m")[2] == ult
+    # mercado cerrado (sin vela recien cerrada): no se marca fresca, se vuelve a preguntar
+    fin_sem = t[399] + pd.Timedelta(days=1)
+    sincronizar(sim, "15m", t[20], fin_sem, descargar, paso, ahora=fin_sem + pd.Timedelta(minutes=3))
+    pedidos.clear()
+    sincronizar(sim, "15m", t[20], fin_sem, descargar, paso, ahora=fin_sem + pd.Timedelta(minutes=5))
+    assert pedidos == [(t[398], fin_sem)] and carga(sim, "15m")[1] == t[399], pedidos
+    # descarga cortada por Dukascopy (falta la ultima vela cerrada): no se marca fresca
+    limpiar()
+    ahora2 = t[300] + m + pd.Timedelta(minutes=1)
+    sincronizar(sim, "15m", t[10], t[300], lambda a, b: descargar(a, t[250]), paso, ahora=ahora2)
+    assert carga(sim, "15m")[1:] == (t[250], pd.Timestamp("1970-01-01", tz="UTC"))
+    pedidos.clear()
+    got = sincronizar(sim, "15m", t[10], t[300], descargar, paso, ahora=ahora2 + pd.Timedelta(minutes=1))
+    assert pedidos == [(t[249], t[300])] and got.equals(todo.iloc[10:301]), pedidos
     # 6) sin datos (fin de semana / futuro): no registra nada raro
     limpiar()
     fut = pd.Timestamp("2027-01-01", tz="UTC")
