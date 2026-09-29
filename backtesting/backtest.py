@@ -27,6 +27,9 @@ import pandas as pd
 # una regla mejor en la metodologia.
 RETORNO_RIESGO_TP = 2.0
 
+# v2: "sin_llenar" (el precio nunca volvió a la entrada) y "sin_resolver" no cuentan.
+RESULTADOS_RESUELTOS = ("gano", "perdio", "invalidado")
+
 
 def _simular_uno(ohlc: pd.DataFrame, setup: pd.Series, r_multiplo_tp: float) -> dict:
     entrada, stop, direccion = setup["entrada"], setup["stop"], setup["direccion"]
@@ -80,7 +83,7 @@ def _tasas_confluencia(resultados: pd.DataFrame) -> dict:
 
 def reporte(resultados: pd.DataFrame) -> dict:
     confluencia = _tasas_confluencia(resultados)
-    resueltos = resultados[resultados["resultado"] != "sin_resolver"]
+    resueltos = resultados[resultados["resultado"].isin(RESULTADOS_RESUELTOS)]
     n = len(resueltos)
     if n == 0:
         return {"n_setups": 0, "sin_resolver": len(resultados), "rentable_sin_optimizar": None, **confluencia}
@@ -133,10 +136,92 @@ def backtest_out_of_sample(ohlc: pd.DataFrame, corte, swing_length: int = 20, r_
     return salida
 
 
+def _simular_v2_uno(ohlc: pd.DataFrame, s) -> dict:
+    """Motor v2: orden límite en `entrada` desde la vela siguiente a `indice_conocido`.
+    - Vela que llena: si toca el stop -> perdió (peor caso); si cierra más allá de
+      `zona_extremo` -> invalidado, sale al cierre (§1.3); el TP no cuenta en esa vela
+      (el orden intrabar es desconocido).
+    - Después: stop antes que TP si ambos se tocan en la misma vela (peor caso)."""
+    long = s["direccion"] == "long"
+    entrada, stop, tp, extremo = s["entrada"], s["stop"], s["tp"], s["zona_extremo"]
+    riesgo = abs(entrada - stop)
+    riesgo_pct = riesgo / entrada
+    lleno_en = None
+    for p in range(int(s["indice_conocido"]) + 1, len(ohlc)):
+        v = ohlc.iloc[p]
+        toca_stop = v["low"] <= stop if long else v["high"] >= stop
+        if lleno_en is None:
+            if not (v["low"] <= entrada if long else v["high"] >= entrada):
+                continue
+            lleno_en = p
+            if toca_stop:
+                return {"resultado": "perdio", "r": -1.0, "velas": 1, "riesgo_pct": riesgo_pct}
+            if (v["close"] < extremo) if long else (v["close"] > extremo):
+                r = (v["close"] - entrada) / riesgo if long else (entrada - v["close"]) / riesgo
+                return {"resultado": "invalidado", "r": float(r), "velas": 1, "riesgo_pct": riesgo_pct}
+            continue
+        velas = p - lleno_en + 1
+        if toca_stop:
+            return {"resultado": "perdio", "r": -1.0, "velas": velas, "riesgo_pct": riesgo_pct}
+        if v["high"] >= tp if long else v["low"] <= tp:
+            return {"resultado": "gano", "r": float(abs(tp - entrada) / riesgo), "velas": velas, "riesgo_pct": riesgo_pct}
+    estado = "sin_llenar" if lleno_en is None else "sin_resolver"
+    return {"resultado": estado, "r": 0.0, "velas": 0, "riesgo_pct": riesgo_pct}
+
+
+def simular_v2(ohlc: pd.DataFrame, setups: pd.DataFrame) -> pd.DataFrame:
+    """Simula solo los setups válidos del motor v2."""
+    validos = setups[setups["valido"].astype(bool)].reset_index(drop=True)
+    columnas = ["resultado", "r", "velas", "riesgo_pct"]
+    if validos.empty:
+        return pd.concat([validos, pd.DataFrame(columns=columnas)], axis=1)
+    return pd.concat([validos, pd.DataFrame([_simular_v2_uno(ohlc, f) for _, f in validos.iterrows()])], axis=1)
+
+
+def backtest_v2(ohlc: pd.DataFrame, setups: pd.DataFrame) -> dict:
+    """Reporte separado por tipo de apertura y dirección (compra/venta, mismo vocabulario que /api/tendencia)."""
+    resultados = simular_v2(ohlc, setups)
+    salida = {}
+    for tipo in ("reversion", "continuacion"):
+        salida[tipo] = {}
+        for ls, cv in (("long", "compra"), ("short", "venta")):
+            sub = resultados[(resultados["tipo"] == tipo) & (resultados["direccion"] == ls)] if len(resultados) else resultados
+            salida[tipo][cv] = reporte(sub)
+    return salida
+
+
 def demo() -> None:
     from datetime import datetime
 
     from conectividad import obtener_velas
+
+    # ── v2 (sintético, sin red) ──
+    idx = pd.date_range("2026-01-05", periods=8, freq="h", tz="UTC")
+
+    def serie(filas):
+        return pd.DataFrame(filas, columns=["open", "high", "low", "close", "volume"], index=idx[: len(filas)])
+
+    base = {"tipo": "continuacion", "direccion": "long", "indice_conocido": 0, "entrada": 100.0,
+            "stop": 95.0, "tp": 110.0, "zona_extremo": 97.0, "valido": True}
+    s = pd.Series(base)
+    gana = serie([(105, 106, 104, 105, 1), (102, 103, 99, 101, 1), (101, 104, 100, 103, 1), (103, 111, 102, 110, 1)])
+    r = _simular_v2_uno(gana, s)
+    assert r["resultado"] == "gano" and r["r"] == 2.0, r
+    assert _simular_v2_uno(serie([(105, 106, 104, 105, 1), (106, 112, 105, 111, 1)]), s)["resultado"] == "sin_llenar"
+    inval = _simular_v2_uno(serie([(105, 106, 104, 105, 1), (101, 101, 95.5, 96, 1)]), s)
+    assert inval["resultado"] == "invalidado" and round(inval["r"], 2) == -0.8, inval  # sale al cierre 96
+    ambos = serie([(105, 106, 104, 105, 1), (102, 103, 99, 101, 1), (101, 111, 94, 100, 1)])
+    assert _simular_v2_uno(ambos, s)["resultado"] == "perdio"  # stop y TP en la misma vela: peor caso
+    tp_en_llenado = serie([(105, 106, 104, 105, 1), (101, 111, 99, 108, 1), (108, 112, 107, 111, 1)])
+    assert _simular_v2_uno(tp_en_llenado, s)["velas"] == 2  # el TP de la vela que llena no cuenta
+    corto = pd.Series({**base, "direccion": "short", "stop": 105.0, "tp": 90.0, "zona_extremo": 103.0})
+    assert _simular_v2_uno(serie([(95, 96, 94, 95, 1), (98, 101, 97, 99, 1), (99, 100, 89, 90, 1)]), corto)["resultado"] == "gano"
+    rep = backtest_v2(gana, pd.DataFrame([base, {**base, "valido": False}]))
+    assert rep["continuacion"]["compra"]["n_setups"] == 1 and rep["continuacion"]["compra"]["expectativa_r"] == 2.0
+    assert rep["reversion"]["compra"]["n_setups"] == 0
+    sin_llenar = backtest_v2(serie([(105, 106, 104, 105, 1), (106, 112, 105, 111, 1)]), pd.DataFrame([base]))
+    assert sin_llenar["continuacion"]["compra"]["n_setups"] == 0  # sin_llenar no cuenta como resuelto
+    print("backtest v2 OK")
 
     ohlc = obtener_velas("XAUUSD", datetime(2020, 1, 1), datetime(2024, 1, 1))
     resultado = backtest_out_of_sample(ohlc, corte=datetime(2023, 1, 1, tzinfo=ohlc.index.tz), swing_length=20)
