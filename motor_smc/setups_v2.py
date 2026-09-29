@@ -4,10 +4,16 @@
   continuacion: BOS a favor tras un retroceso; entrada en el punto medio de la zona
                 de mitigación (2-3 últimas velas contrarias del retroceso, L52). Reglas R3-R6.
 
-Anti-anticipación: `smc.bos_choch` marca el evento en un swing que solo se confirma cuando
-existe el swing siguiente + `swing_length` velas, y la ruptura en `BrokenIndex`. El setup
-"existe" en `indice_conocido = max(BrokenIndex, siguiente_swing + swing_length)`; toda regla y
-el backtest parten de ahí, nunca antes.
+Anclaje (verificado contra smartmoneyconcepts.smc.bos_choch): el evento BOS/CHoCH se marca en
+`i` = el swing cuyo nivel se rompe (Level = nivel de `i`, ruptura en `BrokenIndex`). El patrón
+de 4 swings se completa con los dos swings posteriores a `i`:
+  s = primer swing después de `i`: el barrido (reversión) o el extremo del retroceso (continuación);
+      ahí van el stop, R1, las divergencias y la zona de mitigación.
+  t = segundo swing después de `i`: el que la librería necesita para reconocer el patrón.
+
+Anti-anticipación: `t` solo se confirma `swing_length` velas después, así que el setup "existe"
+en `indice_conocido = max(BrokenIndex, t + swing_length)`; toda regla y el backtest parten de
+ahí, nunca antes.
 
 El detector viejo (`setup_ob_fvg.detectar_setups`) sigue intacto: lo usan los EA, T-01 y el
 modo sombra de la Etapa 2 necesita comparar los dos.
@@ -21,7 +27,7 @@ from .motor import analizar
 from .setup_ob_fvg import VENTANA_FVG_VELAS, _hay_liquidez_confluente, _hay_order_block_confluente
 
 MAX_VELAS_ZONA = 3
-BUSQUEDA_ZONA_VELAS = 3  # la zona debe terminar en el swing del retroceso o hasta 2 velas antes
+BUSQUEDA_ZONA_VELAS = 3  # la zona debe terminar en el swing del retroceso (s) o hasta 2 velas antes
 
 COLUMNAS = [
     "tipo", "direccion", "indice_barrido", "indice_confirmacion", "indice_conocido", "indice_zona",
@@ -31,12 +37,13 @@ COLUMNAS = [
 ]
 
 
-def _indice_conocido(swings: pd.DataFrame, i: int, k: int, swing_length: int, n: int) -> int | None:
+def _anclaje(swings: pd.DataFrame, i: int, k: int, swing_length: int, n: int) -> tuple[int, int] | None:
+    """(s, indice_conocido) del evento marcado en el swing `i`; None si todavía no se conoce."""
     siguientes = swings.index[(swings.index > i) & swings["HighLow"].notna()]
-    if len(siguientes) == 0:
+    if len(siguientes) < 2:
         return None
-    conocido = max(k, int(siguientes[0]) + swing_length)
-    return conocido if conocido < n else None
+    conocido = max(k, int(siguientes[1]) + swing_length)
+    return (int(siguientes[0]), conocido) if conocido < n else None
 
 
 def candidatos_reversion(ohlc: pd.DataFrame, res: dict, swing_length: int) -> list[dict]:
@@ -48,10 +55,11 @@ def candidatos_reversion(ohlc: pd.DataFrame, res: dict, swing_length: int) -> li
         if pd.isna(k) or k == 0:
             continue
         k = int(k)
-        conocido = _indice_conocido(swings, i, k, swing_length, len(ohlc))
-        if conocido is None:
+        ancla = _anclaje(swings, i, k, swing_length, len(ohlc))
+        if ancla is None:
             continue
-        ventana = fvg.iloc[i : min(i + VENTANA_FVG_VELAS, k) + 1]
+        s, conocido = ancla  # s = swing del barrido
+        ventana = fvg.iloc[s : min(s + VENTANA_FVG_VELAS, k) + 1]
         # el FVG en j (vela central) solo está completo tras la vela j+1: debe ser <= conocido
         js = ventana.index[(ventana["FVG"] == d) & (ventana.index + 1 <= conocido)]
         if len(js) == 0:
@@ -59,12 +67,12 @@ def candidatos_reversion(ohlc: pd.DataFrame, res: dict, swing_length: int) -> li
         j = int(js[0])
         top, bottom = float(fvg.at[j, "Top"]), float(fvg.at[j, "Bottom"])
         entrada = (top + bottom) / 2
-        stop = float(ohlc["low"].iloc[i] if d == 1 else ohlc["high"].iloc[i])
+        stop = float(ohlc["low"].iloc[s] if d == 1 else ohlc["high"].iloc[s])
         if (d == 1 and stop >= entrada) or (d == -1 and stop <= entrada):
             continue
         salida.append({
             "tipo": "reversion", "direccion": "long" if d == 1 else "short",
-            "indice_barrido": int(i), "indice_confirmacion": k, "indice_conocido": conocido, "indice_zona": j,
+            "indice_barrido": s, "indice_confirmacion": k, "indice_conocido": conocido, "indice_zona": j,
             "entrada": entrada, "stop": stop, "zona_extremo": bottom if d == 1 else top,
             "fvg_top": top, "fvg_bottom": bottom,
         })
@@ -80,11 +88,12 @@ def candidatos_continuacion(ohlc: pd.DataFrame, res: dict, swing_length: int) ->
         if pd.isna(k) or k == 0:
             continue
         k = int(k)
-        conocido = _indice_conocido(swings, i, k, swing_length, len(ohlc))
-        if conocido is None:
+        ancla = _anclaje(swings, i, k, swing_length, len(ohlc))
+        if ancla is None:
             continue
+        s, conocido = ancla  # s = extremo del retroceso (HL alcista / LH bajista)
         contraria = (ohlc["close"] < ohlc["open"]) if d == 1 else (ohlc["close"] > ohlc["open"])
-        fin = next((p for p in range(i, max(i - BUSQUEDA_ZONA_VELAS, -1), -1) if contraria.iloc[p]), None)
+        fin = next((p for p in range(s, max(s - BUSQUEDA_ZONA_VELAS, -1), -1) if contraria.iloc[p]), None)
         if fin is None:
             continue
         ini = fin
@@ -93,13 +102,12 @@ def candidatos_continuacion(ohlc: pd.DataFrame, res: dict, swing_length: int) ->
         zona = ohlc.iloc[ini : fin + 1]
         alto, bajo = float(zona["high"].max()), float(zona["low"].min())
         entrada = (alto + bajo) / 2
-        # en smc.bos_choch el BOS se marca en el swing del retroceso (HL alcista / LH bajista)
-        stop = float(ohlc["low"].iloc[i] if d == 1 else ohlc["high"].iloc[i])
+        stop = float(ohlc["low"].iloc[s] if d == 1 else ohlc["high"].iloc[s])
         if (d == 1 and stop >= entrada) or (d == -1 and stop <= entrada):
             continue
         salida.append({
             "tipo": "continuacion", "direccion": "long" if d == 1 else "short",
-            "indice_barrido": int(i), "indice_confirmacion": k, "indice_conocido": conocido, "indice_zona": ini,
+            "indice_barrido": s, "indice_confirmacion": k, "indice_conocido": conocido, "indice_zona": ini,
             "entrada": entrada, "stop": stop, "zona_extremo": bajo if d == 1 else alto,
         })
     return salida
@@ -183,6 +191,10 @@ def embudo(setups: pd.DataFrame) -> dict:
 
 # ── pruebas ──────────────────────────────────────────────────────────────────
 
+# swl 5: swings 23 H, 37 L, 61 H, 91 L, 111 H, 125 L, 149 H... -> CHoCH -1 en 37 (rompe en 86), BOS +1 en 111 (138)
+TRAMOS_EJEMPLO = [(100, 120, 24), (120, 110, 14), (110, 135, 24), (135, 104, 30), (104, 125, 20),
+                  (125, 111, 14), (111, 140, 24), (140, 128, 14), (128, 150, 24)]
+
 def _res_prueba(n: int = 40) -> tuple:
     """ohlc + resultado de `analizar` 100% controlado (mismas columnas que smartmoneyconcepts)."""
     idx = pd.date_range("2026-01-05", periods=n, freq="15min", tz="UTC")
@@ -197,31 +209,36 @@ def _res_prueba(n: int = 40) -> tuple:
 
 
 def demo() -> None:
-    # Reversión: CHoCH alcista en la vela 20, ruptura en 24, siguiente swing en 26 (sl=3 -> conocido 29)
+    # Reversión: CHoCH alcista marcado en el máximo roto i=16, barrido s=20, t=26, ruptura en 24
+    # (sl=3 -> conocido = max(24, 26 + 3) = 29)
     ohlc, res = _res_prueba()
     ohlc.iloc[20, ohlc.columns.get_loc("low")] = 90.0
+    res["swings"].loc[16, ["HighLow", "Level"]] = [1, 102.0]
     res["swings"].loc[20, ["HighLow", "Level"]] = [-1, 90.0]
     res["swings"].loc[26, ["HighLow", "Level"]] = [1, 110.0]
-    res["estructura"].loc[20, ["CHOCH", "BrokenIndex"]] = [1, 24]
+    res["estructura"].loc[16, ["CHOCH", "BrokenIndex"]] = [1, 24]
     res["fvg"].loc[22, ["FVG", "Top", "Bottom"]] = [1, 105.0, 103.0]
     rev = candidatos_reversion(ohlc, res, swing_length=3)
     assert len(rev) == 1, rev
     assert rev[0]["entrada"] == 104.0 and rev[0]["stop"] == 90.0
-    assert rev[0]["zona_extremo"] == 103.0 and rev[0]["indice_conocido"] == 29
-    # sin swing siguiente el CHoCH todavía no se conoce -> no hay candidato
+    assert rev[0]["zona_extremo"] == 103.0 and rev[0]["indice_conocido"] == 29 and rev[0]["indice_barrido"] == 20
+    # sin el swing t el CHoCH todavía no se conoce -> no hay candidato
     ohlc_b, res_b = _res_prueba()
+    res_b["swings"].loc[16, ["HighLow", "Level"]] = [1, 102.0]
     res_b["swings"].loc[20, ["HighLow", "Level"]] = [-1, 90.0]
-    res_b["estructura"].loc[20, ["CHOCH", "BrokenIndex"]] = [1, 24]
+    res_b["estructura"].loc[16, ["CHOCH", "BrokenIndex"]] = [1, 24]
     res_b["fvg"].loc[22, ["FVG", "Top", "Bottom"]] = [1, 105.0, 103.0]
     assert candidatos_reversion(ohlc_b, res_b, swing_length=3) == []
 
-    # Continuación: BOS alcista en el swing 20 (mínimo del retroceso), zona = velas bajistas 18-20
+    # Continuación: BOS alcista marcado en el máximo roto i=14; s=20 (mínimo del retroceso),
+    # zona = velas bajistas 18-20
     ohlc_c, res_c = _res_prueba()
     for p, fila in {17: (106, 107, 104, 105), 18: (104, 105, 101, 102), 19: (102, 103, 99, 100), 20: (100, 101, 95, 97)}.items():
         ohlc_c.iloc[p, :4] = fila
+    res_c["swings"].loc[14, ["HighLow", "Level"]] = [1, 108.0]
     res_c["swings"].loc[20, ["HighLow", "Level"]] = [-1, 95.0]
     res_c["swings"].loc[26, ["HighLow", "Level"]] = [1, 115.0]
-    res_c["estructura"].loc[20, ["BOS", "BrokenIndex"]] = [1, 24]
+    res_c["estructura"].loc[14, ["BOS", "BrokenIndex"]] = [1, 24]
     cont = candidatos_continuacion(ohlc_c, res_c, swing_length=3)
     assert len(cont) == 1, cont
     assert cont[0]["indice_zona"] == 18  # máximo 3 velas: 18, 19, 20 (la 17 queda fuera)
@@ -245,9 +262,10 @@ def demo() -> None:
     # anti-anticipación: un FVG que termina de formarse después de indice_conocido no cuenta
     ohlc_f, res_f = _res_prueba()
     ohlc_f.iloc[20, ohlc_f.columns.get_loc("low")] = 90.0
+    res_f["swings"].loc[16, ["HighLow", "Level"]] = [1, 102.0]
     res_f["swings"].loc[20, ["HighLow", "Level"]] = [-1, 90.0]
-    res_f["swings"].loc[22, ["HighLow", "Level"]] = [1, 110.0]      # siguiente swing 22 + sl 1 = 23
-    res_f["estructura"].loc[20, ["CHOCH", "BrokenIndex"]] = [1, 24]  # conocido = max(24, 23) = 24
+    res_f["swings"].loc[22, ["HighLow", "Level"]] = [1, 110.0]      # t = 22 + sl 1 = 23
+    res_f["estructura"].loc[16, ["CHOCH", "BrokenIndex"]] = [1, 24]  # conocido = max(24, 23) = 24
     res_f["fvg"].loc[24, ["FVG", "Top", "Bottom"]] = [1, 105.0, 103.0]  # j = 24: necesita la vela 25
     assert candidatos_reversion(ohlc_f, res_f, swing_length=1) == []
     res_f["fvg"].loc[23, ["FVG", "Top", "Bottom"]] = [1, 105.0, 103.0]  # j = 23: completo en 24
@@ -261,6 +279,20 @@ def demo() -> None:
     res["liquidez"].loc[0, ["Liquidity", "Swept"]] = [-1, 35]                 # "barrido" en 35 > 29: futuro
     res["liquidez"].loc[1, ["Liquidity", "Swept"]] = [-1, 35]
     assert evaluar(rev[0], ohlc, mayor_pasado, "15m", "1H", res, 3)["liquidez_confluente"] is False
+
+    # Librería real: el evento se marca en el swing cuyo nivel se rompe (i); s = primer swing
+    # posterior (barrido / retroceso), t = segundo (el que completa el patrón).
+    o = R.zigzag(TRAMOS_EJEMPLO)
+    r = analizar(o, swing_length=5)
+    assert r["estructura"].at[37, "CHOCH"] == -1 and r["estructura"].at[111, "BOS"] == 1
+    choch = [c for c in candidatos_reversion(o, r, 5) if c["indice_confirmacion"] == 86]
+    assert len(choch) == 1, candidatos_reversion(o, r, 5)
+    assert choch[0]["indice_barrido"] == 61 and choch[0]["stop"] == float(o["high"].iloc[61])
+    assert choch[0]["indice_conocido"] == 96 and 61 <= choch[0]["indice_zona"] <= 66  # max(86, 91 + 5)
+    bos = [c for c in candidatos_continuacion(o, r, 5) if c["indice_confirmacion"] == 138]
+    assert len(bos) == 1, candidatos_continuacion(o, r, 5)
+    assert bos[0]["indice_barrido"] == 125 and bos[0]["stop"] == float(o["low"].iloc[125])
+    assert bos[0]["indice_conocido"] == 154 and bos[0]["indice_zona"] == 123  # max(138, 149 + 5); zona 123-125
     print("setups_v2.demo() OK")
 
 
