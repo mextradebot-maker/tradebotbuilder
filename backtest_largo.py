@@ -23,8 +23,9 @@ ANIO = timedelta(days=365)
 VENTANA = {"Scalping 15m": 3 * ANIO, "Scalping 30m": 3 * ANIO, "Intraday 1H": 8 * ANIO, "Intraday 4H": 15 * ANIO,
            "Intraday D": 15 * ANIO, "Swing (S)": None, "Swing (M)": None}
 SERIE_BASE = {"15m": "15m", "30m": "15m", "1H": "1H", "4H": "1H", "D": "D", "S": "D", "M": "D"}  # vela -> serie guardada
-DIAS_RECALCULO = 6
+DIAS_RECALCULO = 5  # < 7: una fila de un domingo tardio no se salta el domingo siguiente
 PAUSA_COMBO_S = 30
+CICLO_TRABAJO = 2  # pausa tras un combo >= 2 x lo que tardo: el hilo usa como mucho ~33% de CPU
 PAUSA_OCIOSA_S = 600
 PAUSA_ERROR_S = 3600  # un combo que fallo no se reintenta antes de esto
 
@@ -67,7 +68,7 @@ def calcular(simbolo: str, temporalidad: str, ahora: datetime | None = None, obt
     from conectividad import TEMPORALIDADES, almacen, obtener_velas
     from motor_smc.reglas import DURACION_VELA
     from motor_smc.setups_v2 import detectar_setups_v2, embudo
-    obtener = obtener or obtener_velas
+    obtener = obtener or (lambda s, a, b, iv: obtener_velas(s, a, b, iv, solo_almacen=True))  # nunca descarga directa de anios
     ahora = ahora or datetime.now(timezone.utc)
     t = TEMPORALIDADES[temporalidad]
     vela, mayor = t["vela"], t["vela_mayor"]
@@ -103,6 +104,10 @@ def guardar(simbolo: str, temporalidad: str, calc: dict, calculado_en: datetime 
                  desde = EXCLUDED.desde, hasta = EXCLUDED.hasta, velas = EXCLUDED.velas, resultado = EXCLUDED.resultado""",
             (simbolo, temporalidad, calculado_en or datetime.now(timezone.utc), calc["desde"], calc["hasta"],
              calc["velas"], json.dumps(calc["resultado"], allow_nan=False)))
+
+
+def pausa_tras(segundos_calculo: float) -> float:
+    return max(PAUSA_COMBO_S, CICLO_TRABAJO * segundos_calculo)
 
 
 def _iso(t) -> str:
@@ -173,7 +178,7 @@ def _bucle(dormir=time.sleep) -> None:
                 except Exception as e:
                     vetados[c] = ahora + timedelta(seconds=PAUSA_ERROR_S)
                     log.warning("backtest largo %s %s fallo: %s: %s", *c, type(e).__name__, e)
-                pausa = PAUSA_COMBO_S
+                pausa = pausa_tras(time.monotonic() - t0)
         except Exception:
             log.exception("ciclo de backtest largo fallo")
             pausa = 60
@@ -222,7 +227,7 @@ def demo() -> None:
     # decisiones del hilo (domingo 2026-09-27; lunes 2026-09-28)
     dom, lun = datetime(2026, 9, 27, 3, tzinfo=timezone.utc), datetime(2026, 9, 28, 15, tzinfo=timezone.utc)
     A, B = ("XAUUSD", "Intraday 1H"), ("EURUSD", "Intraday 1H")
-    viejo, fresco = dom - timedelta(days=7), dom - timedelta(days=2)
+    viejo, fresco = dom - timedelta(days=6), dom - timedelta(days=4)  # 6 dias (domingo tardio): se recalcula; 4: no
     cerrado, abierto = (lambda s, t: False), (lambda s, t: True)
     no_urg, si_urg = (lambda: False), (lambda: True)
     assert siguiente([A, B], {A: viejo}, lun, no_urg, abierto) == B  # sin fila: cualquier dia
@@ -239,6 +244,71 @@ def demo() -> None:
     assert len(llamadas) == 1  # urgentes() se consulta una vez y solo si hace falta
     siguiente([A], {}, lun, lambda: llamadas.append(1) or False, cerrado)
     assert len(llamadas) == 1
+
+    ahora = datetime(2026, 9, 29, 12, 0, tzinfo=timezone.utc)
+    # duty cycle: pausa >= 2 x el calculo (max 33% de CPU), nunca menos que PAUSA_COMBO_S
+    assert pausa_tras(1) == PAUSA_COMBO_S and pausa_tras(60) == 120 and pausa_tras(600) == 1200
+
+    # solo_almacen: sin almacen o sin cobertura lanza y NO hay descarga directa; por defecto todo igual
+    import os
+
+    import dukascopy_python as dp
+    import pandas as _pd
+
+    from conectividad import historico as h
+    descargas = []
+    fetch0 = dp.fetch
+    dp.fetch = lambda *a, **k: descargas.append(a) or _pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    ini, fin = ahora - timedelta(days=400), ahora
+    try:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM velas_carga WHERE simbolo = 'XAUUSD'")
+        try:
+            h.obtener_velas("XAUUSD", ini, fin, dp.INTERVAL_HOUR_1, solo_almacen=True)
+            raise AssertionError("debio lanzar: el almacen no cubre")
+        except RuntimeError:
+            pass
+        assert descargas == [], "solo_almacen no debe bajar historia de Dukascopy"
+        h._ALMACEN_FALLA[0] = time.monotonic() + 60  # almacen en pausa
+        try:
+            h.obtener_velas("XAUUSD", ini, fin, dp.INTERVAL_HOUR_1, solo_almacen=True)
+            raise AssertionError("debio lanzar: almacen en pausa")
+        except RuntimeError:
+            pass
+        assert descargas == []
+        h.obtener_velas("XAUUSD", ini, fin, dp.INTERVAL_HOUR_1)  # por defecto: cae a la descarga directa como siempre
+        assert len(descargas) == 1
+        h._ALMACEN_FALLA[0] = 0.0
+        url = os.environ.pop("DATABASE_URL")
+        try:
+            h.obtener_velas("XAUUSD", ini, fin, dp.INTERVAL_HOUR_1, solo_almacen=True)
+            raise AssertionError("debio lanzar: sin BD")
+        except RuntimeError:
+            pass
+        assert len(descargas) == 1
+        os.environ["DATABASE_URL"] = url
+        h.obtener_velas("XAUUSD", ini, fin, dp.INTERVAL_HOUR_1)  # por defecto sin cambios: el almacen baja la ventana y la guarda
+        assert len(descargas) == 2
+    finally:
+        dp.fetch = fetch0
+        h._ALMACEN_FALLA[0] = 0.0
+        os.environ.setdefault("DATABASE_URL", "")
+    # calcular usa por defecto solo_almacen=True para base y mayor
+    import conectividad as _c
+    llamadas_kw = []
+    orig_ov = _c.obtener_velas
+    _c.obtener_velas = lambda s, a, b, iv, **kw: llamadas_kw.append(kw) or (_ for _ in ()).throw(RuntimeError("x"))
+    try:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM velas_carga WHERE simbolo = 'TSTLARGO'")
+        almacen.registrar_carga("TSTLARGO", "15m", ahora - 4 * ANIO, ahora)
+        try:
+            calcular("TSTLARGO", "Scalping 15m", ahora)
+        except RuntimeError:
+            pass
+        assert llamadas_kw == [{"solo_almacen": True}], llamadas_kw
+    finally:
+        _c.obtener_velas = orig_ov
 
     # calcular + guardar/leer con velas sinteticas
     sim = "TSTLARGO"

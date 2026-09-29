@@ -133,20 +133,29 @@ def obtener_velas(
     fin: datetime,
     intervalo: str = dp.INTERVAL_HOUR_1,
     offer_side: str = dp.OFFER_SIDE_BID,
+    solo_almacen: bool = False,
 ):
     """Descarga velas históricas. `simbolo` acepta una clave de SIMBOLOS o un
     instrumento crudo de dukascopy_python.instruments (ej. "XAU/USD").
 
     Con BD (DATABASE_URL) y un símbolo del catálogo lee del almacén de velas y solo baja de Dukascopy lo
-    nuevo (conectividad/almacen.py); mismo resultado que la descarga directa. Si el almacén falla → directa."""
+    nuevo (conectividad/almacen.py); mismo resultado que la descarga directa. Si el almacén falla → directa.
+    `solo_almacen=True` (backtest largo): nunca cae a la descarga directa de años; si el almacén no está
+    disponible (sin BD, en pausa, fallando) o no cubre `inicio`, lanza RuntimeError. Solo puede bajar de
+    Dukascopy la cola reciente (incremental)."""
     instrumento = SIMBOLOS.get(simbolo, simbolo)
+    if solo_almacen and not (simbolo in SIMBOLOS and intervalo in _ALMACEN and offer_side == dp.OFFER_SIDE_BID
+                             and os.environ.get("DATABASE_URL") and time.monotonic() >= _ALMACEN_FALLA[0]):
+        raise RuntimeError(f"almacen no disponible para {simbolo} {intervalo} (solo_almacen)")
     if (simbolo in SIMBOLOS and intervalo in _ALMACEN and offer_side == dp.OFFER_SIDE_BID
             and os.environ.get("DATABASE_URL") and time.monotonic() >= _ALMACEN_FALLA[0]):
         try:
-            return _velas_almacen(simbolo, instrumento, inicio, fin, intervalo)
+            return _velas_almacen(simbolo, instrumento, inicio, fin, intervalo, solo_almacen)
         except _ErrDescarga as e:
             raise e.__cause__  # falla de Dukascopy, no del almacen: sin pausa ni reintento directo
-        except Exception:
+        except Exception as e:
+            if solo_almacen:
+                raise RuntimeError(f"almacen fallo para {simbolo} {intervalo} (solo_almacen): {e}") from e
             # ponytail: pausa global de 60 s tras cualquier falla (BD caida no cuesta un timeout por llamada)
             _ALMACEN_FALLA[0] = time.monotonic() + 60
             log.error("almacen de velas fallo (%s %s); descarga directa", simbolo, intervalo, exc_info=True)
@@ -244,7 +253,7 @@ def _descargar(instrumento, intervalo, a, b, simbolo=None):
     return df
 
 
-def _velas_almacen(simbolo, instrumento, inicio, fin, intervalo):
+def _velas_almacen(simbolo, instrumento, inicio, fin, intervalo, solo_almacen=False):
     from conectividad import almacen
     import pandas as pd
 
@@ -254,6 +263,10 @@ def _velas_almacen(simbolo, instrumento, inicio, fin, intervalo):
     ini = pd.Timestamp(datetime.fromtimestamp(inicio.timestamp(), timezone.utc))
     f = pd.Timestamp(datetime.fromtimestamp(fin.timestamp(), timezone.utc))
     lo = ini.floor(_VELA_QUE_CONTIENE[intervalo]) if intervalo in _VELA_QUE_CONTIENE else ini
+    if solo_almacen:
+        c = almacen.carga(simbolo, serie)
+        if c is None or c[0] > lo:
+            raise RuntimeError(f"almacen no cubre {simbolo} {serie} desde {lo} (solo_almacen)")
     base = almacen.sincronizar(simbolo, serie, lo, f + _EXTRA_FIN.get(intervalo, timedelta(0)),
                                lambda a, b: _descargar(instrumento, iv_base, a, b, simbolo), paso)
     if derivada is None:

@@ -16,6 +16,7 @@ refresco, I/O-bound; por defecto 6, 1 = en serie; REFRESCO_WORKERS es alias obso
 import http.client
 import logging
 import os
+import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
@@ -103,6 +104,8 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    # el detector del backtest largo retiene el GIL por segundos: con 1 ms los hilos HTTP retoman la CPU antes
+    sys.setswitchinterval(0.001)
     if os.environ.get("REFRESCO_ACTIVO", "1") != "0":
         import refresco
 
