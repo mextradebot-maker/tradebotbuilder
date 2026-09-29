@@ -20,6 +20,7 @@ modo sombra de la Etapa 2 necesita comparar los dos.
 """
 
 import pandas as pd
+from smartmoneyconcepts import smc
 
 from . import reglas as R
 from .indicadores import divergencia, macd, rsi
@@ -135,16 +136,20 @@ def evaluar(c: dict, ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, ve
     d, k, conocido = c["direccion"], c["indice_confirmacion"], c["indice_conocido"]
     mayor = R.cortar_mayor(ohlc_mayor, ohlc.index[conocido] + R.DURACION_VELA[vela], vela_mayor)
     es_reversion = c["tipo"] == "reversion"
+    # swing_highs_lows borra swings consecutivos del mismo tipo mirando swings posteriores: para R6 y
+    # las divergencias se recalculan solo con lo visible en indice_conocido (el recorte empieza en 0,
+    # así que los índices posicionales coinciden).
+    swings = smc.swing_highs_lows(ohlc.iloc[: conocido + 1], swing_length=swing_length)
     reglas = {
         "R1": R.r1_volumen(ohlc, c["indice_barrido"], vela) if es_reversion else R.NO_APLICA,
         "R2": R.r2_fvg(ohlc, c["fvg_top"], c["fvg_bottom"], c["indice_zona"]) if es_reversion else R.NO_APLICA,
         "R3": R.r3_ema(ohlc, k, d),
         "R4": R.r4_estructura(mayor, d, vela_mayor),
         "R5": R.r5_descuento_premium(mayor, c["entrada"], d, vela_mayor),
-        "R6": R.r6_tp_liquidez(ohlc, res["swings"], conocido, c["entrada"], c["stop"], d, swing_length),
+        "R6": R.r6_tp_liquidez(ohlc, swings, conocido, c["entrada"], c["stop"], d, swing_length),
     }
     fallas = [f"{nombre}: {r['razon']}" for nombre, r in reglas.items() if r["cumple"] is False]
-    div_rsi, div_macd = _divergencias(ohlc, res["swings"], c["indice_barrido"], d) if es_reversion else (None, None)
+    div_rsi, div_macd = _divergencias(ohlc, swings, c["indice_barrido"], d) if es_reversion else (None, None)
     direccion_num = 1 if d == "long" else -1
     liq = res["liquidez"]
     liq = liq[liq["Swept"] <= conocido]  # sin barridos posteriores a indice_conocido
@@ -293,6 +298,19 @@ def demo() -> None:
     assert len(bos) == 1, candidatos_continuacion(o, r, 5)
     assert bos[0]["indice_barrido"] == 125 and bos[0]["stop"] == float(o["low"].iloc[125])
     assert bos[0]["indice_conocido"] == 154 and bos[0]["indice_zona"] == 123  # max(138, 149 + 5); zona 123-125
+
+    # R6 sin look-ahead: con toda la serie la librería borra el máximo 49 (130.5) porque después
+    # (tras indice_conocido 56) llega otro máximo mayor sin mínimo entre ambos. En 56 era liquidez
+    # sin buscar y debe ser el TP.
+    o = R.zigzag([(100, 120, 20), (120, 110, 10), (110, 130, 20), (130, 129, 2), (129, 129.8, 6),
+                  (129.8, 140, 20), (140, 120, 20)])
+    o.iloc[50, o.columns.get_loc("high")] = 130.2  # la vela que abre el retroceso no toca 130.5
+    r = analizar(o, swing_length=5)
+    assert 49 not in r["swings"].index[r["swings"]["HighLow"] == 1]  # borrado usando el futuro
+    c = {"tipo": "continuacion", "direccion": "long", "indice_barrido": 51, "indice_confirmacion": 56,
+         "indice_conocido": 56, "indice_zona": 50, "entrada": 128.0, "stop": 127.0, "zona_extremo": 127.0}
+    r6 = evaluar(c, o, mayor_pasado, "1H", "1H", r, 5)["reglas"]["R6"]
+    assert r6["dato"] == {"tp": 130.5, "rr": 2.5}, r6
     print("setups_v2.demo() OK")
 
 
