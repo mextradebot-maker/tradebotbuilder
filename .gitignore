@@ -6,3 +6,6 @@ conectividad/.cache_calendario.json
 
 # Scripts temporales de agentes (Antigravity/Claude) -- nunca al repo
 scratch/
+
+# scratch de agentes (reportes, diffs, pickles)
+.superpowers/
