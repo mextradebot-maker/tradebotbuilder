@@ -43,7 +43,7 @@ input string InpAuthUrl          = "https://mextradebot.com.mx/api/v1/auth"; // 
 //--- CONEXION AL MOTOR PROPIO
 input string InpApiUrl           = "https://mextradebot.com.mx/api/setups"; // URL de /api/setups
 input string InpSimboloConsulta  = "XAUUSD";      // Simbolo tal como lo espera la API (ver conectividad.SIMBOLOS)
-input string InpTemporalidad     = "Intraday";    // Scalping / Intraday / Swing (H) / Swing (S) / Swing (M)
+input string InpTemporalidad     = "Intraday 1H"; // Scalping 15m / Scalping 30m / Intraday 1H / Intraday 4H / Intraday D / Swing (S) / Swing (M) (nombres viejos aceptados por la API)
 input int    InpDiasHistorico    = 0;             // 0 = usa el default calibrado de la API para InpTemporalidad
 
 //--- PARAMETROS DE OPERACION
@@ -74,10 +74,40 @@ int OnInit()
       Print("BLOQUEO DE SEGURIDAD: falta MTB_LICENSE_TOKEN. Solicita tu token a MexTradeBot.");
       return INIT_FAILED;
    }
+   ENUM_TIMEFRAMES tf_esperado;
+   if(!TimeframeEsperado(InpTemporalidad, tf_esperado))
+   {
+      Print("ERROR: temporalidad desconocida '", InpTemporalidad, "'. Usa: Scalping 15m, Scalping 30m, Intraday 1H, Intraday 4H, Intraday D, Swing (S) o Swing (M).");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   if(tf_esperado != InpTF)
+   {
+      Print("ERROR: la temporalidad '", InpTemporalidad, "' requiere InpTF = ", EnumToString(tf_esperado), " pero InpTF = ", EnumToString(InpTF), ". Ajusta InpTF o InpTemporalidad; el EA no inicia.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
    Print("MexTradeBot_SeguidorSMC inicializado -- consultando ", InpApiUrl, " para ", InpSimboloConsulta, " (", InpTemporalidad, "), solo opera setups confirmados");
    Print("Licencia: cuenta ", AccountInfoInteger(ACCOUNT_LOGIN), " (", ModoCuenta(), "), robot ", MTB_ROBOT_ID);
    Print("IMPORTANTE: agrega 'https://mextradebot.com.mx' (cubre ", InpApiUrl, " y ", InpAuthUrl, ") en Herramientas > Opciones > Expert Advisors > 'Permitir WebRequest para las URL siguientes', si no las consultas fallan.");
    return INIT_SUCCEEDED;
+}
+
+//+------------------------------------------------------------------+
+//| Timeframe que corresponde a cada temporalidad (canonicas + alias  |
+//| viejos que la API sigue aceptando). false = nombre desconocido.   |
+//+------------------------------------------------------------------+
+bool TimeframeEsperado(string nombre, ENUM_TIMEFRAMES &tf)
+{
+   StringTrimLeft(nombre);
+   StringTrimRight(nombre);
+   if(nombre == "Scalping 15m" || nombre == "Scalping")                        tf = PERIOD_M15;
+   else if(nombre == "Scalping 30m")                                            tf = PERIOD_M30;
+   else if(nombre == "Intraday 1H" || nombre == "Intraday")                     tf = PERIOD_H1;
+   else if(nombre == "Intraday 4H" || nombre == "Swing (H)" || nombre == "Swing") tf = PERIOD_H4;
+   else if(nombre == "Intraday D")                                              tf = PERIOD_D1;
+   else if(nombre == "Swing (S)")                                               tf = PERIOD_W1;
+   else if(nombre == "Swing (M)")                                               tf = PERIOD_MN1;
+   else return false;
+   return true;
 }
 
 //+------------------------------------------------------------------+
