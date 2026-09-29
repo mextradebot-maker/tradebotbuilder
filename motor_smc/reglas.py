@@ -9,7 +9,7 @@ import pandas as pd
 
 from smartmoneyconcepts import smc
 
-from .tendencia import obtener_tendencia
+from .tendencia import obtener_tendencia, tendencia_de_estructura
 
 # Umbrales por VELA, no por perfil (la Etapa 2 solo cambia el mapa perfil -> velas).
 UMBRAL_VOLUMEN = {"15m": 3.0, "30m": 3.0, "1H": 2.5, "4H": 2.0, "D": 1.0, "S": None, "M": None}  # L45
@@ -44,7 +44,8 @@ def cortar_mayor(ohlc_mayor: pd.DataFrame, ts_cierre: pd.Timestamp, vela_mayor: 
     if ohlc_mayor.empty:
         return ohlc_mayor
     duracion = DURACION_VELA[vela_mayor]
-    cierres = ohlc_mayor.index.map(lambda t: t + duracion)
+    # Timedelta: suma vectorizada (mismos valores que el map); DateOffset de meses sigue elemento a elemento
+    cierres = ohlc_mayor.index + duracion if isinstance(duracion, pd.Timedelta) else ohlc_mayor.index.map(lambda t: t + duracion)
     return ohlc_mayor[cierres <= ts_cierre]
 
 
@@ -71,46 +72,71 @@ def r1_volumen(ohlc: pd.DataFrame, i: int, vela: str) -> dict:
     return _res(multiplo >= umbral, round(multiplo, 2), f"volumen del barrido {multiplo:.2f}x vs umbral {umbral}x")
 
 
-def r2_fvg(ohlc: pd.DataFrame, top: float, bottom: float, j: int) -> dict:
-    valor_atr = atr(ohlc).iloc[j - 1] if j >= 1 else float("nan")
+def emas(ohlc: pd.DataFrame) -> dict[int, pd.Series]:
+    """EMAs de EMAS_SESGO (y la 20/50 del cruce) sobre toda la serie, una sola vez. ewm(adjust=False)
+    es causal: el valor en k es el mismo que sobre el prefijo [:k+1]."""
+    return {p: ohlc["close"].ewm(span=p, adjust=False).mean() for p in {*EMAS_SESGO, 20, 50}}
+
+
+def r2_fvg(ohlc: pd.DataFrame, top: float, bottom: float, j: int, atr_serie: pd.Series | None = None) -> dict:
+    atr_serie = atr(ohlc) if atr_serie is None else atr_serie
+    valor_atr = atr_serie.iloc[j - 1] if j >= 1 else float("nan")
     if pd.isna(valor_atr) or valor_atr <= 0:
         return _res(False, None, "datos insuficientes para ATR(14)")
     proporcion = float(top - bottom) / float(valor_atr)
     return _res(proporcion >= FACTOR_ATR_FVG, round(proporcion, 2), f"FVG mide {proporcion:.2f} ATR vs mínimo {FACTOR_ATR_FVG}")
 
 
-def r3_ema(ohlc: pd.DataFrame, k: int, direccion: str) -> dict:
+def r3_ema(ohlc: pd.DataFrame, k: int, direccion: str, emas_serie: dict | None = None) -> dict:
     cierre = float(ohlc["close"].iloc[k])
     for periodo in EMAS_SESGO:
         if k + 1 >= periodo:
-            ema = float(ohlc["close"].iloc[: k + 1].ewm(span=periodo, adjust=False).mean().iloc[-1])
+            if emas_serie is None:
+                ema = float(ohlc["close"].iloc[: k + 1].ewm(span=periodo, adjust=False).mean().iloc[-1])
+            else:
+                ema = float(emas_serie[periodo].iloc[k])
             cumple = cierre > ema if direccion == "long" else cierre < ema
             lado = "sobre" if cierre > ema else "bajo"
             return _res(bool(cumple), periodo, f"cierre {lado} la EMA {periodo}")
     return _res(None, None, "no aplica: historia insuficiente")
 
 
-def cruce_20_50(ohlc: pd.DataFrame, k: int, direccion: str) -> str | None:
+def cruce_20_50(ohlc: pd.DataFrame, k: int, direccion: str, emas_serie: dict | None = None) -> str | None:
     if k + 1 < 50:
         return None
-    cierres = ohlc["close"].iloc[: k + 1]
-    rapida = cierres.ewm(span=20, adjust=False).mean().iloc[-1]
-    lenta = cierres.ewm(span=50, adjust=False).mean().iloc[-1]
+    if emas_serie is None:
+        cierres = ohlc["close"].iloc[: k + 1]
+        rapida = cierres.ewm(span=20, adjust=False).mean().iloc[-1]
+        lenta = cierres.ewm(span=50, adjust=False).mean().iloc[-1]
+    else:
+        rapida, lenta = emas_serie[20].iloc[k], emas_serie[50].iloc[k]
     return "a_favor" if (rapida > lenta) == (direccion == "long") else "en_contra"
 
 
-def r4_estructura(mayor: pd.DataFrame, direccion: str, vela_mayor: str) -> dict:
+def contexto_mayor(mayor: pd.DataFrame, vela_mayor: str) -> tuple:
+    """(tendencia, swings) de la temporalidad mayor ya recortada: lo que R4 y R5 calculan.
+    El detector lo memoiza por len(mayor) (mismo número de velas cerradas = mismo recorte)."""
+    # = obtener_tendencia(mayor) pero sin fvg/ob/liquidez, que la tendencia no usa; los swings sirven a los dos
+    swings = smc.swing_highs_lows(mayor, swing_length=SWING_LENGTH_POR_VELA[vela_mayor])
+    return tendencia_de_estructura(smc.bos_choch(mayor, swings))["direccion"], swings
+
+
+def r4_estructura(mayor: pd.DataFrame, direccion: str, vela_mayor: str, contexto: tuple | None = None) -> dict:
     if mayor.empty:
         return _res(False, None, "sin velas cerradas de la temporalidad mayor")
-    tendencia = obtener_tendencia(mayor, swing_length=SWING_LENGTH_POR_VELA[vela_mayor])["direccion"]
+    if contexto is not None:
+        tendencia = contexto[0]
+    else:
+        tendencia = obtener_tendencia(mayor, swing_length=SWING_LENGTH_POR_VELA[vela_mayor])["direccion"]
     esperado = "compra" if direccion == "long" else "venta"
     return _res(tendencia == esperado, tendencia, f"estructura {vela_mayor}: {tendencia}")
 
 
-def r5_descuento_premium(mayor: pd.DataFrame, entrada: float, direccion: str, vela_mayor: str) -> dict:
+def r5_descuento_premium(mayor: pd.DataFrame, entrada: float, direccion: str, vela_mayor: str,
+                         contexto: tuple | None = None) -> dict:
     if mayor.empty:
         return _res(False, None, "sin velas cerradas de la temporalidad mayor")
-    swings = smc.swing_highs_lows(mayor, swing_length=SWING_LENGTH_POR_VELA[vela_mayor])
+    swings = contexto[1] if contexto is not None else smc.swing_highs_lows(mayor, swing_length=SWING_LENGTH_POR_VELA[vela_mayor])
     altos = swings.loc[swings["HighLow"] == 1, "Level"]
     bajos = swings.loc[swings["HighLow"] == -1, "Level"]
     if altos.empty or bajos.empty:
@@ -207,6 +233,13 @@ def demo() -> None:
     assert r3_ema(subida(250), 249, "short")["cumple"] is False
     assert cruce_20_50(subida(60), 59, "long") == "a_favor"
     assert cruce_20_50(subida(30), 29, "long") is None
+    # series precalculadas (una vez por serie en el detector) = mismo resultado que calcular sobre el prefijo
+    s250 = subida(250)
+    e250 = emas(s250)
+    for k in (29, 59, 120, 249):
+        for d in ("long", "short"):
+            assert r3_ema(s250, k, d, e250) == r3_ema(s250, k, d) and cruce_20_50(s250, k, d, e250) == cruce_20_50(s250, k, d)
+    assert r2_fvg(s250, 3.0, 1.0, 40, atr(s250)) == r2_fvg(s250, 3.0, 1.0, 40)
 
     # R4 / R5 sobre una temporalidad mayor alcista limpia (HH/HL)
     mayor_alcista = zigzag(ALCISTA)
@@ -218,6 +251,9 @@ def demo() -> None:
     r5_alto = r5_descuento_premium(mayor_alcista, 163.0, "long", "1H")
     assert r5_bajo["cumple"] is True and r5_alto["cumple"] is False, (r5_bajo, r5_alto)
     assert r5_descuento_premium(mayor_alcista, 163.0, "short", "1H")["cumple"] is True
+    ctx = contexto_mayor(mayor_alcista, "1H")
+    assert r4_estructura(mayor_alcista, "long", "1H", ctx) == r4
+    assert r5_descuento_premium(mayor_alcista, 152.0, "long", "1H", ctx) == r5_bajo
 
     # R6 TP en liquidez: swings controlados a mano (misma forma que smc.swing_highs_lows)
     plano = velas([(10, 10, 9, 10, 100.0)] * 30)

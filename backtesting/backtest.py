@@ -138,7 +138,7 @@ def backtest_out_of_sample(ohlc: pd.DataFrame, corte, swing_length: int = 20, r_
     return salida
 
 
-def _simular_v2_uno(ohlc: pd.DataFrame, s) -> dict:
+def _simular_v2_uno(ohlc: pd.DataFrame, s, velas_np=None) -> dict:
     """Motor v2: orden límite en `entrada` desde la vela siguiente a `indice_conocido`.
     - Vela que llena: si toca el stop -> perdió (peor caso); si cierra más allá de
       `zona_extremo` -> invalidado, sale al cierre (§1.3); el TP no cuenta en esa vela
@@ -146,34 +146,37 @@ def _simular_v2_uno(ohlc: pd.DataFrame, s) -> dict:
     - Si antes de llenar el precio toca el TP, la orden se cancela ("cancelado_tp", no cuenta).
     - Si pasan VELAS_EXPIRACION_ORDEN velas sin llenar, expira como en el EA ("expirado", no cuenta);
       si los datos se acaban antes, queda "sin_llenar" (= orden pendiente todavía vigente).
-    - Después: stop antes que TP si ambos se tocan en la misma vela (peor caso)."""
+    - Después: stop antes que TP si ambos se tocan en la misma vela (peor caso).
+    `velas_np`: ohlc[["high", "low", "close"]] como arreglo numpy (simular_v2 lo arma una vez)."""
+    if velas_np is None:
+        velas_np = ohlc[["high", "low", "close"]].to_numpy()
     long = s["direccion"] == "long"
     entrada, stop, tp, extremo = s["entrada"], s["stop"], s["tp"], s["zona_extremo"]
     riesgo = abs(entrada - stop)
     riesgo_pct = riesgo / entrada
     lleno_en = None
     conocido = int(s["indice_conocido"])
-    for p in range(conocido + 1, len(ohlc)):
-        v = ohlc.iloc[p]
-        toca_stop = v["low"] <= stop if long else v["high"] >= stop
+    for p in range(conocido + 1, len(velas_np)):
+        alto, bajo, cierre = velas_np[p]
+        toca_stop = bajo <= stop if long else alto >= stop
         if lleno_en is None:
             if p > conocido + VELAS_EXPIRACION_ORDEN:
                 return {"resultado": "expirado", "r": 0.0, "velas": 0, "riesgo_pct": riesgo_pct}
-            if not (v["low"] <= entrada if long else v["high"] >= entrada):
-                if v["high"] >= tp if long else v["low"] <= tp:  # el TP llegó antes que la entrada: orden cancelada
+            if not (bajo <= entrada if long else alto >= entrada):
+                if alto >= tp if long else bajo <= tp:  # el TP llegó antes que la entrada: orden cancelada
                     return {"resultado": "cancelado_tp", "r": 0.0, "velas": 0, "riesgo_pct": riesgo_pct}
                 continue
             lleno_en = p
             if toca_stop:
                 return {"resultado": "perdio", "r": -1.0, "velas": 1, "riesgo_pct": riesgo_pct}
-            if (v["close"] < extremo) if long else (v["close"] > extremo):
-                r = (v["close"] - entrada) / riesgo if long else (entrada - v["close"]) / riesgo
+            if (cierre < extremo) if long else (cierre > extremo):
+                r = (cierre - entrada) / riesgo if long else (entrada - cierre) / riesgo
                 return {"resultado": "invalidado", "r": float(r), "velas": 1, "riesgo_pct": riesgo_pct}
             continue
         velas = p - lleno_en + 1
         if toca_stop:
             return {"resultado": "perdio", "r": -1.0, "velas": velas, "riesgo_pct": riesgo_pct}
-        if v["high"] >= tp if long else v["low"] <= tp:
+        if alto >= tp if long else bajo <= tp:
             return {"resultado": "gano", "r": float(abs(tp - entrada) / riesgo), "velas": velas, "riesgo_pct": riesgo_pct}
     estado = "sin_llenar" if lleno_en is None else "sin_resolver"
     return {"resultado": estado, "r": 0.0, "velas": 0, "riesgo_pct": riesgo_pct}
@@ -185,7 +188,8 @@ def simular_v2(ohlc: pd.DataFrame, setups: pd.DataFrame) -> pd.DataFrame:
     columnas = ["resultado", "r", "velas", "riesgo_pct"]
     if validos.empty:
         return pd.concat([validos, pd.DataFrame(columns=columnas)], axis=1)
-    return pd.concat([validos, pd.DataFrame([_simular_v2_uno(ohlc, f) for _, f in validos.iterrows()])], axis=1)
+    velas_np = ohlc[["high", "low", "close"]].to_numpy()
+    return pd.concat([validos, pd.DataFrame([_simular_v2_uno(ohlc, f, velas_np) for _, f in validos.iterrows()])], axis=1)
 
 
 def backtest_v2(ohlc: pd.DataFrame, setups: pd.DataFrame, resultados: pd.DataFrame | None = None) -> dict:

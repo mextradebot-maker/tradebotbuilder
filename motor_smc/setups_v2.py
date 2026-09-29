@@ -135,35 +135,55 @@ def _multiplo(ohlc: pd.DataFrame, k: int) -> float | None:
     return round(float(ohlc["volume"].iloc[k] / media), 2) if media > 0 else None
 
 
-def _divergencias(ohlc: pd.DataFrame, swings: pd.DataFrame, i: int, direccion: str) -> tuple:
+def _divergencias(ohlc: pd.DataFrame, swings: pd.DataFrame, i: int, direccion: str,
+                  rsi_serie: pd.Series | None = None, macd_serie: pd.Series | None = None) -> tuple:
     lado = -1 if direccion == "long" else 1
     previos = swings.index[(swings["HighLow"] == lado) & (swings.index < i)]
     if len(previos) == 0:
         return None, None
     p = int(previos[-1])
-    return (divergencia(ohlc, rsi(ohlc), i, p, direccion),
-            divergencia(ohlc, macd(ohlc)["MACD"], i, p, direccion))
+    rsi_serie = rsi(ohlc) if rsi_serie is None else rsi_serie
+    macd_serie = macd(ohlc)["MACD"] if macd_serie is None else macd_serie
+    return divergencia(ohlc, rsi_serie, i, p, direccion), divergencia(ohlc, macd_serie, i, p, direccion)
+
+
+def _precalculo(ohlc: pd.DataFrame) -> dict:
+    """Lo que no depende del candidato, una vez por serie (todo causal: el valor en k solo usa velas
+    <= k), más las memorias de R4/R5 (por len(mayor)) y de los swings recortados (por conocido)."""
+    return {"atr": R.atr(ohlc), "emas": R.emas(ohlc), "rsi": rsi(ohlc), "macd": macd(ohlc)["MACD"],
+            "mayor": {}, "swings": {}}
 
 
 def evaluar(c: dict, ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, vela_mayor: str,
-            res: dict, swing_length: int) -> dict:
+            res: dict, swing_length: int, pre: dict | None = None) -> dict:
+    """`pre` = _precalculo(ohlc) compartido entre candidatos; sin él se calcula para este candidato."""
+    pre = _precalculo(ohlc) if pre is None else pre
     d, k, conocido = c["direccion"], c["indice_confirmacion"], c["indice_conocido"]
     mayor = R.cortar_mayor(ohlc_mayor, ohlc.index[conocido] + R.DURACION_VELA[vela], vela_mayor)
+    # igual número de velas mayores cerradas = mismo recorte (los conjuntos "cierre <= t" son anidados)
+    ctx = None
+    if not mayor.empty:
+        ctx = pre["mayor"].get(len(mayor))
+        if ctx is None:
+            ctx = pre["mayor"][len(mayor)] = R.contexto_mayor(mayor, vela_mayor)
     es_reversion = c["tipo"] == "reversion"
     # swing_highs_lows borra swings consecutivos del mismo tipo mirando swings posteriores: para R6 y
     # las divergencias se recalculan solo con lo visible en indice_conocido (el recorte empieza en 0,
-    # así que los índices posicionales coinciden).
-    swings = smc.swing_highs_lows(ohlc.iloc[: conocido + 1], swing_length=swing_length)
+    # así que los índices posicionales coinciden). Memoizado por conocido.
+    swings = pre["swings"].get(conocido)
+    if swings is None:
+        swings = pre["swings"][conocido] = smc.swing_highs_lows(ohlc.iloc[: conocido + 1], swing_length=swing_length)
     reglas = {
         "R1": R.r1_volumen(ohlc, c["indice_barrido"], vela) if es_reversion else R.NO_APLICA,
-        "R2": R.r2_fvg(ohlc, c["fvg_top"], c["fvg_bottom"], c["indice_zona"]) if es_reversion else R.NO_APLICA,
-        "R3": R.r3_ema(ohlc, k, d),
-        "R4": R.r4_estructura(mayor, d, vela_mayor),
-        "R5": R.r5_descuento_premium(mayor, c["entrada"], d, vela_mayor),
+        "R2": R.r2_fvg(ohlc, c["fvg_top"], c["fvg_bottom"], c["indice_zona"], pre["atr"]) if es_reversion else R.NO_APLICA,
+        "R3": R.r3_ema(ohlc, k, d, pre["emas"]),
+        "R4": R.r4_estructura(mayor, d, vela_mayor, ctx),
+        "R5": R.r5_descuento_premium(mayor, c["entrada"], d, vela_mayor, ctx),
         "R6": R.r6_tp_liquidez(ohlc, swings, conocido, c["entrada"], c["stop"], d, swing_length),
     }
     fallas = [f"{nombre}: {r['razon']}" for nombre, r in reglas.items() if r["cumple"] is False]
-    div_rsi, div_macd = _divergencias(ohlc, swings, c["indice_barrido"], d) if es_reversion else (None, None)
+    div_rsi, div_macd = (_divergencias(ohlc, swings, c["indice_barrido"], d, pre["rsi"], pre["macd"])
+                         if es_reversion else (None, None))
     direccion_num = 1 if d == "long" else -1
     liq = res["liquidez"]
     liq = liq[liq["Swept"] <= conocido]  # sin barridos posteriores a indice_conocido
@@ -174,7 +194,7 @@ def evaluar(c: dict, ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, ve
         "razon_descarte": "; ".join(fallas),
         "reglas": reglas,
         "ema_sesgo": reglas["R3"]["dato"],
-        "cruce_20_50": R.cruce_20_50(ohlc, k, d),
+        "cruce_20_50": R.cruce_20_50(ohlc, k, d, pre["emas"]),
         "multiplo_confirmacion": _multiplo(ohlc, k),
         "divergencia_rsi": div_rsi,
         "divergencia_macd": div_macd,
@@ -187,8 +207,10 @@ def evaluar(c: dict, ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, ve
 def detectar_setups_v2(ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, vela_mayor: str) -> pd.DataFrame:
     swing_length = R.SWING_LENGTH_POR_VELA[vela]
     res = analizar(ohlc, swing_length=swing_length)
-    candidatos = candidatos_reversion(ohlc, res, swing_length) + candidatos_continuacion(ohlc, res, swing_length)
-    filas = [evaluar(c, ohlc, ohlc_mayor, vela, vela_mayor, res, swing_length) for c in candidatos]
+    pre = _precalculo(ohlc)
+    candidatos = (candidatos_reversion(ohlc, res, swing_length, pre["atr"])
+                  + candidatos_continuacion(ohlc, res, swing_length, pre["atr"]))
+    filas = [evaluar(c, ohlc, ohlc_mayor, vela, vela_mayor, res, swing_length, pre) for c in candidatos]
     return pd.DataFrame(filas, columns=COLUMNAS).sort_values("indice_conocido", ignore_index=True)
 
 

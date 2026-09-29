@@ -20,7 +20,12 @@ def obtener_tendencia(ohlc: pd.DataFrame, swing_length: int = 50) -> dict:
     """La dirección real detectada es la misma sin importar la temporalidad elegida
     por el usuario — la restricción "swing solo si es alcista" no vive aquí, ver
     docstring del módulo."""
-    estructura = analizar(ohlc, swing_length=swing_length)["estructura"]
+    return tendencia_de_estructura(analizar(ohlc, swing_length=swing_length)["estructura"])
+
+
+def tendencia_de_estructura(estructura: pd.DataFrame) -> dict:
+    """La tendencia a partir de la salida de smc.bos_choch (el motor v2 la reusa sin correr
+    `analizar` completo)."""
     señales = estructura[estructura["BOS"].notna() | estructura["CHOCH"].notna()]
     if señales.empty:
         return {
