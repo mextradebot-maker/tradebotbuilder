@@ -63,7 +63,7 @@ motor_smc/reglas.py (nuevo)   una función pura por regla R1..R6; umbrales en di
 motor_smc/setup_ob_fvg.py     detectar_setups(ohlc_entrada, ohlc_mayor, vela) → candidatos de reversión (barrido+CHoCH+FVG) y de continuación (BOS+zona de mitigación)
                               con `tipo`, `reglas: {R1: {cumple|no_aplica, dato, razon}, ...}` y `valido`
 motor_smc/indicadores.py      RSI/MACD a divergencia; solo anotan
-backtesting/backtest.py       entrada límite en CE (no se llena si no toca), invalidación por
+backtesting/backtest.py       entrada límite (CE o punto medio de mitigación; no se llena si no toca), invalidación por
                               cierre, TP en liquidez; solo simula setups válidos
 api/setups.py                 descarga también las velas de la temporalidad mayor y pasa ambas
 ```
@@ -90,7 +90,7 @@ Errores:
 `demo()` con `assert` en cada módulo (estilo del repo):
 1. `reglas.py`: por regla, un caso sintético que cumple y uno que no; cadena EMA 200→50→20→no aplica; R1/R2 marcan `no_aplica` en continuación.
 2. Anti-anticipación: una vela mayor posterior a la confirmación que contradice la señal debe ignorarse.
-3. Backtest: sin llenado si el precio no toca el CE; invalidación por cierre cancela; TP < 2R se descarta.
+3. Backtest: sin llenado si el precio no toca la entrada; invalidación por cierre cancela; TP < 2R se descarta.
 4. Real contra Dukascopy (XAUUSD, EURUSD, cada perfil): todo descarte trae razón, más una **tabla de embudo** (cuántos candidatos elimina cada regla). Si alguna regla deja un perfil en cero, se revisa con Ricardo antes de cerrar la Etapa 1.
 
 ## Fuera de alcance (fase siguiente)
