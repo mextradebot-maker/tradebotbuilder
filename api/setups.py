@@ -73,6 +73,19 @@ def _forma_ea(respuesta: dict) -> dict:
     return {**{k: v for k, v in respuesta.items() if k != "setups_confirmados"}, "setups_confirmados": confirmados}
 
 
+def _con_largo(respuesta: dict, simbolo: str, temporalidad: str) -> dict:
+    """Agrega `backtest_largo` (informativo; None si aun no existe) ANTES de `setups_confirmados`, que sigue siendo
+    la ultima llave (contrato del parser del EA). `respuesta` ya paso por _forma_ea. Nunca propaga un fallo."""
+    try:
+        import backtest_largo
+        largo = backtest_largo.leer(simbolo, temporalidad)
+    except Exception:
+        largo = None
+    conf = respuesta.get("setups_confirmados", [])
+    return {**{k: v for k, v in respuesta.items() if k not in ("setups_confirmados", "backtest_largo")},
+            "backtest_largo": largo, "setups_confirmados": conf}
+
+
 def motor_v2(simbolo: str, temporalidad: str, ohlc, inicio, fin) -> dict:
     """Motor v2 (motor principal con temporalidad). Nunca propaga una excepción al llamador:
     ante un fallo devuelve estado "error" y `procesar` responde sin setups confirmados.
@@ -168,7 +181,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
                 if not temporalidad:
                     return 200, snap["respuesta"]
                 if (snap.get("respuesta") or {}).get("motor") == "v2":  # uno de antes del motor v2 se recalcula
-                    return 200, _forma_ea(snap["respuesta"])
+                    return 200, _con_largo(_forma_ea(snap["respuesta"]), simbolo, temporalidad)
         except Exception:
             pass  # Postgres caido -> compute fresco
 
@@ -195,7 +208,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
     if ohlc.empty:
         cuerpo = {"simbolo": simbolo, "velas": 0, "setups": []}
         if temporalidad:
-            cuerpo = _forma_ea({**cuerpo, "temporalidad": temporalidad, "setups_confirmados": []})
+            cuerpo = _con_largo(_forma_ea({**cuerpo, "temporalidad": temporalidad, "setups_confirmados": []}), simbolo, temporalidad)
         return 200, cuerpo
 
     if not temporalidad:
@@ -247,7 +260,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
             _persistencia.registrar_cambio_tendencia(simbolo, cache_key_temp, tendencia_actual, tendencia_prev)
         except Exception:
             pass
-    return 200, _forma_ea(respuesta)
+    return 200, _con_largo(_forma_ea(respuesta), simbolo, temporalidad)
 
 
 def _demo_aislamiento() -> None:

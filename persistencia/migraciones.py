@@ -140,6 +140,16 @@ _SQL = [
     )
     """,
 
+    # -- Backtest largo semanal (backtest_largo.py) --
+    """
+    CREATE TABLE IF NOT EXISTS backtest_largo (
+        simbolo text NOT NULL, temporalidad text NOT NULL,
+        calculado_en timestamptz NOT NULL, desde timestamptz, hasta timestamptz,
+        velas int, resultado jsonb NOT NULL,
+        PRIMARY KEY (simbolo, temporalidad)
+    )
+    """,
+
     # Bloque 6 (peticiones_usuario / solicitar.py) retirado 2026-09-26: las
     # operaciones manuales se abren directo en MT5 y el coordinador las adopta.
 

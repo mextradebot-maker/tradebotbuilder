@@ -32,6 +32,16 @@ except Exception:
 DIRECCION_A_LONG_SHORT = {"compra": "long", "venta": "short"}
 
 
+def _largo(simbolo: str, temporalidad: str, direccion: str) -> dict | None:
+    """{"velas", "reporte"} del backtest largo guardado (total[direccion]) o None si no hay / falla."""
+    try:
+        import backtest_largo
+        r = backtest_largo.leer(simbolo, temporalidad)
+        return {"velas": r["velas"], "reporte": r["backtests"]["total"][direccion]} if r else None
+    except Exception:
+        return None
+
+
 def procesar(payload: dict) -> tuple[int, dict]:
     simbolo = payload.get("simbolo")
     direccion = payload.get("direccion")
@@ -56,10 +66,14 @@ def procesar(payload: dict) -> tuple[int, dict]:
     import api.setups as setups
 
     if not desde_catalogo:
+        largo = _largo(simbolo, temporalidad, direccion)
+        if largo is not None:
+            return 200, {"simbolo": simbolo, "direccion": direccion, "temporalidad": temporalidad,
+                         "velas": largo["velas"], **largo["reporte"], "fuente": "largo"}
         snap = setups.desde_snapshot(simbolo, temporalidad, dias, swing_length)
         reporte = (snap or {}).get("backtests", {}).get(direccion)
         if reporte is not None:
-            return 200, {"simbolo": simbolo, "direccion": direccion, "temporalidad": temporalidad, "velas": snap.get("velas", 0), **reporte}
+            return 200, {"simbolo": simbolo, "direccion": direccion, "temporalidad": temporalidad, "velas": snap.get("velas", 0), **reporte, "fuente": "corto"}
 
     status, respuesta = setups.procesar({"simbolo": simbolo, "temporalidad": temporalidad, "dias": dias,
                                          "swing_length": swing_length, "desde_catalogo": desde_catalogo,
@@ -81,7 +95,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
                 pass
         extra = {"desde_catalogo": True, "inicio": inicio.date().isoformat()}
     return 200, {"simbolo": simbolo, "direccion": direccion, "temporalidad": temporalidad,
-                 "velas": respuesta.get("velas", 0), **reporte, **extra}
+                 "velas": respuesta.get("velas", 0), **reporte, **extra, "fuente": "corto"}
 
 
 def _demo_miss_usa_motor_v2() -> None:
@@ -98,14 +112,17 @@ def _demo_miss_usa_motor_v2() -> None:
     orig = setups.procesar, setups.desde_snapshot
     try:
         setups.procesar, setups.desde_snapshot = falso, (lambda *a, **k: None)
+        _fuera, globals()["_largo"] = _largo, (lambda *a: None)  # sin largo: cae al corto
         status, body = procesar({"simbolo": "XAUUSD", "direccion": "compra", "dias": 30, "temporalidad": "Scalping"})
         assert status == 200 and body == {"simbolo": "XAUUSD", "direccion": "compra", "temporalidad": "Scalping 15m",
-                                          "velas": 42, "n_setups": 7, "rentable_sin_optimizar": True}, body
+                                          "velas": 42, "n_setups": 7, "rentable_sin_optimizar": True,
+                                          "fuente": "corto"}, body
         assert llamadas[0]["dias"] == 30 and llamadas[0]["_force_refresh"] is True, llamadas
         setups.procesar = lambda p: (502, {"error": "sin datos"})
         assert procesar({"simbolo": "XAUUSD", "direccion": "venta"})[0] == 502
     finally:
         setups.procesar, setups.desde_snapshot = orig
+        globals()["_largo"] = _fuera
     print("api.backtest._demo_miss_usa_motor_v2() OK")
 
 
