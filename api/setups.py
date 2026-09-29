@@ -181,10 +181,16 @@ def procesar(payload: dict) -> tuple[int, dict]:
     except (TypeError, ValueError):
         return 400, {"error": "'dias'/'swing_length'/'ventana_fvg' deben ser enteros"}
 
+    desde_catalogo = str(payload.get("desde_catalogo", "")).lower() in ("1", "true", "yes")
+    # El snapshot (lo que lee el EA) solo corresponde a los parámetros por defecto del perfil: un
+    # /api/backtest con otros días no debe pisarlo ni recibirlo. Sin temporalidad: como siempre.
+    por_defecto = not temporalidad or (dias == dias_default and not desde_catalogo
+                                       and swing_length == SWING_LENGTH_POR_TEMPORALIDAD.get(temporalidad, 20))
+
     # Cache hit — evita Dukascopy + analisis completo si el snapshot es fresco
     force_refresh = payload.get("_force_refresh", False)
     cache_key_temp = temporalidad or ""
-    if not force_refresh and _persistencia is not None:
+    if not force_refresh and por_defecto and _persistencia is not None:
         try:
             snap = _persistencia.leer_snapshot(simbolo, cache_key_temp)
             if snap is not None and not _snapshot_viejo(snap):
@@ -196,7 +202,6 @@ def procesar(payload: dict) -> tuple[int, dict]:
             pass  # Postgres caido -> compute fresco
 
     fin = datetime.now(timezone.utc)
-    desde_catalogo = str(payload.get("desde_catalogo", "")).lower() in ("1", "true", "yes")
     inicio = None
     if desde_catalogo and temporalidad and _persistencia is not None:
         try:
@@ -264,7 +269,7 @@ def procesar(payload: dict) -> tuple[int, dict]:
     if v2["estado"] == "error":
         respuesta = {**{k: v for k, v in respuesta.items() if k != "setups_confirmados"},
                      "error_motor": v2.get("error"), "setups_confirmados": []}
-    if _persistencia is not None:
+    if por_defecto and _persistencia is not None:
         try:
             tendencia_prev = _persistencia.leer_ultima_tendencia(simbolo, cache_key_temp)
             _persistencia.escribir_snapshot(simbolo, cache_key_temp, respuesta, tendencia_actual)
@@ -353,6 +358,47 @@ def _demo_aislamiento() -> None:
     print("api.setups._demo_aislamiento() OK — motor_v2 no propaga y devuelve JSON estricto")
 
 
+def _demo_snapshot_solo_por_defecto() -> None:
+    """Sin red: /api/backtest con otros días (o swing_length / desde_catalogo) no pisa el snapshot del EA,
+    ni recibe el snapshot calculado con los parámetros por defecto."""
+    import sys
+    from types import SimpleNamespace
+
+    g = sys.modules[__name__]
+    idx = pd.date_range("2026-01-05", periods=10, freq="h", tz="UTC")
+    ohlc = pd.DataFrame({"open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 1.0}, index=idx)
+    llamadas = []
+    fresco = {"respuesta": {"motor": "v2", "setups_confirmados": [], "del_snapshot": True},
+              "refrescado_en": datetime.now(timezone.utc)}
+    falso = SimpleNamespace(
+        leer_snapshot=lambda *a: fresco,
+        leer_fecha_inicio=lambda *a: datetime(2026, 1, 1).date(),
+        leer_ultima_tendencia=lambda *a: None,
+        escribir_snapshot=lambda *a: llamadas.append("escribir_snapshot"),
+        registrar_cambio_tendencia=lambda *a: llamadas.append("registrar_cambio_tendencia"),
+    )
+    orig = {n: getattr(g, n) for n in ("obtener_velas", "motor_v2", "_persistencia")}
+    try:
+        g.obtener_velas, g._persistencia = (lambda *a, **k: ohlc), falso
+        g.motor_v2 = lambda *a, **k: {"estado": "ok", "vela": "1H", "vela_mayor": "D", "velas": len(ohlc),
+                                      "setups": [], "setups_validos": [], "embudo": {}, "backtests": {}}
+        por_defecto = {"simbolo": "XAUUSD", "temporalidad": "Intraday"}
+        for extra in ({"dias": 30}, {"swing_length": 3}, {"desde_catalogo": "1"}):
+            llamadas.clear()
+            status, body = procesar({**por_defecto, **extra, "_force_refresh": True})
+            assert status == 200 and llamadas == [], (extra, llamadas)
+            status, body = procesar({**por_defecto, **extra})  # sin _force_refresh: no sirve el snapshot ajeno
+            assert status == 200 and "del_snapshot" not in body, (extra, body)
+        llamadas.clear()
+        procesar({**por_defecto, "dias": DIAS_POR_TEMPORALIDAD["Intraday"], "_force_refresh": True})
+        assert llamadas == ["escribir_snapshot", "registrar_cambio_tendencia"], llamadas
+        assert procesar(por_defecto)[1].get("del_snapshot") is True  # por defecto: cache hit como siempre
+    finally:
+        for n, v in orig.items():
+            setattr(g, n, v)
+    print("api.setups._demo_snapshot_solo_por_defecto() OK — solo los parámetros por defecto tocan el snapshot")
+
+
 def _parser_ea(texto: str):
     """Copia en Python de ExtraerUltimoSetupConfirmado (robots/MexTradeBot_SeguidorSMC.mq5)."""
     marcador = texto.find('"setups_confirmados":[')
@@ -409,6 +455,7 @@ def _demo_forma_ea() -> None:
 def demo() -> None:
     _demo_forma_ea()
     _demo_aislamiento()
+    _demo_snapshot_solo_por_defecto()
     status, body = procesar({"simbolo": "XAUUSD", "dias": 90})
     assert status == 200
     assert body["velas"] > 0
