@@ -101,7 +101,7 @@ def pendientes(ahora: datetime) -> list[tuple[str, str]]:
         snap = persistencia.leer_snapshot(c["simbolo"], c["temporalidad"])
         r = (snap or {}).get("respuesta") or {}
         # vacío (descarga fallida) o calculado con otro swing_length (recalibración): rehacer, máx 1/hora
-        vacio = bool(snap) and (not r.get("velas") or r.get("swing_length") != SWING_LENGTH_POR_TEMPORALIDAD.get(c["temporalidad"]))
+        vacio = bool(snap) and (not r.get("velas") or r.get("motor") != "v2" or r.get("swing_length") != SWING_LENGTH_POR_TEMPORALIDAD.get(c["temporalidad"]))
         if necesita_refresco(c["simbolo"], c["temporalidad"], snap and snap["refrescado_en"], ahora, vacio):
             salida.append((c["simbolo"], c["temporalidad"]))
     return ordenar(salida)
@@ -110,8 +110,11 @@ def pendientes(ahora: datetime) -> list[tuple[str, str]]:
 def refrescar_uno(simbolo: str, temporalidad: str) -> tuple:
     """Worker (nivel de módulo: se ejecuta en un proceso spawn). (simbolo, temporalidad, status, error);
     status None si procesar lanzó. procesar abre su propia conexión a Postgres por llamada."""
+    import api.setups
     from api.setups import procesar
 
+    if api.setups._persistencia is None:  # import de persistencia falló en este proceso: no fingir un refresco
+        return simbolo, temporalidad, None, "sin persistencia en el worker"
     try:
         status, body = procesar({"simbolo": simbolo, "temporalidad": temporalidad, "_force_refresh": True})
         return simbolo, temporalidad, status, body.get("error") if status != 200 else None
@@ -120,7 +123,12 @@ def refrescar_uno(simbolo: str, temporalidad: str) -> tuple:
 
 
 def _workers() -> int:
-    return int(os.environ.get("REFRESCO_WORKERS") or max(1, min(3, (os.cpu_count() or 2) - 1)))
+    # ponytail: 1 por defecto. mtb-api tiene 0.5 CPU / 1 GB y os.cpu_count() en Docker da los núcleos
+    # del host: 3 procesos spawn (~150-250 MB c/u) arriesgan OOM sin ganar CPU. Subir a 2 solo tras medir RSS.
+    try:
+        return max(1, int(os.environ.get("REFRESCO_WORKERS", "1")))
+    except ValueError:
+        return 1
 
 
 def _bajar_prioridad() -> None:
