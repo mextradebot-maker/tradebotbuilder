@@ -32,6 +32,11 @@ MAX_CEDER_S = 1800  # tope de espera: un combo que nunca se refresca no debe mat
 # Dukascopy responde vacio de forma esporadica (visto en real: un bloque 1H vacio a la primera y con datos al
 # reintentar); solo tras este numero de vacios seguidos del MISMO bloque se toma como inicio de la historia.
 VACIOS_FIN_HISTORIA = 3
+MAX_FALLAS = 3  # bloques truncados seguidos tras los que se acepta el bloque (el modelo de mercado abierto no es perfecto)
+ESPERA_VACIO = timedelta(hours=1)  # un vacio solo cuenta si pasó al menos esto desde el ultimo vacio contado
+SONDA = timedelta(days=7)  # rango reciente conocido con datos para distinguir "fin de historia" de "Dukascopy caido"
+PAUSA_ERROR_S = 60  # tras una excepcion en la pasada/bucle (nunca la pausa ociosa de 1 h)
+CACHE_CEDER_S = 60  # el aviso "hay pendientes urgentes del refresco" se consulta a lo sumo cada 60 s
 INICIO_S = 60  # deja arrancar el servicio y el primer ciclo del refresco
 
 
@@ -72,21 +77,39 @@ def cargar_bloque(simbolo: str, serie: str, ahora, descargar, estado: dict) -> s
     ini = fin - BLOQUE[serie]
     if limite is not None:
         ini = max(ini, limite)
+    kv, kf = ("vacio", clave), ("falla", clave)
+    ultimo = estado.get(kv)  # (vacios contados, cuando se conto el ultimo)
+    if ultimo is not None and ahora - ultimo[1] < ESPERA_VACIO:
+        return "vacio"  # sin descargar: los vacios solo cuentan con >= 1 h de separacion (fallas transitorias)
     df = descargar(ini, fin)
     if df.empty:
-        # Dukascopy tambien responde vacio de forma esporadica: una vez = reintentar mas tarde
-        estado[clave] = estado.get(clave, 0) + 1
-        if estado[clave] < VACIOS_FIN_HISTORIA:
-            log.info("carga historica %s %s: bloque %s..%s sin datos, se reintenta despues", simbolo, serie, ini, fin)
+        if c is None:  # el primer bloque (hasta ahora) nunca marca completa: sin datos recientes = problema, no historia
+            log.warning("carga historica %s %s: sin datos recientes (%s..%s)", simbolo, serie, ini, fin)
             return "vacio"
-        almacen.marcar_completa(simbolo, serie)
-        log.info("carga historica %s %s: completa (inicio de la historia en %s)", simbolo, serie, fin)
-        return "completa"
-    estado.pop(clave, None)
+        if not descargar(ahora - SONDA, ahora).empty:  # Dukascopy responde: el vacio es real (o esporadico)
+            n = (ultimo[0] if ultimo else 0) + 1
+            estado[kv] = (n, ahora)
+            if n < VACIOS_FIN_HISTORIA:
+                log.info("carga historica %s %s: bloque %s..%s sin datos (%d/%d), se reintenta despues",
+                         simbolo, serie, ini, fin, n, VACIOS_FIN_HISTORIA)
+                return "vacio"
+            estado.pop(kv, None)
+            almacen.marcar_completa(simbolo, serie)
+            log.info("carga historica %s %s: completa (inicio de la historia en %s)", simbolo, serie, fin)
+            return "completa"
+        log.warning("carga historica %s %s: la sonda reciente tambien vino vacia (Dukascopy caido?); no cuenta", simbolo, serie)
+        return "vacio"
+    estado.pop(kv, None)
     if historico.truncada(simbolo, df, historico._BASE[serie][1], fin, ahora):
-        log.warning("carga historica %s %s: bloque %s..%s truncado (termina %s), se reintenta despues",
-                    simbolo, serie, ini, fin, df.index[-1])
-        return "falla"  # registrar solo hasta la ultima vela dejaria un hueco (hasta < desde) o lo daria por cubierto
+        fallas = estado.get(kf, 0)
+        if fallas < MAX_FALLAS:
+            estado[kf] = fallas + 1
+            log.warning("carga historica %s %s: bloque %s..%s truncado (termina %s), se reintenta despues (%d/%d)",
+                        simbolo, serie, ini, fin, df.index[-1], fallas + 1, MAX_FALLAS)
+            return "falla"  # registrar solo hasta la ultima vela dejaria un hueco (hasta < desde) o lo daria por cubierto
+        log.warning("carga historica %s %s: bloque %s..%s sigue truncado tras %d intentos (termina %s); se acepta "
+                    "(mercado con pausas propias?)", simbolo, serie, ini, fin, MAX_FALLAS, df.index[-1])
+    estado.pop(kf, None)
     n = almacen.guardar(simbolo, serie, df)
     almacen.registrar_carga(simbolo, serie, ini, df.index[-1] if c is None else fin)
     log.info("carga historica %s %s: desde %s (%d filas)", simbolo, serie, ini.strftime("%Y-%m-%d"), n)
@@ -107,11 +130,22 @@ def _ceder(ceder, dormir, reloj) -> None:
         dormir(PAUSA_CEDER_S)
 
 
+def _con_cache(f, ttl_s, reloj=time.monotonic):
+    """f() con el resultado en cache ttl_s segundos."""
+    ult = [None, 0.0]
+
+    def g():
+        if ult[0] is None or reloj() - ult[1] >= ttl_s:
+            ult[0], ult[1] = (f(),), reloj()
+        return ult[0][0]
+    return g
+
+
 def pasada(series, ahora_fn, descargar_fn, ceder, dormir, estado, reloj=time.monotonic) -> int:
     """Un bloque por (simbolo, serie) de `series`. Devuelve cuantos intento."""
     for simbolo, serie in series:
-        _ceder(ceder, dormir, reloj)
         try:
+            _ceder(ceder, dormir, reloj)
             cargar_bloque(simbolo, serie, ahora_fn(), descargar_fn(simbolo, serie), estado)
         except Exception as e:  # red caida, BD caida...: seguir con el siguiente, esta serie reintenta en la pasada siguiente
             log.warning("carga historica %s %s fallo: %s: %s", simbolo, serie, type(e).__name__, e)
@@ -119,19 +153,24 @@ def pasada(series, ahora_fn, descargar_fn, ceder, dormir, estado, reloj=time.mon
     return len(series)
 
 
-def _bucle() -> None:
-    import refresco
-
-    time.sleep(INICIO_S)
+def _bucle(dormir=time.sleep, pasar=None) -> None:
     estado: dict = {}
+    primera = True
     while True:
-        n = 0
+        pausa = PAUSA_ERROR_S  # cualquier excepcion (import, BD del catalogo...) reintenta pronto, no en 1 h
         try:
-            n = pasada(series_pendientes(), lambda: datetime.now(timezone.utc), descargar_real,
-                       lambda: refresco.hay_pendientes_urgentes(datetime.now(timezone.utc)), time.sleep, estado)
+            if primera:
+                dormir(INICIO_S)
+                primera = False
+            import refresco
+
+            ceder = _con_cache(lambda: refresco.hay_pendientes_urgentes(datetime.now(timezone.utc)), CACHE_CEDER_S)
+            n = (pasar or pasada)(series_pendientes(), lambda: datetime.now(timezone.utc), descargar_real,
+                                  ceder, dormir, estado)
+            pausa = PAUSA_PASADA_S if n else PAUSA_OCIOSA_S
         except Exception:
             log.exception("pasada de carga historica fallo")
-        time.sleep(PAUSA_PASADA_S if n else PAUSA_OCIOSA_S)
+        dormir(pausa)
 
 
 def iniciar_en_segundo_plano() -> threading.Thread:
@@ -220,42 +259,70 @@ def demo() -> None:
         f.calls.clear()
         assert cargar_bloque(sim, "15m", ahora, f, {}) == "completa" and f.calls == []  # ya completa: sin red
 
-        # 2) fin de la historia: vacio una vez = reintentar; vacio 3 veces seguidas = completa. Vacio esporadico no.
+        # 2) fin de la historia: vacios solo cuentan con >= 1 h de separacion y con la sonda reciente OK;
+        #    VACIOS_FIN_HISTORIA seguidos = completa; el primer bloque nunca marca completa
         limpiar()
         OBJETIVO["15m"] = pd.Timedelta(days=3 * 365)
+        h1 = pd.Timedelta(hours=1)
         f = Fake("15m", 45)
         est = {}
         assert cargar_bloque(sim, "15m", ahora, f, est) == "ok"
         assert cargar_bloque(sim, "15m", ahora, f, est) == "ok"  # bloque parcial (15 d de datos)
         assert almacen.carga(sim, "15m")[0] == ahora - pd.Timedelta(days=60)
         assert cargar_bloque(sim, "15m", ahora, f, est) == "vacio" and (sim, "15m") not in almacen.completas()
-        assert cargar_bloque(sim, "15m", ahora, f, est) == "vacio" and (sim, "15m") not in almacen.completas()
         n = len(f.calls)
-        assert cargar_bloque(sim, "15m", ahora, f, est) == "completa" and len(f.calls) == n + 1
+        assert cargar_bloque(sim, "15m", ahora + h1 / 2, f, est) == "vacio" and len(f.calls) == n  # < 1 h: ni descarga ni cuenta
+        assert cargar_bloque(sim, "15m", ahora + h1, f, est) == "vacio" and (sim, "15m") not in almacen.completas()
+        assert cargar_bloque(sim, "15m", ahora + 2 * h1, f, est) == "completa"
         assert (sim, "15m") in almacen.completas() and almacen.carga(sim, "15m")[0] == ahora - pd.Timedelta(days=60)
         assert n_filas("15m") == len(f.h)
+        # vacio esporadico: la siguiente descarga trae datos y el contador se reinicia
         limpiar()
         f = Fake("15m", 100, lambda k, a, b, df: df.iloc[0:0] if k == 3 else df)  # 3.a peticion: vacio esporadico
         est = {}
-        assert [cargar_bloque(sim, "15m", ahora, f, est) for _ in range(4)] == ["ok", "ok", "vacio", "ok"]
-        assert est == {} and (sim, "15m") not in almacen.completas() and almacen.carga(sim, "15m")[0] == ahora - pd.Timedelta(days=90)
+        assert [cargar_bloque(sim, "15m", ahora, f, est) for _ in range(3)] == ["ok", "ok", "vacio"]
+        assert cargar_bloque(sim, "15m", ahora + h1, f, est) == "ok"
+        assert ("vacio", (sim, "15m")) not in est and (sim, "15m") not in almacen.completas()
+        assert almacen.carga(sim, "15m")[0] == ahora - pd.Timedelta(days=90)
+        # caida de Dukascopy: la sonda reciente tambien viene vacia -> no cuenta, nunca marca completa
+        limpiar()
+        caido = {"si": False}
+        f = Fake("15m", 100, lambda k, a, b, df: df.iloc[0:0] if caido["si"] else df)
+        est = {}
+        assert cargar_bloque(sim, "15m", ahora, f, est) == "ok"
+        caido["si"] = True
+        assert [cargar_bloque(sim, "15m", ahora + i * h1, f, est) for i in range(1, 7)] == ["vacio"] * 6
+        assert est == {} and (sim, "15m") not in almacen.completas()
+        # el primer bloque (sin cobertura) vacio jamas marca completa
+        limpiar()
+        f = Fake("15m", 0)
+        f.h = f.h.iloc[0:0]
+        est = {}
+        assert [cargar_bloque(sim, "15m", ahora + i * h1, f, est) for i in range(5)] == ["vacio"] * 5
+        assert (sim, "15m") not in almacen.completas() and almacen.carga(sim, "15m") is None
         # D: sin objetivo (toda la historia), bloques de 5 años, para al agotarse
         limpiar()
         BLOQUE["D"] = pd.Timedelta(days=5 * 365)
         f, est = Fake("D", 12 * 365), {}
-        r = [cargar_bloque(sim, "D", ahora, f, est) for _ in range(6)]
+        r = [cargar_bloque(sim, "D", ahora + i * h1, f, est) for i in range(6)]
         assert r == ["ok", "ok", "ok", "vacio", "vacio", "completa"], r
         assert n_filas("D") == len(f.h) and (sim, "D") in almacen.completas()
 
-        # 3) descarga truncada (termina 3 h antes de lo pedido, mercado abierto): no se guarda ni se cubre el hueco
+        # 3) descarga truncada (termina 3 h antes de lo pedido, mercado abierto): no se guarda ni se cubre el hueco;
+        #    tras MAX_FALLAS seguidas se acepta (modelo de mercado imperfecto: pausas diarias, festivos)
         limpiar()
         OBJETIVO["15m"] = pd.Timedelta(days=90)
         f = Fake("15m", 100, lambda k, a, b, df: df[df.index <= b - pd.Timedelta(hours=3)])
-        assert cargar_bloque(sim, "15m", ahora, f, {}) == "falla" and almacen.carga(sim, "15m") is None and n_filas("15m") == 0
-        f2 = Fake("15m", 100)
-        assert cargar_bloque(sim, "15m", ahora, f2, {}) == "ok"
+        est = {}
+        assert [cargar_bloque(sim, "15m", ahora, f, est) for _ in range(MAX_FALLAS)] == ["falla"] * MAX_FALLAS
+        assert almacen.carga(sim, "15m") is None and n_filas("15m") == 0
+        assert cargar_bloque(sim, "15m", ahora, f, est) == "ok" and ("falla", (sim, "15m")) not in est  # aceptado
+        assert almacen.carga(sim, "15m")[0] == ahora - pd.Timedelta(days=30) and n_filas("15m") > 2000
         f = Fake("15m", 100, lambda k, a, b, df: df[df.index <= b - pd.Timedelta(hours=3)])
-        assert cargar_bloque(sim, "15m", ahora, f, {}) == "falla" and almacen.carga(sim, "15m")[0] == ahora - pd.Timedelta(days=30)
+        assert cargar_bloque(sim, "15m", ahora, f, est) == "falla" and almacen.carga(sim, "15m")[0] == ahora - pd.Timedelta(days=30)
+        # una descarga buena entre medias reinicia la cuenta de fallas
+        f_ok = Fake("15m", 100)
+        assert cargar_bloque(sim, "15m", ahora, f_ok, est) == "ok" and ("falla", (sim, "15m")) not in est
 
         # 4) cede el paso al refresco: no corre un bloque mientras haya pendientes urgentes
         limpiar()
@@ -270,6 +337,34 @@ def demo() -> None:
         pasada([(sim, "15m")], lambda: ahora, lambda s, se: (lambda a, b: eventos.append("bloque") or f(a, b)), lambda: True,
                lambda s: reloj.__setitem__(0, reloj[0] + s) or eventos.append(s), {}, reloj=lambda: reloj[0])
         assert eventos.count("bloque") == 1 and reloj[0] >= MAX_CEDER_S and eventos.count(PAUSA_CEDER_S) == MAX_CEDER_S // PAUSA_CEDER_S
+
+        # 4b) fallos: _ceder dentro del try (un error al consultar al refresco no mata la pasada); cache de 60 s;
+        #     el bucle tras un error duerme PAUSA_ERROR_S (import roto, BD caida) y nunca la pausa ociosa de 1 h
+        limpiar()
+        hechos = []
+        def ceder_roto():
+            raise RuntimeError("BD caida")
+        durm = []
+        assert pasada([(sim, "15m"), (sim, "1H")], lambda: ahora, lambda s_, se: hechos.append(se), ceder_roto,
+                      durm.append, {}) == 2 and hechos == [] and durm == [PAUSA_BLOQUE_S] * 2
+        t, llam = [0.0], []
+        c = _con_cache(lambda: llam.append(1) or True, 60, reloj=lambda: t[0])
+        assert c() and c() and len(llam) == 1
+        t[0] = 59.9
+        assert c() and len(llam) == 1
+        t[0] = 60.0
+        assert c() and len(llam) == 2
+        durm, veces = [], [0]
+        def pasar_roto(*a):
+            veces[0] += 1
+            if veces[0] == 3:
+                raise KeyboardInterrupt  # sale del bucle de prueba
+            raise ConnectionError("BD caida")
+        try:
+            _bucle(dormir=durm.append, pasar=pasar_roto)
+        except KeyboardInterrupt:
+            pass
+        assert durm == [INICIO_S, PAUSA_ERROR_S, PAUSA_ERROR_S] and PAUSA_OCIOSA_S not in durm, durm
 
         # 5) series pendientes: catalogo activo, en SIMBOLOS, sin las completas
         limpiar()
@@ -288,6 +383,19 @@ def demo() -> None:
         almacen.marcar_completa(sim, "1H")
         almacen.registrar_carga(sim, "1H", ahora - pd.Timedelta(days=5), ahora - pd.Timedelta(days=1))
         assert almacen.carga(sim, "1H")[:2] == (ahora - pd.Timedelta(days=5), ahora - pd.Timedelta(days=1))
+        # resumen_snapshots (lo usa refresco.hay_pendientes_urgentes): una consulta, sin el JSON completo
+        persistencia.escribir_snapshot(sim, "Scalping 15m", {"velas": [1], "motor": "v2", "swing_length": 8}, None)
+        persistencia.escribir_snapshot(sim, "Scalping 30m", {"velas": [], "motor": "v2", "swing_length": 8}, None)
+        persistencia.escribir_snapshot(sim, "Swing (M)", {"velas": [1]}, None)
+        try:
+            r = persistencia.resumen_snapshots(("Scalping 15m", "Scalping 30m"))
+            assert set(r) == {(sim, "Scalping 15m"), (sim, "Scalping 30m")}, r.keys()
+            a_, b_ = r[(sim, "Scalping 15m")], r[(sim, "Scalping 30m")]
+            assert a_["hay_velas"] is True and a_["motor"] == "v2" and a_["swing_length"] == 8 and a_["refrescado_en"] is not None
+            assert b_["hay_velas"] is False
+        finally:
+            with almacen.get_conn() as conn:
+                conn.execute("DELETE FROM smc_snapshot WHERE simbolo = %s", (sim,))
     finally:
         OBJETIVO.update(o_obj), BLOQUE.update(o_blo)
         limpiar()

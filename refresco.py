@@ -103,8 +103,9 @@ def ordenar(combos: list[tuple[str, str]]) -> list[tuple[str, str]]:
 URGENTES = ("Scalping 15m", "Scalping 30m", "Intraday 1H")
 
 
-def pendientes(ahora: datetime, solo: tuple | None = None) -> list[tuple[str, str]]:
-    """Combinaciones a refrescar; `solo` limita a esas temporalidades (canonicas) sin leer los demas snapshots."""
+def pendientes(ahora: datetime, solo: tuple | None = None, resumen: dict | None = None) -> list[tuple[str, str]]:
+    """Combinaciones a refrescar; `solo` limita a esas temporalidades (canonicas). `resumen` =
+    persistencia.resumen_snapshots(...): decide con ese dict en vez de leer un snapshot completo por combo."""
     import persistencia
 
     salida = []
@@ -117,10 +118,15 @@ def pendientes(ahora: datetime, solo: tuple | None = None) -> list[tuple[str, st
             canon = resolver_temporalidad(c["temporalidad"])
             # el snapshot se guarda siempre bajo el nombre canónico (una fila vieja con alias,
             # p. ej. re-sembrada por código viejo en el VPS, no debe recalcularse en cada ciclo)
-            snap = persistencia.leer_snapshot(c["simbolo"], canon)
-            r = (snap or {}).get("respuesta") or {}
-            # vacío (descarga fallida) o calculado con otro swing_length (recalibración): rehacer, máx 1/hora
-            vacio = bool(snap) and (not r.get("velas") or r.get("motor") != "v2" or r.get("swing_length") != TEMPORALIDADES[canon]["swing_length"])
+            swing = TEMPORALIDADES[canon]["swing_length"]
+            if resumen is not None:
+                snap = resumen.get((c["simbolo"], canon))
+                vacio = bool(snap) and (not snap["hay_velas"] or snap["motor"] != "v2" or snap["swing_length"] != swing)
+            else:
+                snap = persistencia.leer_snapshot(c["simbolo"], canon)
+                r = (snap or {}).get("respuesta") or {}
+                # vacío (descarga fallida) o calculado con otro swing_length (recalibración): rehacer, máx 1/hora
+                vacio = bool(snap) and (not r.get("velas") or r.get("motor") != "v2" or r.get("swing_length") != swing)
             if necesita_refresco(c["simbolo"], canon, snap and snap["refrescado_en"], ahora, vacio):
                 salida.append((c["simbolo"], canon))
         except ValueError as e:
@@ -129,8 +135,10 @@ def pendientes(ahora: datetime, solo: tuple | None = None) -> list[tuple[str, st
 
 
 def hay_pendientes_urgentes(ahora: datetime) -> bool:
-    """Barato (solo lee los snapshots de 15m/30m/1H): ¿hay algo de Scalping/Intraday 1H por refrescar?"""
-    return bool(pendientes(ahora, URGENTES))
+    """Barato (2 consultas: catalogo + resumen de snapshots 15m/30m/1H): ¿hay algo por refrescar?"""
+    import persistencia
+
+    return bool(pendientes(ahora, URGENTES, persistencia.resumen_snapshots(URGENTES)))
 
 
 def refrescar_uno(simbolo: str, temporalidad: str) -> tuple:
@@ -402,15 +410,26 @@ def demo() -> None:
             sys.modules["persistencia"] = previo
     # hay_pendientes_urgentes: solo mira 15m/30m/1H (un 4H/D pendiente no frena la carga historica)
     snaps[("EURUSD", "Scalping 15m")]["refrescado_en"] = datetime(2026, 9, 23, 14, 33, tzinfo=u)  # fresco
+    def _resumen(tems):  # como persistencia.resumen_snapshots, a partir de los snaps falsos
+        return {k: {"refrescado_en": v["refrescado_en"], "hay_velas": bool(v["respuesta"].get("velas")),
+                    "motor": v["respuesta"].get("motor"), "swing_length": v["respuesta"].get("swing_length")}
+                for k, v in snaps.items() if k[1] in tems}
+    falso.resumen_snapshots = _resumen
+    falso.leer_snapshot = lambda s, t: (_ for _ in ()).throw(AssertionError("no debe leer snapshots completos"))
     falso.listar_catalogo = lambda: [{"simbolo": "EURUSD", "temporalidad": "Scalping 15m", "activo": True},
                                      {"simbolo": "EURUSD", "temporalidad": "Swing (M)", "activo": True},
                                      {"simbolo": "EURUSD", "temporalidad": "Intraday 4H", "activo": True},
                                      {"simbolo": "XAUUSD", "temporalidad": "Scalping", "activo": False}]
     sys.modules["persistencia"] = falso
     try:
-        assert len(pendientes(ahora2)) == 2 and not hay_pendientes_urgentes(ahora2)  # M y 4H pendientes: no urgen
+        assert len(pendientes(ahora2, None, _resumen(("Scalping 15m",))) ) == 2 and not hay_pendientes_urgentes(ahora2)  # M y 4H pendientes: no urgen
         snaps[("EURUSD", "Scalping 15m")]["refrescado_en"] = viejo
         assert hay_pendientes_urgentes(ahora2)
+        snaps[("EURUSD", "Scalping 15m")]["respuesta"]["velas"] = []  # snapshot vacio: pendiente (max 1/hora)
+        snaps[("EURUSD", "Scalping 15m")]["refrescado_en"] = datetime(2026, 9, 23, 14, 33, tzinfo=u)
+        assert not hay_pendientes_urgentes(ahora2) and hay_pendientes_urgentes(datetime(2026, 9, 23, 15, 40, tzinfo=u))
+        snaps[("EURUSD", "Scalping 15m")]["respuesta"]["velas"] = [1]
+        snaps[("EURUSD", "Scalping 15m")]["refrescado_en"] = viejo
         assert not hay_pendientes_urgentes(datetime(2026, 9, 26, 12, 5, tzinfo=u))  # sabado: nada (no cripto)
     finally:
         if previo is None:

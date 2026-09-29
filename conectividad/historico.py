@@ -227,15 +227,21 @@ def _descargar(instrumento, intervalo, a, b, simbolo=None):
     mucho antes de `b` con el mercado abierto, se pide una vez mas y se queda la descarga que llegue mas lejos."""
     try:
         df = dp.fetch(instrumento, intervalo, dp.OFFER_SIDE_BID, a, b)
+    except Exception as e:
+        raise _ErrDescarga() from e
+    # La guarda nunca debe hacer fallar una peticion en vivo: cualquier error aqui (o en el reintento)
+    # se registra y se conserva la primera descarga.
+    try:
         if simbolo and intervalo in _PASO and truncada(simbolo, df, _PASO[intervalo], b):
             log.warning("descarga %s %s truncada (termina %s, pedido hasta %s): se reintenta una vez",
                         simbolo, intervalo, df.index[-1], b)
             otra = dp.fetch(instrumento, intervalo, dp.OFFER_SIDE_BID, a, b)
             if not otra.empty and otra.index[-1] > df.index[-1]:
                 df = otra
-        return df
     except Exception as e:
-        raise _ErrDescarga() from e
+        log.warning("guarda de truncamiento %s %s fallo (%s: %s); se conserva la primera descarga",
+                    simbolo, intervalo, type(e).__name__, e)
+    return df
 
 
 def _velas_almacen(simbolo, instrumento, inicio, fin, intervalo):
@@ -349,6 +355,18 @@ def _demo_truncamiento() -> None:
         ahora = datetime.now(U)  # fin en el futuro (30m/4H piden +3h): se recorta a ahora
         pide("EURUSD", ahora + timedelta(hours=3), velas(pd.Timestamp(ahora).floor("15min") - pd.Timedelta(minutes=15), 16))
         assert len(llamadas) == 1
+        # el reintento que falla NO rompe la peticion: se conserva la primera descarga (truncada)
+        def fetch_falla_2a(*a, **k):
+            llamadas.append(a)
+            if len(llamadas) == 2:
+                raise ConnectionError("cae en el reintento")
+            return corto
+        dp.fetch = fetch_falla_2a
+        llamadas.clear()
+        assert _descargar("X", dp.INTERVAL_MIN_15, b - timedelta(hours=4), b, "EURUSD") is corto and len(llamadas) == 2
+        dp.fetch = fake
+        assert pide("EURUSD", b, corto, velas(b - timedelta(hours=3), 5)) is corto  # reintento que llega menos lejos: se ignora
+        assert pide("EURUSD", b, corto, pd.DataFrame(columns=["open"])) is corto  # reintento vacio: se ignora
         resp[:] = [pd.DataFrame(columns=["open"])]  # vacio no dispara la guarda (lo maneja quien llama)
         llamadas.clear(); _descargar("X", dp.INTERVAL_MIN_15, b - timedelta(hours=4), b, "EURUSD")
         assert len(llamadas) == 1

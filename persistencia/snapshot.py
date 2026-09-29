@@ -25,6 +25,19 @@ def leer_snapshot(simbolo: str, temporalidad: str) -> dict | None:
     return {"respuesta": row[0], "tendencia_actual": row[1], "refrescado_en": row[2]}
 
 
+def resumen_snapshots(temporalidades) -> dict:
+    """{(simbolo, temporalidad): {refrescado_en, hay_velas, motor, swing_length}} en UNA consulta, sin traer el
+    JSON completo (lo justo para decidir si toca refrescar)."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT simbolo, temporalidad, refrescado_en,"
+            " COALESCE(jsonb_array_length(CASE WHEN jsonb_typeof(estructura_smc->'velas') = 'array'"
+            "                                  THEN estructura_smc->'velas' END), 0) > 0,"
+            " estructura_smc->'motor', estructura_smc->'swing_length'"
+            " FROM smc_snapshot WHERE temporalidad = ANY(%s)", (list(temporalidades),)).fetchall()
+    return {(r[0], r[1]): {"refrescado_en": r[2], "hay_velas": r[3], "motor": r[4], "swing_length": r[5]} for r in rows}
+
+
 def escribir_snapshot(simbolo: str, temporalidad: str, respuesta: dict, tendencia_actual: str | None) -> None:
     with get_conn() as conn:
         conn.execute(
