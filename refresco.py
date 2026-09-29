@@ -1,8 +1,9 @@
 """Refresco de snapshots SMC dentro del servicio (reemplaza el cron n8n de 180 llamadas HTTP).
 
 Las combinaciones pendientes se procesan por prioridad (vela más corta primero) en un pool pequeño de
-procesos `spawn` con prioridad baja (os.nice), para no ahogar al servidor HTTP en el VPS compartido.
-REFRESCO_WORKERS fija el tamaño (1 = en serie, en el mismo proceso, para depurar).
+hilos (ThreadPoolExecutor): el cálculo cuesta ~1 s de CPU y el resto es esperar la descarga de Dukascopy,
+así que los hilos solapan la espera de red sin el RAM de procesos. REFRESCO_HILOS fija el tamaño (por
+defecto 6; 1 = en serie, sin pool, para depurar). REFRESCO_WORKERS se lee solo como alias obsoleto.
 
 Una combinación activo×temporalidad solo se refresca cuando cerró una vela nueva
 de SU temporalidad (15m, 30m, 1H, 4H) y su snapshot es anterior a ese cierre; las
@@ -12,12 +13,10 @@ de tiempo (PRESUPUESTO_CICLO_S): lo que no alcanza queda para el siguiente ciclo
 """
 
 import logging
-import multiprocessing
 import os
 import threading
 import time
-from concurrent.futures import ProcessPoolExecutor
-from concurrent.futures.process import BrokenProcessPool
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 
 from conectividad.historico import TEMPORALIDADES, resolver_temporalidad
@@ -34,7 +33,9 @@ HORA_REFRESCO_DIARIO = 14
 # uno en curso); lo pendiente queda para el siguiente ciclo, donde lo de mayor prioridad va primero.
 PRESUPUESTO_CICLO_S = 300
 PRIORIDAD = tuple(TEMPORALIDADES)  # orden del mapa = vela más corta primero (caduca antes)
-_pool: ProcessPoolExecutor | None = None
+HILOS_DEFECTO = 6
+_pool: ThreadPoolExecutor | None = None
+_pool_hilos = 0
 
 
 def inicio_vela(ahora: datetime, temporalidad: str) -> datetime:
@@ -121,13 +122,13 @@ def pendientes(ahora: datetime) -> list[tuple[str, str]]:
 
 
 def refrescar_uno(simbolo: str, temporalidad: str) -> tuple:
-    """Worker (nivel de módulo: se ejecuta en un proceso spawn). (simbolo, temporalidad, status, error);
-    status None si procesar lanzó. procesar abre su propia conexión a Postgres por llamada."""
+    """(simbolo, temporalidad, status, error); status None si procesar lanzó. procesar abre su propia
+    conexión a Postgres por llamada (seguro entre hilos)."""
     import api.setups
     from api.setups import procesar
 
-    if api.setups._persistencia is None:  # import de persistencia falló en este proceso: no fingir un refresco
-        return simbolo, temporalidad, None, "sin persistencia en el worker"
+    if api.setups._persistencia is None:  # import de persistencia falló: no fingir un refresco
+        return simbolo, temporalidad, None, "sin persistencia"
     try:
         status, body = procesar({"simbolo": simbolo, "temporalidad": temporalidad, "_force_refresh": True})
         return simbolo, temporalidad, status, body.get("error") if status != 200 else None
@@ -135,20 +136,14 @@ def refrescar_uno(simbolo: str, temporalidad: str) -> tuple:
         return simbolo, temporalidad, None, f"{type(e).__name__}: {e}"
 
 
-def _workers() -> int:
-    # ponytail: 1 por defecto. mtb-api tiene 0.5 CPU / 1 GB y os.cpu_count() en Docker da los núcleos
-    # del host: 3 procesos spawn (~150-250 MB c/u) arriesgan OOM sin ganar CPU. Subir a 2 solo tras medir RSS.
-    try:
-        return max(1, int(os.environ.get("REFRESCO_WORKERS", "1")))
-    except ValueError:
-        return 1
-
-
-def _bajar_prioridad() -> None:
-    try:
-        os.nice(10)
-    except (AttributeError, OSError):  # Windows no tiene os.nice
-        pass
+def _hilos() -> int:
+    for var in ("REFRESCO_HILOS", "REFRESCO_WORKERS"):  # WORKERS: alias obsoleto
+        if var in os.environ:
+            try:
+                return max(1, int(os.environ[var]))
+            except ValueError:
+                break
+    return HILOS_DEFECTO
 
 
 def _cerrar_pool() -> None:
@@ -158,56 +153,62 @@ def _cerrar_pool() -> None:
         _pool = None
 
 
-def refrescar_todos(combos: list[tuple[str, str]], workers: int, funcion=None,
+def _obtener_pool(hilos: int) -> ThreadPoolExecutor:
+    """Pool creado una vez (perezoso) y reutilizado; se recrea si cambia el tamaño o se rompió."""
+    global _pool, _pool_hilos
+    if _pool is not None and (_pool_hilos != hilos or getattr(_pool, "_broken", False) or getattr(_pool, "_shutdown", False)):
+        _cerrar_pool()
+    if _pool is None:
+        _pool = ThreadPoolExecutor(max_workers=hilos, thread_name_prefix="refresco")
+        _pool_hilos = hilos
+    return _pool
+
+
+def refrescar_todos(combos: list[tuple[str, str]], hilos: int, funcion=None,
                     limite: float | None = None) -> list[tuple]:
-    """Resultados en el orden de `combos`. El pool se crea una vez (perezoso) y se reutiliza; si se
-    rompe, se descarta y el siguiente ciclo crea uno nuevo. `funcion` debe ser de nivel de módulo.
-    `limite` (time.monotonic) es el tope del ciclo: se revisa ANTES de iniciar cada cálculo (en serie) o
-    cada tanda de `workers` (pool); pasado el límite se deja de iniciar trabajo y lo que falta se omite
-    (no aparece en el resultado). Nunca se interrumpe un cálculo en curso ni se abandonan futuros ya
-    enviados: cada tanda se espera completa, así que todo lo enviado se devuelve (y se registra)."""
-    global _pool
+    """Resultados en el orden de `combos` (los enviados). Con hilos > 1 mantiene hasta `hilos` cálculos en
+    vuelo y envía el siguiente en cuanto uno termina, en orden de prioridad. `limite` (time.monotonic) se
+    revisa ANTES de enviar cada cálculo nuevo; pasado el límite lo que falta se omite (no aparece en el
+    resultado). Nunca se interrumpe uno en curso: todo lo enviado se espera y se devuelve."""
     funcion = funcion or refrescar_uno
     vencido = lambda: limite is not None and time.monotonic() >= limite
-    if workers <= 1:
+
+    def seguro(s, t):
+        try:
+            return funcion(s, t)
+        except Exception as e:
+            return s, t, None, f"{type(e).__name__}: {e}"
+
+    if hilos <= 1:
         salida = []
         for s, t in combos:
             if vencido():
                 break
-            try:
-                salida.append(funcion(s, t))
-            except Exception as e:
-                salida.append((s, t, None, f"{type(e).__name__}: {e}"))
+            salida.append(seguro(s, t))
         return salida
-    if _pool is None:
-        # spawn, no fork: el proceso padre tiene hilos (servidor HTTP) y conexiones abiertas
-        _pool = ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn"),
-                                    initializer=_bajar_prioridad)
-    salida, roto = [], False
-    for i in range(0, len(combos), workers):
+    pool = _obtener_pool(hilos)
+    enviados, vuelo = [], set()
+    for s, t in combos:
+        while len(vuelo) >= hilos:
+            vuelo -= wait(vuelo, return_when=FIRST_COMPLETED).done
         if vencido():
             break
-        futuros = [(s, t, _pool.submit(funcion, s, t)) for s, t in combos[i:i + workers]]
-        for s, t, f in futuros:
-            try:
-                salida.append(f.result())
-            except BrokenProcessPool as e:
-                roto = True
-                salida.append((s, t, None, f"BrokenProcessPool: {e}"))
-            except Exception as e:
-                salida.append((s, t, None, f"{type(e).__name__}: {e}"))
-        if roto:
+        try:
+            f = pool.submit(seguro, s, t)
+        except RuntimeError:  # pool cerrado/roto: se recrea al siguiente ciclo
+            _cerrar_pool()
             break
-    if roto:
-        _cerrar_pool()
-    return salida
+        enviados.append(f)
+        vuelo.add(f)
+    wait(vuelo)
+    return [f.result() for f in enviados]
 
 
 def ciclo(presupuesto: float = PRESUPUESTO_CICLO_S) -> int:
     """Refresca lo pendiente por prioridad hasta agotar el presupuesto. Devuelve cuántos refrescó."""
     hechos = 0
     pend = pendientes(datetime.now(timezone.utc))
-    for simbolo, temporalidad, status, error in refrescar_todos(pend, _workers(), limite=time.monotonic() + presupuesto):
+    for simbolo, temporalidad, status, error in refrescar_todos(pend, _hilos(), limite=time.monotonic() + presupuesto):
         if status is None:
             logging.error("refresco %s %s falló: %s", simbolo, temporalidad, error)
             continue
@@ -284,23 +285,46 @@ def demo() -> None:
                                ("XAUUSD", "Intraday 1H"), ("EURUSD", "Intraday 4H"), ("EURUSD", "Intraday D"),
                                ("BTCUSD", "Swing (S)"), ("EURUSD", "Swing (M)")]
 
-    # workers=1: en serie, en el mismo proceso, sin pool y en orden de prioridad
+    # hilos=1: en serie, sin pool y en orden de prioridad
     vistos = []
     res = refrescar_todos(ordenar(combos), 1, lambda s, t: vistos.append((s, t)) or (s, t, 200, None))
     assert vistos == ordenar(combos) and len(res) == 8 and _pool is None
 
-    # workers=3: pool spawn con prioridad baja; procesa todos y devuelve en el orden enviado
-    import time as _t
-    seis = [(f"S{n}", "Scalping 15m") for n in range(6)]
-    t0 = _t.perf_counter()
-    res = refrescar_todos(seis, 3, _worker_prueba)
-    assert [(s, t) for s, t, *_ in res] == seis and all(st == 200 for _, _, st, _ in res), res
-    assert len({pid for *_, pid in res}) > 1  # corrió en más de un proceso
-    t0 = _t.perf_counter()
-    refrescar_todos(seis, 3, _worker_prueba)  # pool reutilizado (ya caliente)
-    paralelo = _t.perf_counter() - t0
-    assert paralelo < 6 * 0.3, paralelo  # en serie serían >= 1.8 s
+    # hilos=6: espera de red simulada (sleep); N/6 x espera en vez de N x espera; orden de envío = prioridad
+    import threading as _th
+    espera = 0.2
+    doce = [(f"S{n}", PRIORIDAD[n % len(PRIORIDAD)]) for n in range(12)]
+    doce = ordenar(doce)
+    orden_envio, hilos_vistos, en_vuelo, pico = [], set(), [0], [0]
+    cerrojo = _th.Lock()
+
+    def dormir(s, t):
+        with cerrojo:
+            orden_envio.append((s, t)); hilos_vistos.add(_th.get_ident())
+            en_vuelo[0] += 1; pico[0] = max(pico[0], en_vuelo[0])
+        time.sleep(espera)
+        with cerrojo:
+            en_vuelo[0] -= 1
+        return s, t, 200, None
+
+    t0 = time.perf_counter()
+    res = refrescar_todos(doce, 6, dormir)
+    con_hilos = time.perf_counter() - t0
+    assert [(s, t) for s, t, *_ in res] == doce and all(st == 200 for _, _, st, _ in res), res
+    assert len(hilos_vistos) > 1 and 1 < pico[0] <= 6, (hilos_vistos, pico)
+    assert orden_envio[:6] == doce[:6]  # los 6 primeros en prioridad arrancan primero
+    pool1 = _pool
+    t0 = time.perf_counter()
+    refrescar_todos(doce, 1, dormir)
+    en_serie = time.perf_counter() - t0
+    assert con_hilos < en_serie / 3, (con_hilos, en_serie)  # ideal 2 esperas vs 12
+    assert con_hilos < (12 / 6) * espera + 0.15, con_hilos
+    print(f"refresco: 12 items x {espera}s -> 6 hilos {con_hilos:.2f}s vs serie {en_serie:.2f}s (x{en_serie / con_hilos:.1f})")
+    refrescar_todos(doce[:2], 6, dormir)
+    assert _pool is pool1  # pool reutilizado, no uno por ciclo
     assert refrescar_todos([("X", "Scalping 15m")], 3, _worker_error)[0][2] is None  # excepción -> status None
+    _cerrar_pool()
+    assert refrescar_todos(doce[:2], 6, dormir) and _pool is not None and _pool is not pool1  # recreado tras cerrar
 
     # tope de tiempo: en serie no inicia cálculos nuevos pasado el límite y no interrumpe el que corre
     lento = lambda s, t: time.sleep(0.2) or (s, t, 200, None)
@@ -308,23 +332,37 @@ def demo() -> None:
     res = refrescar_todos(orden, 1, lento, limite=time.monotonic() + 0.3)
     assert [(s, t) for s, t, *_ in res] == orden[:2], res  # 0.2 s ok, 0.4 s > tope: el 3.º ya no inicia
     assert len(refrescar_todos(orden, 1, lento, limite=time.monotonic() - 1)) == 0  # ya vencido: nada
-    # pool: por tandas de `workers`, todo lo enviado se espera y se devuelve, prioridad respetada
-    res = refrescar_todos(seis, 2, _worker_prueba, limite=time.monotonic() + 0.4)
-    assert [(s, t) for s, t, *_ in res] == seis[:4], res  # tandas 1 (t=0) y 2 (t=0.3) inician; la 3 (t=0.6) no
+    # hilos: el límite se revisa antes de CADA envío; lo enviado se espera completo y se devuelve
+    orden_envio.clear()
+    res = refrescar_todos(doce, 2, lambda s, t: dormir(s, t), limite=time.monotonic() + 0.3)
+    assert 2 <= len(res) < len(doce) and [(s, t) for s, t, *_ in res] == doce[:len(res)] == orden_envio, res
+    assert all(st == 200 for _, _, st, _ in res)  # los ya enviados terminaron (no se interrumpen)
+    assert refrescar_todos(doce, 6, dormir, limite=time.monotonic() - 1) == []  # vencido: nada
     # ciclo(): pendientes por prioridad y presupuesto pequeño con refrescar_uno sustituido
     g = globals()
-    orig = {n: g[n] for n in ("pendientes", "refrescar_uno", "_workers")}
+    orig = {n: g[n] for n in ("pendientes", "refrescar_uno", "_hilos")}
     llamadas = []
     try:
         g["pendientes"] = lambda ahora: orden
         g["refrescar_uno"] = lambda s, t: llamadas.append((s, t)) or time.sleep(0.2) or (s, t, 200, None)
-        g["_workers"] = lambda: 1
+        g["_hilos"] = lambda: 1
         assert ciclo(presupuesto=0.3) == 2 and llamadas == orden[:2], llamadas
         llamadas.clear()
         assert ciclo() == len(orden) and llamadas == orden
     finally:
         g.update(orig)
     _cerrar_pool()
+    e0 = dict(os.environ)
+    try:  # env: HILOS manda; WORKERS es alias obsoleto; por defecto 6
+        for v in ("REFRESCO_HILOS", "REFRESCO_WORKERS"):
+            os.environ.pop(v, None)
+        assert _hilos() == 6
+        os.environ["REFRESCO_WORKERS"] = "2"
+        assert _hilos() == 2
+        os.environ["REFRESCO_HILOS"] = "4"
+        assert _hilos() == 4
+    finally:
+        os.environ.clear(); os.environ.update(e0)
 
     # pendientes(): temporalidad desconocida se omite sin abortar; alias no es "vacío" para siempre
     import sys, types
@@ -351,12 +389,6 @@ def demo() -> None:
         else:
             sys.modules["persistencia"] = previo
     print("refresco.demo() OK")
-
-
-def _worker_prueba(simbolo: str, temporalidad: str):
-    import os as _os
-    time.sleep(0.3)
-    return simbolo, temporalidad, 200, _os.getpid()
 
 
 def _worker_error(simbolo: str, temporalidad: str):
