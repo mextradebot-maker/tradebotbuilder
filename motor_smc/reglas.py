@@ -65,12 +65,14 @@ def r1_volumen(ohlc: pd.DataFrame, i: int, vela: str) -> dict:
     if not media > 0:
         return _res(False, None, "datos insuficientes: sin volumen en las 20 velas previas")
     multiplo = float(ohlc["volume"].iloc[i] / media)
+    if pd.isna(multiplo):
+        return _res(False, None, "datos insuficientes: sin volumen en la vela del barrido")
     return _res(multiplo >= umbral, round(multiplo, 2), f"volumen del barrido {multiplo:.2f}x vs umbral {umbral}x")
 
 
 def r2_fvg(ohlc: pd.DataFrame, top: float, bottom: float, j: int) -> dict:
     valor_atr = atr(ohlc).iloc[j - 1] if j >= 1 else float("nan")
-    if pd.isna(valor_atr):
+    if pd.isna(valor_atr) or valor_atr <= 0:
         return _res(False, None, "datos insuficientes para ATR(14)")
     proporcion = float(top - bottom) / float(valor_atr)
     return _res(proporcion >= FACTOR_ATR_FVG, round(proporcion, 2), f"FVG mide {proporcion:.2f} ATR vs mínimo {FACTOR_ATR_FVG}")
@@ -123,6 +125,10 @@ def r5_descuento_premium(mayor: pd.DataFrame, entrada: float, direccion: str, ve
 
 def r6_tp_liquidez(ohlc: pd.DataFrame, swings: pd.DataFrame, conocido: int, entrada: float, stop: float,
                    direccion: str, swing_length: int) -> dict:
+    # Guardia: riesgo nulo o stop del lado incorrecto
+    if abs(entrada - stop) == 0 or (direccion == "long" and stop >= entrada) or (direccion == "short" and stop <= entrada):
+        return _res(False, None, "riesgo nulo o stop del lado incorrecto")
+
     long = direccion == "long"
     lado = swings[swings["HighLow"] == (1 if long else -1)]
     lado = lado[lado.index + swing_length <= conocido]  # swing ya confirmado cuando el setup existe
@@ -138,8 +144,8 @@ def r6_tp_liquidez(ohlc: pd.DataFrame, swings: pd.DataFrame, conocido: int, entr
     if not candidatos:
         return _res(False, None, "no hay liquidez sin buscar en la dirección del trade")
     tp = min(candidatos) if long else max(candidatos)
-    rr = abs(tp - entrada) / abs(entrada - stop)
-    return _res(rr >= RR_MINIMO, {"tp": tp, "rr": round(rr, 2)}, f"TP en liquidez a {rr:.2f}R (mínimo {RR_MINIMO}R)")
+    rr = float(abs(tp - entrada) / abs(entrada - stop))
+    return _res(bool(rr >= RR_MINIMO), {"tp": float(tp), "rr": round(float(rr), 2)}, f"TP en liquidez a {rr:.2f}R (mínimo {RR_MINIMO}R)")
 
 
 # ── pruebas ──────────────────────────────────────────────────────────────────
@@ -225,6 +231,19 @@ def demo() -> None:
     tomado.iloc[12, tomado.columns.get_loc("high")] = 16.0  # el precio ya buscó el 15
     assert r6_tp_liquidez(tomado, swings, 29, 10.0, 8.0, "long", 5)["dato"]["tp"] == 20.0
     assert r6_tp_liquidez(plano, swings, 29, 10.0, 12.0, "short", 5)["cumple"] is False  # no hay bajos
+
+    # tipos nativos y entradas degeneradas (json.dumps -> jsonb)
+    import json
+    import numpy as np
+    r6_np = r6_tp_liquidez(plano, swings, 29, np.float64(10.0), np.float64(8.0), "long", 5)
+    assert type(r6_np["cumple"]) is bool and type(r6_np["dato"]["rr"]) is float, r6_np
+    json.dumps(r6_np, allow_nan=False)
+    assert r6_tp_liquidez(plano, swings, 29, 10.0, 10.0, "long", 5)["cumple"] is False  # riesgo nulo
+    assert r6_tp_liquidez(plano, swings, 29, 10.0, 12.0, "long", 5)["cumple"] is False  # stop del lado incorrecto
+    assert r2_fvg(velas([(10, 10, 10, 10, 100.0)] * 20), 11.0, 10.0, 15)["cumple"] is False  # ATR 0
+    sin_vol = velas(base + [(10, 11, 9, 10, float("nan"))])
+    r1_nan = r1_volumen(sin_vol, 20, "15m")
+    assert r1_nan["cumple"] is False and r1_nan["dato"] is None
 
     print("reglas.demo() OK")
 
