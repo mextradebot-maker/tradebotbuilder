@@ -29,6 +29,7 @@ un bot decide si entra o no — sin eso, el bot podía tomar un setup técnicame
 válido pero contra la tendencia del día o con historial no rentable.
 """
 
+import json
 from datetime import datetime, timedelta, timezone, time as _time
 
 import dukascopy_python as dp
@@ -111,23 +112,30 @@ def motor_v2(simbolo: str, temporalidad: str, ohlc, inicio, fin) -> dict:
         if vela_mayor == vela:
             ohlc_mayor = ohlc
         else:
+            motivo = None
             try:
                 ohlc_mayor = obtener_velas(simbolo, inicio, fin, intervalo=VELA_A_INTERVALO[vela_mayor])
-            except Exception:
-                ohlc_mayor = None
+            except Exception as e:
+                ohlc_mayor, motivo = None, f"{type(e).__name__}: {e}"
             if ohlc_mayor is None or ohlc_mayor.empty:
-                return {"estado": "sin_datos_temporalidad_mayor", "vela": vela, "vela_mayor": vela_mayor,
-                        "setups": [], "setups_validos": []}
+                sin = {"estado": "sin_datos_temporalidad_mayor", "vela": vela, "vela_mayor": vela_mayor,
+                       "setups": [], "setups_validos": []}
+                if motivo:
+                    sin["error"] = motivo
+                return sin
         setups = detectar_setups_v2(ohlc, ohlc_mayor, vela, vela_mayor)
         # jsonb no acepta NaN: celdas vacías -> None
         registros = setups.astype(object).where(setups.notna(), None).to_dict(orient="records")
-        return {
+        resultado = {
             "estado": "ok", "vela": vela, "vela_mayor": vela_mayor,
             "setups": registros,
             "setups_validos": [s for s in registros if s["valido"]],
             "embudo": embudo(setups),
             "backtests": backtest_v2(ohlc, setups),
         }
+        # ida y vuelta estricta: un NaN o tipo numpy en embudo/backtests lanza aquí (-> estado error)
+        # en vez de romper json.dumps en escribir_snapshot y dejar sin snapshot al motor viejo.
+        return json.loads(json.dumps(resultado, allow_nan=False))
     except Exception as e:
         return {"estado": "error", "error": f"{type(e).__name__}: {e}"}
 
@@ -269,7 +277,50 @@ def procesar(payload: dict) -> tuple[int, dict]:
     return 200, respuesta
 
 
+def _demo_aislamiento() -> None:
+    """Sin red: motor_v2 nunca propaga y su salida es JSON estricto (monkeypatch de globals)."""
+    import sys
+
+    import pandas as pd
+
+    from motor_smc.setups_v2 import COLUMNAS
+
+    g = sys.modules[__name__]
+    idx = pd.date_range("2026-01-05", periods=10, freq="h", tz="UTC")
+    ohlc = pd.DataFrame({"open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 1.0}, index=idx)
+    vacio = pd.DataFrame(columns=COLUMNAS)
+    ini, fin = idx[0].to_pydatetime(), idx[-1].to_pydatetime()
+
+    def boom(*a, **k):
+        raise RuntimeError("boom")
+
+    orig = {n: getattr(g, n) for n in ("detectar_setups_v2", "obtener_velas", "backtest_v2")}
+    try:
+        g.obtener_velas = lambda *a, **k: ohlc
+        g.detectar_setups_v2 = boom
+        assert motor_v2("XAUUSD", "Intraday", ohlc, ini, fin)["estado"] == "error"
+
+        g.detectar_setups_v2 = lambda *a, **k: vacio
+        g.obtener_velas = boom
+        r = motor_v2("XAUUSD", "Intraday", ohlc, ini, fin)
+        assert r["estado"] == "sin_datos_temporalidad_mayor" and "error" in r, r
+
+        g.obtener_velas = lambda *a, **k: ohlc
+        g.backtest_v2 = lambda *a, **k: {"x": float("nan")}
+        assert motor_v2("XAUUSD", "Intraday", ohlc, ini, fin)["estado"] == "error"
+
+        g.backtest_v2 = orig["backtest_v2"]
+        r = motor_v2("XAUUSD", "Intraday", ohlc, ini, fin)
+        assert r["estado"] == "ok" and r["setups"] == [], r
+        json.dumps(r, allow_nan=False)
+    finally:
+        for n, v in orig.items():
+            setattr(g, n, v)
+    print("api.setups._demo_aislamiento() OK — motor_v2 no propaga y devuelve JSON estricto")
+
+
 def demo() -> None:
+    _demo_aislamiento()
     status, body = procesar({"simbolo": "XAUUSD", "dias": 90})
     assert status == 200
     assert body["velas"] > 0
@@ -285,7 +336,6 @@ def demo() -> None:
     print(f"api.setups.demo() OK — XAUUSD Swing (H): tendencia {body_t['tendencia_actual']}, "
           f"{len(body_t['setups'])} setups crudos, {len(body_t['setups_confirmados'])} confirmados")
 
-    import json
     v2 = body_t["motor_v2"]
     assert v2["estado"] in ("ok", "sin_datos_temporalidad_mayor"), v2
     assert (v2["vela"], v2["vela_mayor"]) == ("4H", "D")
