@@ -5,6 +5,7 @@ cumple=None significa `no_aplica` (no bloquea). Toda regla usa solo velas previa
 índice que recibe (anti-anticipación); la temporalidad mayor llega ya recortada con `cortar_mayor`.
 """
 
+import numpy as np
 import pandas as pd
 
 from smartmoneyconcepts import smc
@@ -114,11 +115,83 @@ def cruce_20_50(ohlc: pd.DataFrame, k: int, direccion: str, emas_serie: dict | N
 
 
 def contexto_mayor(mayor: pd.DataFrame, vela_mayor: str) -> tuple:
-    """(tendencia, swings) de la temporalidad mayor ya recortada: lo que R4 y R5 calculan.
-    El detector lo memoiza por len(mayor) (mismo número de velas cerradas = mismo recorte)."""
+    """(tendencia, último alto, último bajo) de la temporalidad mayor ya recortada, con la librería:
+    lo que R4 y R5 calculan. Es la referencia de `ContextoMayor` (ver demo)."""
     # = obtener_tendencia(mayor) pero sin fvg/ob/liquidez, que la tendencia no usa; los swings sirven a los dos
     swings = smc.swing_highs_lows(mayor, swing_length=SWING_LENGTH_POR_VELA[vela_mayor])
-    return tendencia_de_estructura(smc.bos_choch(mayor, swings))["direccion"], swings
+    altos = swings.loc[swings["HighLow"] == 1, "Level"]
+    bajos = swings.loc[swings["HighLow"] == -1, "Level"]
+    return (tendencia_de_estructura(smc.bos_choch(mayor, swings))["direccion"],
+            float(altos.iloc[-1]) if len(altos) else None, float(bajos.iloc[-1]) if len(bajos) else None)
+
+
+class ContextoMayor:
+    """`contexto_mayor(ohlc_mayor.iloc[:n])` para cualquier n sin volver a correr la librería por recorte
+    (era el costo dominante del detector: un recorte distinto casi por candidato).
+
+    Mismo resultado que la librería porque:
+    - las marcas crudas de swing_highs_lows en p solo miran las velas p-sl+1..p+sl: en el recorte de n
+      velas son las de la serie completa con p <= n-1-sl (después de eso la ventana queda incompleta);
+    - la limpieza de swings consecutivos del mismo tipo deja, en cada racha, el primer extremo; el
+      recorte solo trunca la última racha;
+    - la librería pone además swings artificiales en la vela 0 y en la n-1 (tipo opuesto al primero y
+      al último real);
+    - en bos_choch el último evento que sobrevive es el último (por índice) cuya ruptura cae dentro del
+      recorte: ningún evento posterior con ruptura puede borrarlo. La ruptura es la primera vela >= i+2
+      que cierra más allá del nivel (guardado en float32 por la librería), igual en la serie completa.
+    Anti-anticipación: `en(n)` solo usa las velas 0..n-1."""
+
+    def __init__(self, ohlc_mayor: pd.DataFrame, vela_mayor: str):
+        sl = self.sl = SWING_LENGTH_POR_VELA[vela_mayor]
+        self.high, self.low = ohlc_mayor["high"], ohlc_mayor["low"]
+        self.close = ohlc_mayor["close"].to_numpy()
+        crudas = np.where(  # misma expresión que smc.swing_highs_lows antes de su limpieza
+            self.high == self.high.shift(-sl).rolling(sl * 2).max(), 1,
+            np.where(self.low == self.low.shift(-sl).rolling(sl * 2).min(), -1, np.nan))
+        self.pos = np.flatnonzero(~np.isnan(crudas))
+        self.tipo = crudas[self.pos].astype(int)
+        cambio = np.r_[True, self.tipo[1:] != self.tipo[:-1]]
+        self.racha = np.cumsum(cambio) - 1           # racha de cada marca cruda
+        self.ini_racha = np.flatnonzero(cambio)      # primera marca cruda de cada racha
+        fines = np.r_[self.ini_racha[1:], len(self.pos)]
+        self.limpios = [self._extremo(a, b) for a, b in zip(self.ini_racha, fines)]
+        self.ruptura: dict[int, int] = {}
+
+    def _swing(self, p: int, t: int) -> tuple:
+        return p, t, float(self.high.iloc[p] if t == 1 else self.low.iloc[p])
+
+    def _extremo(self, a: int, b: int) -> tuple:
+        """Primer máximo (altos) o primer mínimo (bajos) de las marcas crudas a..b-1 de una racha."""
+        pos, t = self.pos[a:b], int(self.tipo[a])
+        valores = self.high.to_numpy()[pos] if t == 1 else self.low.to_numpy()[pos]
+        return self._swing(int(pos[np.argmax(valores) if t == 1 else np.argmin(valores)]), t)
+
+    def _primera_ruptura(self, p: int, t: int, nivel: float) -> int:
+        if p not in self.ruptura:
+            nivel32 = float(np.float32(nivel))
+            resto = self.close[p + 2 :]
+            hits = np.flatnonzero(resto > nivel32 if t == 1 else resto < nivel32)
+            self.ruptura[p] = p + 2 + int(hits[0]) if len(hits) else len(self.close)
+        return self.ruptura[p]
+
+    def en(self, n: int) -> tuple:
+        k = int(np.searchsorted(self.pos, n - 1 - self.sl, side="right"))  # marcas crudas visibles
+        if k == 0:
+            return "sin_definir", None, None
+        r = int(self.racha[k - 1])
+        reales = self.limpios[:r] + [self._extremo(int(self.ini_racha[r]), k)]
+        q = [self._swing(0, -reales[0][1]), *reales, self._swing(n - 1, -reales[-1][1])]
+        alto = next(s[2] for s in reversed(q) if s[1] == 1)
+        bajo = next(s[2] for s in reversed(q) if s[1] == -1)
+        for j in range(len(q) - 3, 0, -1):  # evento en q[j] con el patrón q[j-1..j+2]
+            a, (p, t, b), c, d = q[j - 1][2], q[j], q[j + 1][2], q[j + 2][2]
+            if t == 1:
+                evento = a < c < b < d or d > b > a > c      # BOS / CHoCH alcista
+            else:
+                evento = a > c > b > d or d < b < a < c      # BOS / CHoCH bajista
+            if evento and self._primera_ruptura(p, t, b) <= n - 1:
+                return ("compra" if t == 1 else "venta"), alto, bajo
+        return "sin_definir", alto, bajo
 
 
 def r4_estructura(mayor: pd.DataFrame, direccion: str, vela_mayor: str, contexto: tuple | None = None) -> dict:
@@ -136,12 +209,9 @@ def r5_descuento_premium(mayor: pd.DataFrame, entrada: float, direccion: str, ve
                          contexto: tuple | None = None) -> dict:
     if mayor.empty:
         return _res(False, None, "sin velas cerradas de la temporalidad mayor")
-    swings = contexto[1] if contexto is not None else smc.swing_highs_lows(mayor, swing_length=SWING_LENGTH_POR_VELA[vela_mayor])
-    altos = swings.loc[swings["HighLow"] == 1, "Level"]
-    bajos = swings.loc[swings["HighLow"] == -1, "Level"]
-    if altos.empty or bajos.empty:
+    _, alto, bajo = contexto_mayor(mayor, vela_mayor) if contexto is None else contexto
+    if alto is None or bajo is None:
         return _res(False, None, f"datos insuficientes: sin swing alto y bajo en {vela_mayor}")
-    alto, bajo = float(altos.iloc[-1]), float(bajos.iloc[-1])
     if alto <= bajo:
         return _res(False, None, f"rango {vela_mayor} inválido (último alto <= último bajo)")
     posicion = (entrada - bajo) / (alto - bajo)
@@ -159,13 +229,13 @@ def r6_tp_liquidez(ohlc: pd.DataFrame, swings: pd.DataFrame, conocido: int, entr
     long = direccion == "long"
     lado = swings[swings["HighLow"] == (1 if long else -1)]
     lado = lado[lado.index + swing_length <= conocido]  # swing ya confirmado cuando el setup existe
-    extremo = ohlc["high"] if long else ohlc["low"]
+    extremo = (ohlc["high"] if long else ohlc["low"]).to_numpy()  # numpy: el slice de pandas por swing era lento
     candidatos = []
     for idx, nivel in lado["Level"].items():
         if (long and nivel <= entrada) or (not long and nivel >= entrada):
             continue
-        despues = extremo.iloc[idx + 1 : conocido + 1]
-        sin_buscar = despues.empty or (despues.max() < nivel if long else despues.min() > nivel)
+        despues = extremo[idx + 1 : conocido + 1]
+        sin_buscar = despues.size == 0 or (np.nanmax(despues) < nivel if long else np.nanmin(despues) > nivel)
         if sin_buscar:
             candidatos.append(float(nivel))
     if not candidatos:
@@ -200,6 +270,8 @@ def zigzag(tramos, freq="1h", inicio="2026-01-05 00:00") -> pd.DataFrame:
 # Tramos largos a propósito: con swing_length 10 (1H) un swing necesita 10 velas a cada lado.
 ALCISTA = [(100, 120, 24), (120, 110, 14), (110, 135, 24), (135, 124, 14), (124, 150, 24),
            (150, 138, 14), (138, 165, 24), (165, 150, 14), (150, 172, 24)]
+
+TRAMOS_CORTOS = [(100, 110, 12), (110, 104, 7), (104, 112, 12), (112, 101, 12), (101, 108, 9), (108, 99, 15)]
 
 
 def demo() -> None:
@@ -254,6 +326,23 @@ def demo() -> None:
     ctx = contexto_mayor(mayor_alcista, "1H")
     assert r4_estructura(mayor_alcista, "long", "1H", ctx) == r4
     assert r5_descuento_premium(mayor_alcista, 152.0, "long", "1H", ctx) == r5_bajo
+    assert r5_descuento_premium(mayor_alcista.iloc[:15], 152.0, "long", "1H")["cumple"] is False  # sin swings aún
+
+    # ContextoMayor.en(n) == librería sobre el recorte de n velas, para TODO n (rachas, empates en
+    # precios redondeados, swings artificiales de los extremos, rupturas fuera del recorte)
+    import numpy as np
+    rng = np.random.default_rng(7)
+    series = [mayor_alcista, zigzag(TRAMOS_CORTOS)]
+    for semilla in range(2):
+        c = np.round(100 + np.cumsum(rng.normal(0, 1, 260)), 0)  # redondeo -> empates de máximos/mínimos
+        o = np.r_[c[0], c[:-1]]
+        series.append(velas([(o_, max(o_, c_) + rng.integers(0, 2), min(o_, c_) - rng.integers(0, 2), c_, 1.0)
+                             for o_, c_ in zip(o, c)], freq="1h"))
+    for serie in series:
+        for vela_mayor in ("1H", "S"):  # swing_length 10, 5
+            rapido = ContextoMayor(serie, vela_mayor)
+            for n in range(1, len(serie) + 1):
+                assert rapido.en(n) == contexto_mayor(serie.iloc[:n], vela_mayor), (vela_mayor, n)
 
     # R6 TP en liquidez: swings controlados a mano (misma forma que smc.swing_highs_lows)
     plano = velas([(10, 10, 9, 10, 100.0)] * 30)

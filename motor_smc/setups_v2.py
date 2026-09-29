@@ -147,25 +147,23 @@ def _divergencias(ohlc: pd.DataFrame, swings: pd.DataFrame, i: int, direccion: s
     return divergencia(ohlc, rsi_serie, i, p, direccion), divergencia(ohlc, macd_serie, i, p, direccion)
 
 
-def _precalculo(ohlc: pd.DataFrame) -> dict:
+def _precalculo(ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela_mayor: str) -> dict:
     """Lo que no depende del candidato, una vez por serie (todo causal: el valor en k solo usa velas
-    <= k), más las memorias de R4/R5 (por len(mayor)) y de los swings recortados (por conocido)."""
+    <= k), el contexto R4/R5 de la temporalidad mayor para cualquier recorte y la memoria de los
+    swings recortados (por conocido)."""
     return {"atr": R.atr(ohlc), "emas": R.emas(ohlc), "rsi": rsi(ohlc), "macd": macd(ohlc)["MACD"],
-            "mayor": {}, "swings": {}}
+            "mayor": R.ContextoMayor(ohlc_mayor, vela_mayor), "swings": {}}
 
 
 def evaluar(c: dict, ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, vela_mayor: str,
             res: dict, swing_length: int, pre: dict | None = None) -> dict:
-    """`pre` = _precalculo(ohlc) compartido entre candidatos; sin él se calcula para este candidato."""
-    pre = _precalculo(ohlc) if pre is None else pre
+    """`pre` = _precalculo(ohlc, ohlc_mayor, vela_mayor) compartido entre candidatos; sin él se calcula
+    para este candidato."""
+    pre = _precalculo(ohlc, ohlc_mayor, vela_mayor) if pre is None else pre
     d, k, conocido = c["direccion"], c["indice_confirmacion"], c["indice_conocido"]
     mayor = R.cortar_mayor(ohlc_mayor, ohlc.index[conocido] + R.DURACION_VELA[vela], vela_mayor)
-    # igual número de velas mayores cerradas = mismo recorte (los conjuntos "cierre <= t" son anidados)
-    ctx = None
-    if not mayor.empty:
-        ctx = pre["mayor"].get(len(mayor))
-        if ctx is None:
-            ctx = pre["mayor"][len(mayor)] = R.contexto_mayor(mayor, vela_mayor)
+    # los conjuntos "cierre <= t" son anidados: el recorte es el prefijo de len(mayor) velas
+    ctx = None if mayor.empty else pre["mayor"].en(len(mayor))
     es_reversion = c["tipo"] == "reversion"
     # swing_highs_lows borra swings consecutivos del mismo tipo mirando swings posteriores: para R6 y
     # las divergencias se recalculan solo con lo visible en indice_conocido (el recorte empieza en 0,
@@ -207,7 +205,7 @@ def evaluar(c: dict, ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, ve
 def detectar_setups_v2(ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, vela_mayor: str) -> pd.DataFrame:
     swing_length = R.SWING_LENGTH_POR_VELA[vela]
     res = analizar(ohlc, swing_length=swing_length)
-    pre = _precalculo(ohlc)
+    pre = _precalculo(ohlc, ohlc_mayor, vela_mayor)
     candidatos = (candidatos_reversion(ohlc, res, swing_length, pre["atr"])
                   + candidatos_continuacion(ohlc, res, swing_length, pre["atr"]))
     filas = [evaluar(c, ohlc, ohlc_mayor, vela, vela_mayor, res, swing_length, pre) for c in candidatos]
