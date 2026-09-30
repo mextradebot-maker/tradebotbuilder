@@ -24,10 +24,11 @@
 //| capital. En Swing S/M es el unico freno; en el resto, un seguro   |
 //| contra huecos de precio/deslizamiento.                            |
 //|                                                                    |
-//| SL/TP fijos (sin break-even ni trailing) A PROPOSITO: el TP es el |
-//| que manda el motor (campo "tp" del setup) y es lo que simula      |
-//| backtesting/backtest.py -- si se agrega gestion dinamica aqui,    |
-//| los resultados en vivo dejan de ser comparables al backtest.      |
+//| BREAKEVEN ESCALONADO (v1.13, regla de Ricardo 29 sep 2026): el SL |
+//| va 1R detras del precio -- a 1R pasa a la entrada, a 1.5R a +0.5R,|
+//| a 2R a +1R; el TP del motor no cambia. R = distancia del SL       |
+//| original (se guarda en una variable global de la terminal).       |
+//| OJO: backtesting/backtest.py NO simula esta gestion todavia.      |
 //| Si el precio toca el TP antes de llenar la entrada, la orden      |
 //| pendiente se cancela (igual que el backtest: "cancelado_tp").     |
 //|                                                                    |
@@ -40,7 +41,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.12"
+#property version   "1.13"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -134,6 +135,7 @@ bool EsSwingSM()
 void OnTick()
 {
    CerrarPorPerdidaMaxima(); // cada tick: el freno del -3% no espera a la vela
+   MoverBreakeven();        // cada tick: el escalon se alcanza a mitad de vela
    CancelarOrdenesPorTP(); // cada tick: el TP se puede tocar a mitad de vela
 
    // Solo procesar en vela nueva -- evita golpear la API en cada tick
@@ -492,6 +494,66 @@ void CerrarPorPerdidaMaxima()
          Print("CIERRE FORZADO -", InpPerdidaMaxPct, "%: ticket ", ticket, " perdida ", perdida, " (limite ", limite, ")");
       else
          Print("ERROR cierre forzado ticket ", ticket, ": ", GetLastError(), " retcode ", result.retcode);
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Breakeven escalonado: el SL sube (nunca baja) segun la ganancia   |
+//| en R. Posiciones sin SL (Swing S/M) no se tocan aqui.            |
+//+------------------------------------------------------------------+
+void MoverBreakeven()
+{
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket) || PositionGetInteger(POSITION_MAGIC) != InpMagicNumber) continue;
+
+      string simbolo = PositionGetString(POSITION_SYMBOL);
+      bool   larga   = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY;
+      double entrada = PositionGetDouble(POSITION_PRICE_OPEN);
+      double sl      = PositionGetDouble(POSITION_SL);
+      double tp      = PositionGetDouble(POSITION_TP);
+
+      // R = distancia del SL original; se guarda la primera vez que se ve la posicion
+      string clave = "MTB_R_" + IntegerToString((long)ticket);
+      double r = GlobalVariableCheck(clave) ? GlobalVariableGet(clave) : 0.0;
+      if(r <= 0)
+      {
+         if(sl <= 0) continue;                          // sin SL (Swing S/M): no aplica
+         r = MathAbs(entrada - sl);
+         if(r <= 0) continue;
+         GlobalVariableSet(clave, r);
+      }
+
+      double precio   = larga ? SymbolInfoDouble(simbolo, SYMBOL_BID) : SymbolInfoDouble(simbolo, SYMBOL_ASK);
+      double ganancia = (larga ? precio - entrada : entrada - precio) / r;
+      double escalon;                                    // en R, donde debe quedar el SL
+      if(ganancia >= 2.0)      escalon = 1.0;
+      else if(ganancia >= 1.5) escalon = 0.5;
+      else if(ganancia >= 1.0) escalon = 0.0;           // ponytail: breakeven = entrada; XM standard no cobra comision aparte
+      else continue;
+
+      int    digitos = (int)SymbolInfoInteger(simbolo, SYMBOL_DIGITS);
+      double punto   = SymbolInfoDouble(simbolo, SYMBOL_POINT);
+      double nuevo   = NormalizeDouble(larga ? entrada + escalon * r : entrada - escalon * r, digitos);
+      if(sl > 0 && (larga ? nuevo <= sl + punto : nuevo >= sl - punto)) continue; // solo sube
+
+      // respeta la distancia minima del broker; si no cabe, se reintenta en el siguiente tick
+      double minimo = SymbolInfoInteger(simbolo, SYMBOL_TRADE_STOPS_LEVEL) * punto;
+      if(MathAbs(precio - nuevo) < minimo) continue;
+
+      MqlTradeRequest request = {};
+      MqlTradeResult  result  = {};
+      request.action   = TRADE_ACTION_SLTP;
+      request.position = ticket;
+      request.symbol   = simbolo;
+      request.sl       = nuevo;
+      request.tp       = tp;
+      request.magic    = InpMagicNumber;
+      if(OrderSend(request, result))
+         Print("BREAKEVEN ", DoubleToString(ganancia, 2), "R: ticket ", ticket, " SL -> ", nuevo, " (+", escalon, "R)");
+      else
+         Print("ERROR moviendo SL ticket ", ticket, ": ", GetLastError(), " retcode ", result.retcode);
    }
 }
 

@@ -3,7 +3,7 @@
 Estructura modular:
 - ciclo(): Lee cuentas_demo del Postgres e itera las 5 cuentas.
 - _evaluar_cuenta(): login_cuenta() -> revisa smc_snapshot -> decide.
-- _revisar_apertura(): Tendencia activa + sin posición -> conectividad.riesgo.calcular_lotes() + abrir_posicion() -> registra en posiciones_abiertas.
+- Ya NO abre operaciones (29 sep 2026): cada cuenta corre el EA de los alumnos en su propia terminal.
 - _revisar_cierre(): Sincroniza posiciones de MT5 (auto-detecta trades del EA/manual) + Swing (CHoCH inverso -> cerrar_posicion()).
 - _log(): Cada decisión (abrir/cerrar/skip/error/alerta_capital) -> log_coordinador.
 """
@@ -28,15 +28,13 @@ from conectividad.xm import (
     info_cuenta,
     historial_operaciones,
     posiciones_abiertas as xm_posiciones_abiertas,
-    abrir_posicion as xm_abrir_posicion,
     cerrar_posicion as xm_cerrar_posicion,
     login_cuenta as xm_login_cuenta,
 )
 from conectividad.historico import resolver_temporalidad
-from conectividad.riesgo import calcular_lotes, es_swing
+from conectividad.riesgo import es_swing
 from persistencia.conexion import get_conn
 from persistencia.licencias import kill_switch_activo
-from refresco import mercado_abierto
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -198,83 +196,6 @@ def _revisar_cierre(conn, cuenta: Dict[str, Any], mt5_posiciones: List[dict], sn
                 _log(conn, login, simbolo, temp, "EXIT_SWING_CHOCH", f"Cambio de tendencia a {tendencia_actual}", float(pos_activa["volume"]))
 
 
-def _revisar_apertura(conn, cuenta: Dict[str, Any], balance: float, mt5_posiciones: List[dict], snapshot: Optional[dict]) -> None:
-    """Tendencia activa + sin posición -> calcular_lotes() + abrir_posicion() -> registra en posiciones_abiertas."""
-    login = cuenta["login"]
-    simbolo = cuenta["simbolo"]
-    temp = cuenta["temporalidad"]
-    pct_riesgo = cuenta["pct_riesgo"]
-
-    pos_activa = next((p for p in mt5_posiciones if p["symbol"] == simbolo), None)
-    if pos_activa:
-        return
-
-    if not snapshot:
-        _log(conn, login, simbolo, temp, "SKIP_SIN_SNAPSHOT", "No hay datos de snapshot SMC")
-        return
-
-    tendencia = snapshot.get("tendencia_actual")
-    if tendencia not in ("compra", "venta"):
-        _log(conn, login, simbolo, temp, "SKIP_SIN_TENDENCIA", f"Tendencia no definida: {tendencia}")
-        return
-
-    if not mercado_abierto(simbolo, datetime.now(timezone.utc)):
-        _log(conn, login, simbolo, temp, "SKIP_MERCADO_CERRADO", "Fin de semana: no se abren posiciones")
-        return
-
-    tick = mt5.symbol_info_tick(simbolo)
-    if not tick:
-        return
-
-    precio_entrada = tick.ask if tendencia == "compra" else tick.bid
-    tipo_orden = mt5.ORDER_TYPE_BUY if tendencia == "compra" else mt5.ORDER_TYPE_SELL
-    dir_str = "BUY" if tendencia == "compra" else "SELL"
-    swing = es_swing(temp)
-
-    sl_precio = tp_precio = None
-    if not swing:
-        # Intraday / Scalping: SL a 1 ATR, TP a 2R. Sin ATR no hay SL confiable -> no se opera
-        # (antes caía a 0.0020 fijo, que en oro/índices daba lotes absurdamente grandes).
-        distancia = snapshot.get("atr") or 0.0
-        if distancia <= 0:
-            _log(conn, login, simbolo, temp, "SKIP_SIN_ATR", "ATR no disponible para colocar el SL")
-            return
-        signo = 1 if tendencia == "compra" else -1
-        sl_precio = precio_entrada - signo * distancia
-        tp_precio = precio_entrada + signo * distancia * 2.0
-
-    try:
-        lotaje = calcular_lotes(simbolo, balance, temp, precio_entrada, sl_precio=sl_precio, pct_riesgo=pct_riesgo)
-    except ValueError as e:
-        _log(conn, login, simbolo, temp, "SKIP_CONFIG_RIESGO", str(e))
-        return
-    if not lotaje.viable:
-        _log(conn, login, simbolo, temp, "ALERTA_CAPITAL_INSUFICIENTE", lotaje.motivo, None,
-             {"capital_minimo": lotaje.capital_minimo, "balance": balance})
-        logging.warning(f"[{login}] {lotaje.motivo}")
-        return
-    lotes = lotaje.lotes
-
-    if swing:
-        # Swing Trade: SIN SL en MT5 (Regla de Oro), salida por CHoCH inverso en _revisar_cierre
-        logging.info(f"[{login}] Abriendo Swing {dir_str} en {simbolo} con {lotes} lotes (SIN SL en MT5)...")
-        res = xm_abrir_posicion(simbolo, tipo_orden, lotes, sl_precio=None, tp_precio=None, comentario="MTB_Swing")
-        accion, motivo, detalle = "ABRIR_SWING", f"Entrada a favor de {tendencia}", {}
-    else:
-        logging.info(f"[{login}] Abriendo Intraday {dir_str} en {simbolo} {lotes} lotes | SL: {sl_precio:.5f} | TP: {tp_precio:.5f}")
-        res = xm_abrir_posicion(simbolo, tipo_orden, lotes, sl_precio=sl_precio, tp_precio=tp_precio, comentario="MTB_Intraday")
-        accion, motivo, detalle = "ABRIR_INTRADAY", f"Setup FVG a favor de {tendencia}", {"sl": sl_precio, "tp": tp_precio}
-
-    ticket_nuevo = res["order"]
-    conn.execute(
-        """INSERT INTO posiciones_abiertas
-           (ticket, login, simbolo, temporalidad, direccion, lotes, precio_entrada, tiene_sl, sl_precio, tendencia_apertura)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-        (ticket_nuevo, login, simbolo, temp, dir_str, lotes, precio_entrada, not swing, sl_precio, tendencia),
-    )
-    _log(conn, login, simbolo, temp, accion, motivo, lotes, {"ticket": ticket_nuevo, **detalle})
-
-
 def _evaluar_cuenta(conn, cuenta: Dict[str, Any], kill_switch: bool = False) -> None:
     """login_cuenta() -> revisa smc_snapshot -> decide (_revisar_cierre y _revisar_apertura)."""
     login = cuenta["login"]
@@ -297,10 +218,9 @@ def _evaluar_cuenta(conn, cuenta: Dict[str, Any], kill_switch: bool = False) -> 
 
         # 2. Revisar aperturas si no hay posición activa — el kill switch global solo
         #    bloquea entradas nuevas; los cierres de arriba siguen (reducen riesgo).
-        if kill_switch:
-            _log(conn, login, simbolo, temp, "SKIP_KILL_SWITCH", "Kill switch global activo")
-        else:
-            _revisar_apertura(conn, cuenta, balance, mt5_pos, snapshot)
+        # ponytail: desde 29 sep 2026 las cuentas del Master Trader operan con el MISMO EA
+        # de los alumnos (una terminal MT5 por cuenta); el coordinador ya no abre para no
+        # duplicar entradas. La apertura vieja (a mercado, SL 1 ATR) está en git 8df405b.
 
     except ConexionXMError as e:
         msg_err = f"Error en cuenta {login}@{server}: {e}"
