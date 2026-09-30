@@ -28,6 +28,10 @@
 //| va 1R detras del precio -- a 1R pasa a la entrada, a 1.5R a +0.5R,|
 //| a 2R a +1R; el TP del motor no cambia. R = distancia del SL       |
 //| original (se guarda en una variable global de la terminal).       |
+//| TRAILING POR ESTRUCTURA (v1.15, curso L44 "cadena de demanda"):   |
+//| desde 2R el SL sube a debajo de cada nuevo minimo mas alto (en    |
+//| venta, arriba de cada nuevo maximo mas bajo) de InpTF, si queda   |
+//| mejor que el escalon; nunca baja.                                 |
 //| OJO: backtesting/backtest.py NO simula esta gestion todavia.      |
 //|                                                                    |
 //| AJUSTE DE PRECIO (v1.14): el motor usa el feed de Dukascopy; en   |
@@ -49,7 +53,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.14"
+#property version   "1.15"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -586,11 +590,23 @@ void MoverBreakeven()
 
       int    digitos = (int)SymbolInfoInteger(simbolo, SYMBOL_DIGITS);
       double punto   = SymbolInfoDouble(simbolo, SYMBOL_POINT);
+      double minimo  = SymbolInfoInteger(simbolo, SYMBOL_TRADE_STOPS_LEVEL) * punto; // distancia minima del broker
       double nuevo   = NormalizeDouble(larga ? entrada + escalon * r : entrada - escalon * r, digitos);
+      string motivo  = "escalon +" + DoubleToString(escalon, 1) + "R";
+
+      // desde 2R manda la estructura si protege mas que el escalon
+      if(ganancia >= 2.0)
+      {
+         double est = NormalizeDouble(SLEstructura(simbolo, larga), digitos);
+         if(est > 0 && MathAbs(precio - est) >= minimo && (larga ? (est > nuevo && est < precio) : (est < nuevo && est > precio)))
+         {
+            nuevo  = est;
+            motivo = "estructura";
+         }
+      }
       if(sl > 0 && (larga ? nuevo <= sl + punto : nuevo >= sl - punto)) continue; // solo sube
 
-      // respeta la distancia minima del broker; si no cabe, se reintenta en el siguiente tick
-      double minimo = SymbolInfoInteger(simbolo, SYMBOL_TRADE_STOPS_LEVEL) * punto;
+      // si no cabe por la distancia minima del broker, se reintenta en el siguiente tick
       if(MathAbs(precio - nuevo) < minimo) continue;
 
       MqlTradeRequest request = {};
@@ -602,10 +618,34 @@ void MoverBreakeven()
       request.tp       = tp;
       request.magic    = InpMagicNumber;
       if(OrderSend(request, result))
-         Print("BREAKEVEN ", DoubleToString(ganancia, 2), "R: ticket ", ticket, " SL -> ", nuevo, " (+", escalon, "R)");
+         Print("SL ", DoubleToString(ganancia, 2), "R: ticket ", ticket, " SL -> ", nuevo, " (", motivo, ")");
       else
          Print("ERROR moviendo SL ticket ", ticket, ": ", GetLastError(), " retcode ", result.retcode);
    }
+}
+
+//+------------------------------------------------------------------+
+//| Ultimo swing confirmado en InpTF (fractal: extremo mas bajo/alto  |
+//| que 2 velas cerradas a cada lado), menos/mas el spread. 0 = nada. |
+//+------------------------------------------------------------------+
+double SLEstructura(const string simbolo, bool larga)
+{
+   const int k = 2; // ponytail: fractal de 2 velas; subir k si el trailing resulta demasiado nervioso
+   double spread = SymbolInfoInteger(simbolo, SYMBOL_SPREAD) * SymbolInfoDouble(simbolo, SYMBOL_POINT);
+   for(int i = k + 1; i < 200; i++)
+   {
+      double v = larga ? iLow(simbolo, InpTF, i) : iHigh(simbolo, InpTF, i);
+      if(v <= 0) return 0;
+      bool swing = true;
+      for(int j = 1; j <= k && swing; j++)
+      {
+         double a = larga ? iLow(simbolo, InpTF, i - j) : iHigh(simbolo, InpTF, i - j);
+         double b = larga ? iLow(simbolo, InpTF, i + j) : iHigh(simbolo, InpTF, i + j);
+         swing = larga ? (v < a && v < b) : (v > a && v > b);
+      }
+      if(swing) return larga ? v - spread : v + spread;
+   }
+   return 0;
 }
 
 ENUM_ORDER_TYPE_FILLING FillingDelSimbolo(const string simbolo)
