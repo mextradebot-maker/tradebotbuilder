@@ -29,6 +29,14 @@
 //| a 2R a +1R; el TP del motor no cambia. R = distancia del SL       |
 //| original (se guarda en una variable global de la terminal).       |
 //| OJO: backtesting/backtest.py NO simula esta gestion todavia.      |
+//|                                                                    |
+//| AJUSTE DE PRECIO (v1.14): el motor usa el feed de Dukascopy; en   |
+//| algunos simbolos el broker cotiza distinto (WTI: XM OILCash va    |
+//| ~$3 arriba del futuro). La API manda el cierre de su ultima vela  |
+//| 15m (ref_ts/ref_cierre); el EA compara con el cierre de SU broker |
+//| en esa misma vela y recorre entrada/SL/TP por la diferencia. Si   |
+//| la diferencia pasa de InpAjusteMaxPct, no opera (simbolo mal      |
+//| elegido en el grafico).                                           |
 //| Si el precio toca el TP antes de llenar la entrada, la orden      |
 //| pendiente se cancela (igual que el backtest: "cancelado_tp").     |
 //|                                                                    |
@@ -41,7 +49,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.13"
+#property version   "1.14"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -63,6 +71,7 @@ input double InpRiskPercentSwing = 1.0;           // Swing (S)/(M): % provisiona
 input double InpTakeProfitR      = 2.0;           // Respaldo: TP en multiplos de R, solo si la API no manda "tp"
 input int    InpVelasExpiracion  = 20;            // Velas que la orden pendiente espera antes de cancelarse
 input double InpPerdidaMaxPct    = 3.0;           // Cierre forzado: perdida flotante maxima (% del capital)
+input double InpAjusteMaxPct     = 5.0;           // Diferencia maxima broker vs motor (%) -- mas que esto = simbolo equivocado, no opera
 input int    InpMagicNumber      = 20260828;      // Numero magico unico del EA
 input string InpComment          = "MTB-SMC";     // Comentario en operaciones
 
@@ -148,12 +157,16 @@ void OnTick()
    if(CountPositions() > 0 || CountOrdenesPendientes() > 0) return; // ya hay algo abierto/pendiente de este EA
 
    string direccion;
-   double entrada, stop, tp_api;
-   if(!ConsultarUltimoSetup(direccion, entrada, stop, tp_api)) return;
+   double entrada, stop, tp_api, ajuste;
+   if(!ConsultarUltimoSetup(direccion, entrada, stop, tp_api, ajuste)) return;
    if(g_standby) return;
 
-   // evita re-operar exactamente el mismo setup si ya se coloco antes
+   // evita re-operar exactamente el mismo setup si ya se coloco antes (precio del motor, sin ajuste)
    if(MathAbs(entrada - g_ultima_entrada_operada) < _Point) return;
+   double entrada_motor = entrada;
+   entrada += ajuste;
+   stop    += ajuste;
+   if(tp_api > 0) tp_api += ajuste;
 
    double riesgo = MathAbs(entrada - stop);
    if(riesgo <= 0) return; // geometria invalida, no deberia pasar (ya filtrado por detectar_setups)
@@ -169,13 +182,13 @@ void OnTick()
    // Swing (S)/(M): sin SL en la orden -- la salida la gestionan las reglas de swing
    double sl_orden = EsSwingSM() ? 0.0 : stop;
    if(ColocarOrdenPendiente(tipo, entrada, sl_orden, tp, lotes))
-      g_ultima_entrada_operada = entrada;
+      g_ultima_entrada_operada = entrada_motor;
 }
 
 //+------------------------------------------------------------------+
 //| CONSULTA AL MOTOR PROPIO (/api/setups)                            |
 //+------------------------------------------------------------------+
-bool ConsultarUltimoSetup(string &direccion, double &entrada, double &stop, double &tp)
+bool ConsultarUltimoSetup(string &direccion, double &entrada, double &stop, double &tp, double &ajuste)
 {
    string url = InpApiUrl + "?simbolo=" + InpSimboloConsulta + "&temporalidad=" + CodificarParametroUrl(InpTemporalidad)
               + "&cuenta=" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "&modo=" + ModoCuenta() + "&robot=" + MTB_ROBOT_ID;
@@ -217,7 +230,45 @@ bool ConsultarUltimoSetup(string &direccion, double &entrada, double &stop, doub
    SalirStandby();
 
    string cuerpo = CharArrayToString(respuesta);
-   return ExtraerUltimoSetupConfirmado(cuerpo, direccion, entrada, stop, tp);
+   if(!ExtraerUltimoSetupConfirmado(cuerpo, direccion, entrada, stop, tp)) return false;
+   return CalcularAjuste(cuerpo, entrada, ajuste);
+}
+
+//+------------------------------------------------------------------+
+//| Diferencia broker - motor en la MISMA vela 15m (ref_ts UTC). Sin  |
+//| referencia -> ajuste 0 (API vieja). Falla cerrado si la           |
+//| diferencia es absurda: casi seguro el grafico es otro simbolo.    |
+//+------------------------------------------------------------------+
+bool CalcularAjuste(const string &json, double entrada, double &ajuste)
+{
+   ajuste = 0;
+   double ref_ts, ref_cierre;
+   if(!ExtraerCampoNumeroDesde(json, "ref_ts", 0, ref_ts) || !ExtraerCampoNumeroDesde(json, "ref_cierre", 0, ref_cierre) || ref_cierre <= 0)
+   {
+      Print("Aviso: la API no mando precio de referencia -- se opera sin ajuste de precio");
+      return true;
+   }
+   // hora del servidor del broker = UTC + su desfase (redondeado a 15 min)
+   long desfase = (long)MathRound((double)(TimeTradeServer() - TimeGMT()) / 900.0) * 900;
+   datetime t_broker = (datetime)((long)ref_ts + desfase);
+   int barra = iBarShift(_Symbol, PERIOD_M15, t_broker, false);
+   double cierre_broker = (barra >= 0) ? iClose(_Symbol, PERIOD_M15, barra) : 0;
+   if(cierre_broker <= 0)
+   {
+      Print("No se pudo leer la vela 15m del broker para el ajuste de precio -- no se opera este setup");
+      return false;
+   }
+   ajuste = cierre_broker - ref_cierre;
+   double pct = MathAbs(ajuste) / ref_cierre * 100.0;
+   if(pct > InpAjusteMaxPct)
+   {
+      Print("BLOQUEO: el precio del grafico (", _Symbol, " ", cierre_broker, ") difiere ", DoubleToString(pct, 2),
+            "% del motor (", InpSimboloConsulta, " ", ref_cierre, "). Revisa que el grafico sea el simbolo correcto.");
+      return false;
+   }
+   Print("Ajuste de precio ", _Symbol, ": ", DoubleToString(ajuste, _Digits), " (", DoubleToString(pct, 3), "%) -- motor ",
+         ref_cierre, " vs broker ", cierre_broker, " en la vela ", TimeToString(t_broker));
+   return true;
 }
 
 //+------------------------------------------------------------------+

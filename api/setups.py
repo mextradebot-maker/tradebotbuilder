@@ -73,6 +73,19 @@ def _forma_ea(respuesta: dict) -> dict:
     return {**{k: v for k, v in respuesta.items() if k != "setups_confirmados"}, "setups_confirmados": confirmados}
 
 
+def _precio_ref(simbolo: str) -> tuple[int | None, float | None]:
+    """Última vela 15m guardada (epoch UTC de apertura, cierre BID). El EA compara ese cierre con el
+    de SU broker en la misma vela y recorre entrada/SL/TP por la diferencia (p. ej. WTI: nuestro
+    feed sigue al futuro y XM OILCash va ~$3 arriba). Nunca propaga un fallo."""
+    try:
+        from conectividad import almacen
+        fin = datetime.now(timezone.utc)
+        df = almacen.leer(simbolo, "15m", fin - timedelta(days=4), fin)
+        return (None, None) if df.empty else (int(df.index[-1].timestamp()), float(df["close"].iloc[-1]))
+    except Exception:
+        return None, None
+
+
 def _con_largo(respuesta: dict, simbolo: str, temporalidad: str) -> dict:
     """Agrega `backtest_largo` (informativo; None si aun no existe) ANTES de `setups_confirmados`, que sigue siendo
     la ultima llave (contrato del parser del EA). `respuesta` ya paso por _forma_ea. Nunca propaga un fallo."""
@@ -82,8 +95,9 @@ def _con_largo(respuesta: dict, simbolo: str, temporalidad: str) -> dict:
     except Exception:
         largo = None
     conf = respuesta.get("setups_confirmados", [])
+    ref_ts, ref_cierre = _precio_ref(simbolo)
     return {**{k: v for k, v in respuesta.items() if k not in ("setups_confirmados", "backtest_largo")},
-            "backtest_largo": largo, "setups_confirmados": conf}
+            "backtest_largo": largo, "ref_ts": ref_ts, "ref_cierre": ref_cierre, "setups_confirmados": conf}
 
 
 def motor_v2(simbolo: str, temporalidad: str, ohlc, inicio, fin) -> dict:
