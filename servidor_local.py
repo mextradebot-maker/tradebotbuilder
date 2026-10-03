@@ -349,6 +349,7 @@ class Handler(BaseHTTPRequestHandler):
         cuerpo = json.dumps(payload).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")  # el panel (mextradebot.com.mx) lo lee; ya es publico por el tunel
         self.send_header("Content-Length", str(len(cuerpo)))
         self.end_headers()
         self.wfile.write(cuerpo)
