@@ -16,6 +16,8 @@ despacha por path hacia la lógica de cada endpoint:
   POST /api/v1/auth, GET/POST /api/v1/licencias — cerebro de licencias, ver api/licencias.py
   GET /api/v1/licencias/robot?id=N — .ex5 personalizado (admin), ver api/licencias.procesar_robot
   GET /api/v1/mis-licencias, /api/v1/mi-robot?id=N — alumno con sesión del panel, ver api/alumnos.py
+  GET /api/v1/mi-robot?simbolo&temporalidad&modo&capital — ficha de descarga (.ex5 con presets), ver api/alumnos.py
+  POST /api/v1/telegram/enlace (X-MTB-Service-Key), POST /api/v1/vincular-telegram (cookie) — ver api/alumnos.py
   GET /api/v1/reporte-setups — setups vigentes de todos los activos para T-01 (X-MTB-Service-Key), ver api/reporte.py
   /api/setups pasa antes por api.licencias.gate_setups (licencia o clave de servicio)
 """
@@ -41,6 +43,8 @@ RUTA_ROBOT = "/api/v1/licencias/robot"
 RUTA_MIS_LICENCIAS = "/api/v1/mis-licencias"
 RUTA_MI_ROBOT = "/api/v1/mi-robot"
 RUTA_REPORTE = "/api/v1/reporte-setups"
+RUTA_TELEGRAM_ENLACE = "/api/v1/telegram/enlace"
+RUTA_VINCULAR_TELEGRAM = "/api/v1/vincular-telegram"
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -82,6 +86,8 @@ class handler(BaseHTTPRequestHandler):
             status, body = procesar_mi_robot(qs, dict(self.headers))
             if isinstance(body, bytes):
                 return self._responder_archivo(body, "MexTradeBot_SeguidorSMC.ex5")
+            if status == 200 and "ex5" in body:  # ficha de descarga: nombre y cabeceras propios
+                return self._responder_archivo(body["ex5"], body["nombre"], body["cabeceras"])
         elif ruta == RUTA_ROBOT:
             from api.licencias import procesar_robot
 
@@ -138,6 +144,14 @@ class handler(BaseHTTPRequestHandler):
             from api.licencias import procesar_auth
 
             status, body = procesar_auth(payload, dict(self.headers))
+        elif ruta == RUTA_TELEGRAM_ENLACE:
+            from api.alumnos import procesar_telegram_enlace
+
+            status, body = procesar_telegram_enlace(payload, dict(self.headers))
+        elif ruta == RUTA_VINCULAR_TELEGRAM:
+            from api.alumnos import procesar_vincular_telegram
+
+            status, body = procesar_vincular_telegram(payload, dict(self.headers))
         elif ruta == RUTA_LICENCIAS:
             from api.licencias import procesar_admin
 
@@ -170,12 +184,14 @@ class handler(BaseHTTPRequestHandler):
             status, body = procesar(payload)
         self._responder(status, body)
 
-    def _responder_archivo(self, datos: bytes, nombre: str) -> None:
+    def _responder_archivo(self, datos: bytes, nombre: str, cabeceras: dict | None = None) -> None:
         self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Disposition", f'attachment; filename="{nombre}"')
         self.send_header("Content-Length", str(len(datos)))
         self.send_header("Cache-Control", "no-store")
+        for k, v in (cabeceras or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(datos)
 

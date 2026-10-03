@@ -8,6 +8,12 @@ Sin datos = campos en None y veredicto INSUFICIENTE; nunca se inventan cifras.
 N_MIN_VIABLE = 20  # ponytail: muestra minima para "recomendable"; ajustar cuando haya backtests largos de todo
 SWING = {"Swing (S)", "Swing (M)"}  # swing solo opera compras
 
+# Nombre del simbolo en el MT5 de XM. SOLO valores verificados; el resto None hasta exportar
+# la lista de simbolos del MT5 del VPS (pendiente de Ricardo).
+_FOREX = ("EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "EURGBP",
+          "EURJPY", "GBPJPY", "AUDJPY", "EURAUD", "AUDCAD", "NZDJPY", "CADJPY")
+SIMBOLO_XM = {**{s: s for s in _FOREX}, "XAUUSD": "GOLD", "WTIUSD": "OILCash", "BTCUSD": "BTCUSD", "ETHUSD": "ETHUSD"}
+
 
 def _iso(t):
     return t.isoformat() if hasattr(t, "isoformat") else t
@@ -32,7 +38,8 @@ def fila(simbolo, temporalidad, tendencia, refrescado_en, bt_snapshot, bt_largo,
     else:
         desc = "Sin setups suficientes en el historico para medir este activo en esta temporalidad."
     return {
-        "simbolo": simbolo, "temporalidad": temporalidad, "tendencia": tendencia, "direccion": direccion,
+        "simbolo": simbolo, "simbolo_xm": SIMBOLO_XM.get(simbolo), "temporalidad": temporalidad,
+        "tendencia": tendencia, "direccion": direccion,
         "winrate": rep.get("winrate") if n else None, "expectativa_r": exp,
         "r_total": rep.get("r_total") if n else None, "n_setups": n,
         "viable": viable, "veredicto": veredicto, "descripcion_larga": desc,
@@ -77,6 +84,8 @@ def demo() -> None:
     assert f["GBPUSD"]["veredicto"] == "NO RECOMENDABLE"
     assert f["USDJPY"]["n_setups"] == 0 and f["USDJPY"]["winrate"] is None  # sin tendencia: sin cifras
     assert f["NZDUSD"]["expectativa_r"] is None and f["NZDUSD"]["fuente"] is None
+    assert f["XAUUSD"]["simbolo_xm"] == "GOLD" and f["EURUSD"]["simbolo_xm"] == "EURUSD"
+    assert len(SIMBOLO_XM) == 19 and SIMBOLO_XM.get("US30") is None  # no verificado: null
     print("api/catalogo demo OK")
 
 

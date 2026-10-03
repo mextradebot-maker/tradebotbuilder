@@ -37,6 +37,9 @@
 //| S/M usa la misma escalera y trailing; como no lleva SL, su R es   |
 //| la distancia que equivale al cierre forzado (3% del balance):     |
 //| +3% -> SL a la entrada, +4.5% -> +1.5%, +6% -> +3%, luego trailing.|
+//| MONTO A OPERAR (v1.18, ficha de descarga 3 oct 2026): InpCapital  |
+//| > 0 limita el capital al menor entre ese monto y el balance (lote,|
+//| cierre forzado -3% y R de Swing). 0 = balance de la cuenta.       |
 //| REINTENTO (v1.16): si /api/setups falla por red o HTTP 5xx, se    |
 //| reintenta cada 60s dentro de la misma vela.                       |
 //|                                                                    |
@@ -59,7 +62,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.17"
+#property version   "1.18"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -76,7 +79,8 @@ input int    InpDiasHistorico    = 0;             // 0 = usa el default calibrad
 
 //--- PARAMETROS DE OPERACION
 input ENUM_TIMEFRAMES InpTF      = PERIOD_H1;     // Timeframe del disparo (nueva vela = nueva consulta)
-input double InpRiskPercent      = 2.0;           // Riesgo por operacion (%) -- maximo 2%, los lotes los calcula el servidor
+input double InpCapital = 0; // Monto a operar (USD); 0 = balance de la cuenta
+input double InpRiskPercent      = 2.0;          // Riesgo por operacion (%) -- maximo 2%, los lotes los calcula el servidor
 input double InpRiskPercentSwing = 1.0;           // Swing (S)/(M): % provisional sobre la distancia del stop del motor (sin SL real)
 input double InpTakeProfitR      = 2.0;           // Respaldo: TP en multiplos de R, solo si la API no manda "tp"
 input int    InpVelasExpiracion  = 20;            // Velas que la orden pendiente espera antes de cancelarse
@@ -120,6 +124,7 @@ int OnInit()
    }
    Print("MexTradeBot_SeguidorSMC inicializado -- consultando ", InpApiUrl, " para ", InpSimboloConsulta, " (", InpTemporalidad, "), solo opera setups confirmados");
    Print("Licencia: cuenta ", AccountInfoInteger(ACCOUNT_LOGIN), " (", ModoCuenta(), "), robot ", MTB_ROBOT_ID);
+   Print("Monto a operar: ", DoubleToString(CapitalEfectivo(), 2), InpCapital > 0 ? " (menor entre InpCapital y el balance)" : " (balance de la cuenta)");
    Print("IMPORTANTE: agrega 'https://mextradebot.com.mx' (cubre ", InpApiUrl, " y ", InpAuthUrl, ") en Herramientas > Opciones > Expert Advisors > 'Permitir WebRequest para las URL siguientes', si no las consultas fallan.");
    return INIT_SUCCEEDED;
 }
@@ -141,6 +146,12 @@ bool TimeframeEsperado(string nombre, ENUM_TIMEFRAMES &tf)
    else if(nombre == "Swing (M)")                                               tf = PERIOD_MN1;
    else return false;
    return true;
+}
+
+double CapitalEfectivo()
+{
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   return InpCapital > 0 ? MathMin(InpCapital, balance) : balance;
 }
 
 bool EsSwingSM()
@@ -333,7 +344,7 @@ bool AutorizarOrden(const string direccion, double entrada, double stop, double 
       + "\"balance\":%.2f,\"riesgo_pct\":%.4f,\"entrada\":%.10f,\"stop\":%.10f,"
       + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f}",
       AccountInfoInteger(ACCOUNT_LOGIN), ModoCuenta(), MTB_ROBOT_ID, _Symbol, direccion == "long" ? "buy" : "sell",
-      AccountInfoDouble(ACCOUNT_BALANCE), EsSwingSM() ? InpRiskPercentSwing : InpRiskPercent, entrada, stop,
+      CapitalEfectivo(), EsSwingSM() ? InpRiskPercentSwing : InpRiskPercent, entrada, stop,
       SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE), SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE),
       SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN), SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX),
       SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP));
@@ -546,7 +557,7 @@ void CerrarPorPerdidaMaxima()
 {
    // ponytail: capital = balance actual; con una posicion por EA es el balance al abrir,
    // salvo que otro EA de la misma cuenta cierre operaciones en medio.
-   double limite = -AccountInfoDouble(ACCOUNT_BALANCE) * InpPerdidaMaxPct / 100.0;
+   double limite = -CapitalEfectivo() * InpPerdidaMaxPct / 100.0;
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
       ulong ticket = PositionGetTicket(i);
@@ -604,7 +615,7 @@ void MoverBreakeven()
             double por_unidad = SymbolInfoDouble(simbolo, SYMBOL_TRADE_TICK_VALUE) / SymbolInfoDouble(simbolo, SYMBOL_TRADE_TICK_SIZE);
             double volumen    = PositionGetDouble(POSITION_VOLUME);
             if(por_unidad <= 0 || volumen <= 0) continue;
-            r = AccountInfoDouble(ACCOUNT_BALANCE) * InpPerdidaMaxPct / 100.0 / (volumen * por_unidad);
+            r = CapitalEfectivo() * InpPerdidaMaxPct / 100.0 / (volumen * por_unidad);
          }
          if(r <= 0) continue;
          GlobalVariableSet(clave, r);

@@ -156,39 +156,49 @@ def procesar_admin(metodo: str, datos: dict, headers: dict) -> tuple[int, dict]:
         return 400, {"error": str(e)}
 
 
-def _pedir_compilacion(url: str, clave: str, token: str) -> bytes:
+def _pedir_compilacion(url: str, clave: str, token: str, presets: dict | None = None) -> tuple[bytes, bool]:
+    """(ex5, el compilador entiende presets) — la marca es la cabecera X-Compilador-Presets: 1."""
     import json
     import urllib.request
 
     req = urllib.request.Request(
-        url, data=json.dumps({"token": token}).encode(), method="POST",
+        url, data=json.dumps({"token": token, **(presets or {})}).encode(), method="POST",
         # User-Agent propio: Cloudflare bloquea "Python-urllib" (error 1010)
         headers={"Content-Type": "application/json", "X-Compilador-Key": clave, "User-Agent": "MexTradeBot-API/1.0"},
     )
     with urllib.request.urlopen(req, timeout=150) as r:
-        return r.read()
+        return r.read(), r.headers.get("X-Compilador-Presets") == "1"
 
 
-def compilar_robot(licencia_id: int) -> tuple[int, bytes | dict]:
-    """.ex5 compilado con el token de esa licencia (lo usan el admin y el panel del alumno)."""
+def compilar_token(token: str, presets: dict | None = None) -> tuple[int, bytes | dict]:
+    """.ex5 con ese token y, opcional, presets {simbolo, temporalidad, capital} ya validados."""
     import urllib.error
 
     url, clave = os.environ.get("COMPILADOR_URL", ""), os.environ.get("COMPILADOR_KEY", "")
     if not url or not clave:
         return 503, {"error": "compilador no configurado (COMPILADOR_URL / COMPILADOR_KEY)"}
+    try:
+        ex5, con_presets = _pedir_compilacion(url, clave, token, presets)
+    except urllib.error.HTTPError as e:
+        return 502, {"error": f"compilador respondió {e.code}: {e.read()[:200].decode(errors='replace')}"}
+    except OSError as e:
+        return 502, {"error": f"compilador no disponible: {e}"}
+    if presets and not con_presets:  # VPS con el compilador viejo: ignoró los presets
+        return 503, {"error": "generador_actualizando"}
+    return 200, ex5
 
+
+def compilar_robot(licencia_id: int) -> tuple[int, bytes | dict]:
+    """.ex5 compilado con el token de esa licencia (lo usan el admin y "Mis robots" del alumno)."""
+    if not os.environ.get("COMPILADOR_URL") or not os.environ.get("COMPILADOR_KEY"):
+        return 503, {"error": "compilador no configurado (COMPILADOR_URL / COMPILADOR_KEY)"}
     from persistencia import licencias
 
     try:
         token = licencias.token_de_licencia(int(licencia_id))
     except (TypeError, ValueError) as e:
         return 400, {"error": str(e)}
-    try:
-        return 200, _pedir_compilacion(url, clave, token)
-    except urllib.error.HTTPError as e:
-        return 502, {"error": f"compilador respondió {e.code}: {e.read()[:200].decode(errors='replace')}"}
-    except OSError as e:
-        return 502, {"error": f"compilador no disponible: {e}"}
+    return compilar_token(token)
 
 
 def procesar_robot(datos: dict, headers: dict) -> tuple[int, bytes | dict]:
@@ -264,7 +274,7 @@ def demo() -> None:
             enviados = []
             global _pedir_compilacion
             original_pedir = _pedir_compilacion
-            _pedir_compilacion = lambda url, clave, token: (enviados.append((url, clave, token)) or b"EX5")
+            _pedir_compilacion = lambda url, clave, token, presets=None: (enviados.append((url, clave, token)) or (b"EX5", False))
             try:
                 os.environ.pop("COMPILADOR_URL", None)
                 assert procesar_robot({"id": "3"}, h)[0] == 503
@@ -273,6 +283,11 @@ def demo() -> None:
                 assert st == 200 and cuerpo == b"EX5", (st, cuerpo)
                 assert enviados == [("https://c/compilar", "ck", "MTB-ABCDE-FGHJK-LMNPQ-RS234")]
                 assert procesar_robot({"id": "3"}, {"X-Admin-Key": "mala"})[0] == 401
+                # presets: sin la marca X-Compilador-Presets el .ex5 no se entrega
+                p = {"simbolo": "XAUUSD", "temporalidad": "Intraday 1H", "capital": 1000.0}
+                assert compilar_token("MTB-T", p) == (503, {"error": "generador_actualizando"})
+                _pedir_compilacion = lambda url, clave, token, presets=None: (b"EX5P", True)
+                assert compilar_token("MTB-T", p) == (200, b"EX5P")
             finally:
                 _pedir_compilacion = original_pedir
                 os.environ.pop("COMPILADOR_URL", None)

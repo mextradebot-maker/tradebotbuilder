@@ -162,6 +162,14 @@ def alumno_por_sesion(session_token: str) -> dict | None:
     return {"id": row[0], "correo": row[1].strip().lower(), "nombre": row[2]} if row else None
 
 
+def vincular_telegram(alumno_id: int, chat_id: int) -> None:
+    """Un alumno = un Telegram: el chat se quita de cualquier otro alumno antes de asignarlo."""
+    with get_conn() as conn:
+        conn.execute("UPDATE alumnos SET telegram_chat_id = NULL WHERE telegram_chat_id = %s AND id <> %s",
+                     (chat_id, alumno_id))
+        conn.execute("UPDATE alumnos SET telegram_chat_id = %s WHERE id = %s", (chat_id, alumno_id))
+
+
 def licencias_de_correo(correo: str) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(

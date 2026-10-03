@@ -220,6 +220,11 @@ _SQL = [
     CREATE UNIQUE INDEX IF NOT EXISTS uq_licencia_demo_alumno ON licencias (correo)
         WHERE tipo = 'demo' AND origen = 'registro'
     """,
+    # ficha de descarga: chat de Telegram vinculado al alumno (api/alumnos.procesar_vincular_telegram).
+    # IF EXISTS: la tabla alumnos la crea n8n; en una BD sin ella no se rompe el arranque.
+    """
+    ALTER TABLE IF EXISTS alumnos ADD COLUMN IF NOT EXISTS telegram_chat_id bigint
+    """,
     # ── Etapa 2: temporalidades canonicas (idempotente: se corre en cada arranque) ──
     # 1) catalogo: 7 canonicas por simbolo con filas viejas, heredando fecha_inicio
     #    (Scalping 30m entra inactiva); sin filas viejas no hace nada.
