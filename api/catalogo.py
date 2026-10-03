@@ -12,7 +12,16 @@ SWING = {"Swing (S)", "Swing (M)"}  # swing solo opera compras
 # la lista de simbolos del MT5 del VPS (pendiente de Ricardo).
 _FOREX = ("EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "EURGBP",
           "EURJPY", "GBPJPY", "AUDJPY", "EURAUD", "AUDCAD", "NZDJPY", "CADJPY")
-SIMBOLO_XM = {**{s: s for s in _FOREX}, "XAUUSD": "GOLD", "WTIUSD": "OILCash", "BTCUSD": "BTCUSD", "ETHUSD": "ETHUSD"}
+# Verificados 3 oct 2026 con exportar_simbolos_xm.py en el VPS (1639 simbolos de XM).
+# Pendientes: US500 (no salio entre los candidatos), AMXL y CEMEXCPO (confirmar moneda en XM).
+SIMBOLO_XM = {
+    **{s: s for s in _FOREX},
+    "XAUUSD": "GOLD", "XAGUSD": "SILVER", "XPTUSD": "XPTUSD", "XPDUSD": "XPDUSD",
+    "US30": "US30Cash", "US100": "US100Cash", "GER40": "GER40Cash", "UK100": "UK100Cash", "JP225": "JP225Cash",
+    "WTIUSD": "OILCash", "BRENTUSD": "BRENTCash",
+    "BTCUSD": "BTCUSD", "ETHUSD": "ETHUSD", "XRPUSD": "XRPUSD",
+    "GOOGL": "Google", "NVDA": "Nvidia", "META": "Facebook", "WMT": "WalMart",
+}
 
 
 def _iso(t):
@@ -85,7 +94,7 @@ def demo() -> None:
     assert f["USDJPY"]["n_setups"] == 0 and f["USDJPY"]["winrate"] is None  # sin tendencia: sin cifras
     assert f["NZDUSD"]["expectativa_r"] is None and f["NZDUSD"]["fuente"] is None
     assert f["XAUUSD"]["simbolo_xm"] == "GOLD" and f["EURUSD"]["simbolo_xm"] == "EURUSD"
-    assert len(SIMBOLO_XM) == 19 and SIMBOLO_XM.get("US30") is None  # no verificado: null
+    assert len(SIMBOLO_XM) == 33 and SIMBOLO_XM["US30"] == "US30Cash" and SIMBOLO_XM.get("US500") is None  # no verificado: null
     print("api/catalogo demo OK")
 
 
