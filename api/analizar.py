@@ -17,7 +17,7 @@ despacha por path hacia la lógica de cada endpoint:
   GET /api/v1/licencias/robot?id=N — .ex5 personalizado (admin), ver api/licencias.procesar_robot
   GET /api/v1/mis-licencias, /api/v1/mi-robot?id=N — alumno con sesión del panel, ver api/alumnos.py
   GET /api/v1/mi-robot?simbolo&temporalidad&modo&capital — ficha de descarga (.ex5 con presets), ver api/alumnos.py
-  POST /api/v1/telegram/enlace (X-MTB-Service-Key), POST /api/v1/vincular-telegram (cookie) — ver api/alumnos.py
+  POST /api/v1/telegram/enlace y /api/v1/telegram/enviar (X-MTB-Service-Key), POST /api/v1/vincular-telegram (cookie) — ver api/alumnos.py
   GET /api/v1/reporte-setups — setups vigentes de todos los activos para T-01 (X-MTB-Service-Key), ver api/reporte.py
   /api/setups pasa antes por api.licencias.gate_setups (licencia o clave de servicio)
 """
@@ -45,6 +45,7 @@ RUTA_MI_ROBOT = "/api/v1/mi-robot"
 RUTA_REPORTE = "/api/v1/reporte-setups"
 RUTA_TELEGRAM_ENLACE = "/api/v1/telegram/enlace"
 RUTA_VINCULAR_TELEGRAM = "/api/v1/vincular-telegram"
+RUTA_TELEGRAM_ENVIAR = "/api/v1/telegram/enviar"
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -148,6 +149,10 @@ class handler(BaseHTTPRequestHandler):
             from api.alumnos import procesar_telegram_enlace
 
             status, body = procesar_telegram_enlace(payload, dict(self.headers))
+        elif ruta == RUTA_TELEGRAM_ENVIAR:
+            from api.alumnos import procesar_telegram_enviar
+
+            status, body = procesar_telegram_enviar(payload, dict(self.headers))
         elif ruta == RUTA_VINCULAR_TELEGRAM:
             from api.alumnos import procesar_vincular_telegram
 

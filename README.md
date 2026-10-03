@@ -186,5 +186,5 @@ por exceso de cómputo del refresco cada 30 min). `app.py` es el servidor único
 vela nueva de su temporalidad (reemplaza el workflow n8n "MTB Refrescar Snapshots SMC").
 
 Variables del servicio: `DATABASE_URL`, `MTB_ADMIN_KEY`, `MTB_SERVICE_KEY`, opcionales
-`N8N_URL`, `REFRESCO_ACTIVO=0`, `PORT` (8000). Build: `Dockerfile` (dependencias de `uv.lock`).
+`MTB_TELEGRAM_BOT_TOKEN` (token del bot para `POST /api/v1/telegram/enviar`, el menu con teclado dinamico de T-04), `N8N_URL`, `REFRESCO_ACTIVO=0`, `PORT` (8000). Build: `Dockerfile` (dependencias de `uv.lock`).
 Prueba local: `REFRESCO_ACTIVO=0 python app.py`.
