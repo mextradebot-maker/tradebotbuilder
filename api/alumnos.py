@@ -7,6 +7,8 @@
       (token + presets grabados; cabeceras X-MTB-Token, X-MTB-Cuenta, X-MTB-Simbolo-XM)
   POST /api/v1/telegram/enlace  (X-MTB-Service-Key) {chat_id, simbolo?, temporalidad?} → {url} firmada 7 dias
   POST /api/v1/vincular-telegram (cookie) {tg} → guarda alumnos.telegram_chat_id si la firma es valida
+  POST /api/v1/telegram/enviar  (X-MTB-Service-Key) {chat_id, text, parse_mode?, reply_markup?} → sendMessage del bot
+      (para mensajes con teclado dinamico que el nodo Telegram de n8n no sabe armar; el token vive en MTB_TELEGRAM_BOT_TOKEN)
 
 La sesión es la cookie `mtb_token` que pone n8n al registrarse / iniciar sesión (tabla alumnos);
 registro, login y logout siguen en n8n.
@@ -214,6 +216,44 @@ def procesar_telegram_enlace(datos: dict, headers: dict) -> tuple[int, dict]:
     return 200, {"url": f"{URL_FICHA}{ruta}?tg={tg}"}
 
 
+CAMPOS_TG_ENVIAR = ("chat_id", "text", "parse_mode", "reply_markup", "disable_web_page_preview")
+
+
+def _enviar_tg(token: str, cuerpo: dict) -> tuple[int, dict]:
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{token}/sendMessage", data=json.dumps(cuerpo).encode(), method="POST",
+        headers={"Content-Type": "application/json", "User-Agent": "MexTradeBot-API/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return r.status, json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:  # Telegram explica el rechazo en el body (ok: false, description)
+        try:
+            return e.code, json.loads(e.read() or b"{}")
+        except ValueError:
+            return e.code, {"ok": False, "description": "respuesta no JSON de Telegram"}
+
+
+def procesar_telegram_enviar(datos: dict, headers: dict) -> tuple[int, dict]:
+    from api.licencias import _clave_ok, _h
+
+    if not _clave_ok(_h(headers, "X-MTB-Service-Key"), "MTB_SERVICE_KEY"):
+        return 401, {"error": "se requiere X-MTB-Service-Key"}
+    token = os.environ.get("MTB_TELEGRAM_BOT_TOKEN", "")
+    if not token:
+        return 503, {"error": "MTB_TELEGRAM_BOT_TOKEN no configurado en el servidor"}
+    cuerpo = {k: datos[k] for k in CAMPOS_TG_ENVIAR if datos.get(k) is not None}
+    if not cuerpo.get("chat_id") or not str(cuerpo.get("text") or "").strip():
+        return 400, {"error": "datos invalidos: faltan chat_id o text"}
+    try:
+        return _enviar_tg(token, cuerpo)
+    except OSError as e:
+        return 502, {"error": f"Telegram no disponible: {e}"}
+
+
 def procesar_vincular_telegram(datos: dict, headers: dict) -> tuple[int, dict]:
     alumno = _alumno(headers)
     if not alumno:
@@ -255,7 +295,7 @@ def demo() -> None:
     original = api_lic.compilar_robot
     original_pedir = api_lic._pedir_compilacion
     api_lic.compilar_robot = lambda i: (compilados.append(i) or (200, b"EX5"))
-    previas_env = {k: os.environ.get(k) for k in ("COMPILADOR_URL", "COMPILADOR_KEY", "MTB_TOKEN_SECRET", "MTB_SERVICE_KEY")}
+    previas_env = {k: os.environ.get(k) for k in ("COMPILADOR_URL", "COMPILADOR_KEY", "MTB_TOKEN_SECRET", "MTB_SERVICE_KEY", "MTB_TELEGRAM_BOT_TOKEN")}
     try:
         con = {"Cookie": "otra=1; mtb_token=ok"}
         assert procesar_mis_licencias({})[0] == 401
@@ -346,6 +386,25 @@ def demo() -> None:
         assert procesar_vincular_telegram({"tg": tg}, con) == (200, {"ok": True}) and vinculados == [(1, 123456)]
         os.environ.pop("MTB_TOKEN_SECRET")
         assert procesar_telegram_enlace(pedido, svc)[0] == 503
+
+        # ── Telegram: envio con teclado dinamico ──
+        global _enviar_tg
+        original_enviar, enviados = _enviar_tg, []
+        _enviar_tg = lambda t, c: (enviados.append((t, c)), (200, {"ok": True}))[1]
+        msg = {"chat_id": 5, "text": "menu", "parse_mode": "Markdown", "extra": "x",
+               "reply_markup": {"inline_keyboard": [[{"text": "EURUSD", "callback_data": "a|EURUSD"}]]}}
+        try:
+            assert procesar_telegram_enviar(msg, {"X-MTB-Service-Key": "otra"})[0] == 401
+            os.environ.pop("MTB_TELEGRAM_BOT_TOKEN", None)
+            assert procesar_telegram_enviar(msg, svc)[0] == 503
+            os.environ["MTB_TELEGRAM_BOT_TOKEN"] = "123:abc"
+            for malo in ({"chat_id": None}, {"text": "  "}, {"text": None}):
+                assert procesar_telegram_enviar({**msg, **malo}, svc)[0] == 400, malo
+            assert enviados == []
+            assert procesar_telegram_enviar(msg, svc) == (200, {"ok": True})
+            assert enviados == [("123:abc", {k: v for k, v in msg.items() if k != "extra"})]  # solo campos permitidos
+        finally:
+            _enviar_tg = original_enviar
     finally:
         api_lic.compilar_robot = original
         api_lic._pedir_compilacion = original_pedir
