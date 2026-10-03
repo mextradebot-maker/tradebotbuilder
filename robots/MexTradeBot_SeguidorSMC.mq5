@@ -33,6 +33,8 @@
 //| venta, arriba de cada nuevo maximo mas bajo) de InpTF, si queda   |
 //| mejor que el escalon; nunca baja.                                 |
 //| OJO: backtesting/backtest.py NO simula esta gestion todavia.      |
+//| REINTENTO (v1.16): si /api/setups falla por red o HTTP 5xx, se    |
+//| reintenta cada 60s dentro de la misma vela.                       |
 //|                                                                    |
 //| AJUSTE DE PRECIO (v1.14): el motor usa el feed de Dukascopy; en   |
 //| algunos simbolos el broker cotiza distinto (WTI: XM OILCash va    |
@@ -53,7 +55,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.15"
+#property version   "1.16"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -81,6 +83,7 @@ input string InpComment          = "MTB-SMC";     // Comentario en operaciones
 
 //--- ESTADO INTERNO
 datetime g_ultima_vela = 0;
+datetime g_reintento_en = 0;              // >0 = la consulta fallo por red/5xx; reintentar en esta misma vela
 double   g_ultima_entrada_operada = 0;
 bool     g_standby = false;               // true = licencia rechazada, no opera
 
@@ -152,9 +155,14 @@ void OnTick()
    CancelarOrdenesPorTP(); // cada tick: el TP se puede tocar a mitad de vela
 
    // Solo procesar en vela nueva -- evita golpear la API en cada tick
+   // Si la API fallo (502, timeout) se reintenta cada 60s en la misma vela: sin esto un
+   // solo 502 al abrir la vela pierde la vela entera (en Swing W1, una semana).
    datetime vela_actual = iTime(_Symbol, InpTF, 0);
-   if(vela_actual == g_ultima_vela) return;
+   bool reintento = (g_reintento_en > 0 && vela_actual == g_ultima_vela);
+   if(vela_actual == g_ultima_vela && !reintento) return;
+   if(reintento && TimeCurrent() < g_reintento_en) return;
    g_ultima_vela = vela_actual;
+   g_reintento_en = 0;
 
    CancelarOrdenesVencidas();
 
@@ -218,12 +226,22 @@ bool ConsultarUltimoSetup(string &direccion, double &entrada, double &stop, doub
       if(err == 4060)
          Print("ERROR WebRequest: URL no permitida. Agrega ", InpApiUrl, " en Herramientas > Opciones > Expert Advisors.");
       else
-         Print("ERROR WebRequest: codigo ", err);
+      {
+         Print("ERROR WebRequest: codigo ", err, " -- reintento en 60s");
+         g_reintento_en = TimeCurrent() + 60;
+      }
       return false;
    }
    if(status == 401 || status == 403)
    {
       EntrarStandby(CharArrayToString(respuesta));
+      return false;
+   }
+   if(status >= 500)
+   {
+      // sin el cuerpo: la pagina de error de Cloudflare es HTML y llena el log
+      Print("API respondio HTTP ", status, " -- reintento en 60s");
+      g_reintento_en = TimeCurrent() + 60;
       return false;
    }
    if(status != 200)
