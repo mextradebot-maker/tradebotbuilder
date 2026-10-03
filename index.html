@@ -314,10 +314,10 @@ var CATEGORIA_POR_SIMBOLO = {
   EURUSD:'FOREX', GBPUSD:'FOREX', USDJPY:'FOREX', AUDUSD:'FOREX', USDCAD:'FOREX', USDCHF:'FOREX', NZDUSD:'FOREX',
   EURGBP:'FOREX', EURJPY:'FOREX', GBPJPY:'FOREX', AUDJPY:'FOREX', EURAUD:'FOREX', AUDCAD:'FOREX', NZDJPY:'FOREX', CADJPY:'FOREX',
   XAUUSD:'METALES', XAGUSD:'METALES', XPTUSD:'METALES', XPDUSD:'METALES',
-  WTI:'MATERIAS PRIMAS', WTIUSD:'MATERIAS PRIMAS', BRENT:'MATERIAS PRIMAS', BRENTUSD:'MATERIAS PRIMAS', USOIL:'MATERIAS PRIMAS',
-  US30:'INDICES', US500:'INDICES', NAS100:'INDICES', US100:'INDICES', SPX500:'INDICES', GER40:'INDICES', UK100:'INDICES', JP225:'INDICES',
-  BTCUSD:'CRYPTO', ETHUSD:'CRYPTO', SOLUSD:'CRYPTO', XRPUSD:'CRYPTO',
-  AAPL:'ACCIONES', TSLA:'ACCIONES', NVDA:'ACCIONES', AMZN:'ACCIONES', MSFT:'ACCIONES', GOOGL:'ACCIONES', META:'ACCIONES', NFLX:'ACCIONES', AMXL:'ACCIONES', CEMEXCPO:'ACCIONES', WMT:'ACCIONES'
+  WTIUSD:'MATERIAS PRIMAS', BRENTUSD:'MATERIAS PRIMAS',
+  US30:'INDICES', US100:'INDICES', US500:'INDICES', GER40:'INDICES', UK100:'INDICES', JP225:'INDICES',
+  BTCUSD:'CRYPTO', ETHUSD:'CRYPTO', XRPUSD:'CRYPTO',
+  GOOGL:'ACCIONES', NVDA:'ACCIONES', META:'ACCIONES', WMT:'ACCIONES'
 };
 var ORDEN_CATEGORIAS = ['FOREX', 'METALES', 'MATERIAS PRIMAS', 'INDICES', 'CRYPTO', 'ACCIONES'];
 var PAGINA_TAMANO_ACTIVOS = 6;
@@ -564,12 +564,7 @@ function renderQuantConnectLeanBacktester(containerId) {
   };
   window.mtbLeanState = state;
 
-  var catalogoSimbolos = [
-    'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD',
-    'EURGBP', 'EURJPY', 'GBPJPY', 'AUDJPY', 'EURAUD', 'AUDCAD', 'NZDJPY', 'CADJPY',
-    'XAUUSD', 'XAGUSD', 'WTI', 'BRENT', 'US30', 'US500', 'NAS100', 'GER40', 'UK100', 'JP225',
-    'BTCUSD', 'ETHUSD', 'SOLUSD', 'AAPL', 'TSLA', 'NVDA', 'AMZN', 'MSFT', 'GOOGL', 'META', 'NFLX'
-  ];
+  var catalogoSimbolos = window.MTB_ACTIVOS_GLOBALES.map(function(a){ return a.simbolo; });
 
   var html = '<div class="space-y-5">' +
     // Top banner QuantConnect LEAN
@@ -762,7 +757,7 @@ window.MTB_INDICADORES_LEAN = [
 ];
 
 window.MTB_ACTIVOS_GLOBALES = [
-  // Nuestro Catálogo (36)
+  // Catálogo MexTradeBot (34 activos analizados y operables en XM)
   { simbolo: 'EURUSD', nombre: 'Euro / Dólar US', grupo: 'Forex', catalogo: true },
   { simbolo: 'GBPUSD', nombre: 'Libra / Dólar US', grupo: 'Forex', catalogo: true },
   { simbolo: 'USDJPY', nombre: 'Dólar US / Yen', grupo: 'Forex', catalogo: true },
@@ -780,54 +775,23 @@ window.MTB_ACTIVOS_GLOBALES = [
   { simbolo: 'CADJPY', nombre: 'Dólar Can / Yen', grupo: 'Forex', catalogo: true },
   { simbolo: 'XAUUSD', nombre: 'Oro / Dólar US', grupo: 'Metales', catalogo: true },
   { simbolo: 'XAGUSD', nombre: 'Plata / Dólar US', grupo: 'Metales', catalogo: true },
-  { simbolo: 'WTI', nombre: 'Petróleo WTI', grupo: 'Materias Primas', catalogo: true },
-  { simbolo: 'BRENT', nombre: 'Petróleo Brent', grupo: 'Materias Primas', catalogo: true },
+  { simbolo: 'XPTUSD', nombre: 'Platino / Dólar US', grupo: 'Metales', catalogo: true },
+  { simbolo: 'XPDUSD', nombre: 'Paladio / Dólar US', grupo: 'Metales', catalogo: true },
+  { simbolo: 'WTIUSD', nombre: 'Petróleo WTI', grupo: 'Materias Primas', catalogo: true },
+  { simbolo: 'BRENTUSD', nombre: 'Petróleo Brent', grupo: 'Materias Primas', catalogo: true },
   { simbolo: 'US30', nombre: 'Dow Jones 30', grupo: 'Índices', catalogo: true },
+  { simbolo: 'US100', nombre: 'Nasdaq 100', grupo: 'Índices', catalogo: true },
   { simbolo: 'US500', nombre: 'S&P 500', grupo: 'Índices', catalogo: true },
-  { simbolo: 'NAS100', nombre: 'Nasdaq 100', grupo: 'Índices', catalogo: true },
   { simbolo: 'GER40', nombre: 'DAX 40 Alemania', grupo: 'Índices', catalogo: true },
   { simbolo: 'UK100', nombre: 'FTSE 100 UK', grupo: 'Índices', catalogo: true },
   { simbolo: 'JP225', nombre: 'Nikkei 225 Japón', grupo: 'Índices', catalogo: true },
   { simbolo: 'BTCUSD', nombre: 'Bitcoin / Dólar US', grupo: 'Crypto', catalogo: true },
   { simbolo: 'ETHUSD', nombre: 'Ethereum / Dólar US', grupo: 'Crypto', catalogo: true },
-  { simbolo: 'SOLUSD', nombre: 'Solana / Dólar US', grupo: 'Crypto', catalogo: true },
-  { simbolo: 'AAPL', nombre: 'Apple Inc.', grupo: 'Acciones', catalogo: true },
-  { simbolo: 'TSLA', nombre: 'Tesla Inc.', grupo: 'Acciones', catalogo: true },
-  { simbolo: 'NVDA', nombre: 'NVIDIA Corp.', grupo: 'Acciones', catalogo: true },
-  { simbolo: 'AMZN', nombre: 'Amazon.com Inc.', grupo: 'Acciones', catalogo: true },
-  { simbolo: 'MSFT', nombre: 'Microsoft Corp.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'XRPUSD', nombre: 'XRP / Dólar US', grupo: 'Crypto', catalogo: true },
   { simbolo: 'GOOGL', nombre: 'Alphabet Inc.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'NVDA', nombre: 'NVIDIA Corp.', grupo: 'Acciones', catalogo: true },
   { simbolo: 'META', nombre: 'Meta Platforms Inc.', grupo: 'Acciones', catalogo: true },
-  { simbolo: 'NFLX', nombre: 'Netflix Inc.', grupo: 'Acciones', catalogo: true },
-  
-  // Mercado Global Extendido (50+ activos globales adicionales)
-  { simbolo: 'EURCAD', nombre: 'Euro / Dólar Can', grupo: 'Forex', catalogo: false },
-  { simbolo: 'EURNZD', nombre: 'Euro / Dólar NZ', grupo: 'Forex', catalogo: false },
-  { simbolo: 'GBPAUD', nombre: 'Libra / Dólar Aus', grupo: 'Forex', catalogo: false },
-  { simbolo: 'GBPCAD', nombre: 'Libra / Dólar Can', grupo: 'Forex', catalogo: false },
-  { simbolo: 'GBPNZD', nombre: 'Libra / Dólar NZ', grupo: 'Forex', catalogo: false },
-  { simbolo: 'CHFJPY', nombre: 'Franco Suizo / Yen', grupo: 'Forex', catalogo: false },
-  { simbolo: 'AUDCHF', nombre: 'Dólar Aus / Franco Suizo', grupo: 'Forex', catalogo: false },
-  { simbolo: 'XPTUSD', nombre: 'Platino / Dólar US', grupo: 'Metales', catalogo: false },
-  { simbolo: 'XPDUSD', nombre: 'Paladio / Dólar US', grupo: 'Metales', catalogo: false },
-  { simbolo: 'COPPER', nombre: 'Cobre Futuros', grupo: 'Materias Primas', catalogo: false },
-  { simbolo: 'NATGAS', nombre: 'Gas Natural US', grupo: 'Materias Primas', catalogo: false },
-  { simbolo: 'US2000', nombre: 'Russell 2000', grupo: 'Índices', catalogo: false },
-  { simbolo: 'SPY', nombre: 'SPDR S&P 500 ETF', grupo: 'ETFs', catalogo: false },
-  { simbolo: 'QQQ', nombre: 'Invesco QQQ Trust', grupo: 'ETFs', catalogo: false },
-  { simbolo: 'IWM', nombre: 'iShares Russell 2000 ETF', grupo: 'ETFs', catalogo: false },
-  { simbolo: 'GLD', nombre: 'SPDR Gold Shares', grupo: 'ETFs', catalogo: false },
-  { simbolo: 'XRPUSD', nombre: 'Ripple / Dólar US', grupo: 'Crypto', catalogo: false },
-  { simbolo: 'ADAUSD', nombre: 'Cardano / Dólar US', grupo: 'Crypto', catalogo: false },
-  { simbolo: 'DOGEUSD', nombre: 'Dogecoin / Dólar US', grupo: 'Crypto', catalogo: false },
-  { simbolo: 'AVAXUSD', nombre: 'Avalanche / Dólar US', grupo: 'Crypto', catalogo: false },
-  { simbolo: 'LINKUSD', nombre: 'Chainlink / Dólar US', grupo: 'Crypto', catalogo: false },
-  { simbolo: 'AMD', nombre: 'Advanced Micro Devices', grupo: 'Acciones', catalogo: false },
-  { simbolo: 'INTC', nombre: 'Intel Corp.', grupo: 'Acciones', catalogo: false },
-  { simbolo: 'BABA', nombre: 'Alibaba Group', grupo: 'Acciones', catalogo: false },
-  { simbolo: 'PYPL', nombre: 'PayPal Holdings', grupo: 'Acciones', catalogo: false },
-  { simbolo: 'COIN', nombre: 'Coinbase Global', grupo: 'Acciones', catalogo: false },
-  { simbolo: 'PLTR', nombre: 'Palantir Tech', grupo: 'Acciones', catalogo: false }
+  { simbolo: 'WMT', nombre: 'Walmart Inc.', grupo: 'Acciones', catalogo: true }
 ];
 
 function renderQuantConnectLeanBacktester(containerId) {
@@ -859,7 +823,7 @@ function renderQuantConnectLeanBacktester(containerId) {
           '<h3 class="font-extrabold text-white text-lg tracking-tight">Motor de Backtest QuantConnect / LEAN</h3>' +
           '<span class="text-[11px] font-mono font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20 px-2.5 py-0.5 rounded-full">v2.5 Python & C#</span>' +
         '</div>' +
-        '<p class="text-xs text-slate-400">Simulación algorítmica cuantitativa con soporte para nuestro catálogo de 36 activos y mercado global extendido.</p>' +
+        '<p class="text-xs text-slate-400">Simulación algorítmica cuantitativa con soporte para nuestro catálogo de 34 activos y mercado global extendido.</p>' +
       '</div>' +
       '<div class="flex items-center gap-2">' +
         '<span class="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl font-bold">🟢 LEAN Engine Ready</span>' +
@@ -884,7 +848,7 @@ function renderQuantConnectLeanBacktester(containerId) {
           '</div>' +
 
           // Input de búsqueda
-          '<input type="text" id="busquedaActivoInput" value="' + (state.busquedaActivo || '') + '" placeholder="🔍 Buscar símbolo (ej. SPY, XAUUSD, TSLA)..." class="w-full bg-slate-950 border border-slate-800 text-white text-xs rounded-xl px-3 py-2 focus:border-sky-500 focus:outline-none font-mono" />' +
+          '<input type="text" id="busquedaActivoInput" value="' + (state.busquedaActivo || '') + '" placeholder="🔍 Buscar símbolo (ej. XAUUSD, EURUSD, NVDA)..." class="w-full bg-slate-950 border border-slate-800 text-white text-xs rounded-xl px-3 py-2 focus:border-sky-500 focus:outline-none font-mono" />' +
 
           // Scrollable List
           '<div class="max-h-56 overflow-y-auto space-y-1.5 pr-1 font-mono text-xs" id="listaActivosContainer">' +
@@ -1186,7 +1150,7 @@ window.MTB_INDICADORES_LEAN = [
 ];
 
 window.MTB_ACTIVOS_GLOBALES = [
-  // Nuestro Catálogo (36)
+  // Catálogo MexTradeBot (34 activos analizados y operables en XM)
   { simbolo: 'EURUSD', nombre: 'Euro / Dólar US', grupo: 'Forex', catalogo: true },
   { simbolo: 'GBPUSD', nombre: 'Libra / Dólar US', grupo: 'Forex', catalogo: true },
   { simbolo: 'USDJPY', nombre: 'Dólar US / Yen', grupo: 'Forex', catalogo: true },
@@ -1204,54 +1168,23 @@ window.MTB_ACTIVOS_GLOBALES = [
   { simbolo: 'CADJPY', nombre: 'Dólar Can / Yen', grupo: 'Forex', catalogo: true },
   { simbolo: 'XAUUSD', nombre: 'Oro / Dólar US', grupo: 'Metales', catalogo: true },
   { simbolo: 'XAGUSD', nombre: 'Plata / Dólar US', grupo: 'Metales', catalogo: true },
-  { simbolo: 'WTI', nombre: 'Petróleo WTI', grupo: 'Materias Primas', catalogo: true },
-  { simbolo: 'BRENT', nombre: 'Petróleo Brent', grupo: 'Materias Primas', catalogo: true },
+  { simbolo: 'XPTUSD', nombre: 'Platino / Dólar US', grupo: 'Metales', catalogo: true },
+  { simbolo: 'XPDUSD', nombre: 'Paladio / Dólar US', grupo: 'Metales', catalogo: true },
+  { simbolo: 'WTIUSD', nombre: 'Petróleo WTI', grupo: 'Materias Primas', catalogo: true },
+  { simbolo: 'BRENTUSD', nombre: 'Petróleo Brent', grupo: 'Materias Primas', catalogo: true },
   { simbolo: 'US30', nombre: 'Dow Jones 30', grupo: 'Índices', catalogo: true },
+  { simbolo: 'US100', nombre: 'Nasdaq 100', grupo: 'Índices', catalogo: true },
   { simbolo: 'US500', nombre: 'S&P 500', grupo: 'Índices', catalogo: true },
-  { simbolo: 'NAS100', nombre: 'Nasdaq 100', grupo: 'Índices', catalogo: true },
   { simbolo: 'GER40', nombre: 'DAX 40 Alemania', grupo: 'Índices', catalogo: true },
   { simbolo: 'UK100', nombre: 'FTSE 100 UK', grupo: 'Índices', catalogo: true },
   { simbolo: 'JP225', nombre: 'Nikkei 225 Japón', grupo: 'Índices', catalogo: true },
   { simbolo: 'BTCUSD', nombre: 'Bitcoin / Dólar US', grupo: 'Crypto', catalogo: true },
   { simbolo: 'ETHUSD', nombre: 'Ethereum / Dólar US', grupo: 'Crypto', catalogo: true },
-  { simbolo: 'SOLUSD', nombre: 'Solana / Dólar US', grupo: 'Crypto', catalogo: true },
-  { simbolo: 'AAPL', nombre: 'Apple Inc.', grupo: 'Acciones', catalogo: true },
-  { simbolo: 'TSLA', nombre: 'Tesla Inc.', grupo: 'Acciones', catalogo: true },
-  { simbolo: 'NVDA', nombre: 'NVIDIA Corp.', grupo: 'Acciones', catalogo: true },
-  { simbolo: 'AMZN', nombre: 'Amazon.com Inc.', grupo: 'Acciones', catalogo: true },
-  { simbolo: 'MSFT', nombre: 'Microsoft Corp.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'XRPUSD', nombre: 'XRP / Dólar US', grupo: 'Crypto', catalogo: true },
   { simbolo: 'GOOGL', nombre: 'Alphabet Inc.', grupo: 'Acciones', catalogo: true },
+  { simbolo: 'NVDA', nombre: 'NVIDIA Corp.', grupo: 'Acciones', catalogo: true },
   { simbolo: 'META', nombre: 'Meta Platforms Inc.', grupo: 'Acciones', catalogo: true },
-  { simbolo: 'NFLX', nombre: 'Netflix Inc.', grupo: 'Acciones', catalogo: true },
-  
-  // Mercado Global Extendido (50+ activos globales adicionales)
-  { simbolo: 'EURCAD', nombre: 'Euro / Dólar Can', grupo: 'Forex', catalogo: false },
-  { simbolo: 'EURNZD', nombre: 'Euro / Dólar NZ', grupo: 'Forex', catalogo: false },
-  { simbolo: 'GBPAUD', nombre: 'Libra / Dólar Aus', grupo: 'Forex', catalogo: false },
-  { simbolo: 'GBPCAD', nombre: 'Libra / Dólar Can', grupo: 'Forex', catalogo: false },
-  { simbolo: 'GBPNZD', nombre: 'Libra / Dólar NZ', grupo: 'Forex', catalogo: false },
-  { simbolo: 'CHFJPY', nombre: 'Franco Suizo / Yen', grupo: 'Forex', catalogo: false },
-  { simbolo: 'AUDCHF', nombre: 'Dólar Aus / Franco Suizo', grupo: 'Forex', catalogo: false },
-  { simbolo: 'XPTUSD', nombre: 'Platino / Dólar US', grupo: 'Metales', catalogo: false },
-  { simbolo: 'XPDUSD', nombre: 'Paladio / Dólar US', grupo: 'Metales', catalogo: false },
-  { simbolo: 'COPPER', nombre: 'Cobre Futuros', grupo: 'Materias Primas', catalogo: false },
-  { simbolo: 'NATGAS', nombre: 'Gas Natural US', grupo: 'Materias Primas', catalogo: false },
-  { simbolo: 'US2000', nombre: 'Russell 2000', grupo: 'Índices', catalogo: false },
-  { simbolo: 'SPY', nombre: 'SPDR S&P 500 ETF', grupo: 'ETFs', catalogo: false },
-  { simbolo: 'QQQ', nombre: 'Invesco QQQ Trust', grupo: 'ETFs', catalogo: false },
-  { simbolo: 'IWM', nombre: 'iShares Russell 2000 ETF', grupo: 'ETFs', catalogo: false },
-  { simbolo: 'GLD', nombre: 'SPDR Gold Shares', grupo: 'ETFs', catalogo: false },
-  { simbolo: 'XRPUSD', nombre: 'Ripple / Dólar US', grupo: 'Crypto', catalogo: false },
-  { simbolo: 'ADAUSD', nombre: 'Cardano / Dólar US', grupo: 'Crypto', catalogo: false },
-  { simbolo: 'DOGEUSD', nombre: 'Dogecoin / Dólar US', grupo: 'Crypto', catalogo: false },
-  { simbolo: 'AVAXUSD', nombre: 'Avalanche / Dólar US', grupo: 'Crypto', catalogo: false },
-  { simbolo: 'LINKUSD', nombre: 'Chainlink / Dólar US', grupo: 'Crypto', catalogo: false },
-  { simbolo: 'AMD', nombre: 'Advanced Micro Devices', grupo: 'Acciones', catalogo: false },
-  { simbolo: 'INTC', nombre: 'Intel Corp.', grupo: 'Acciones', catalogo: false },
-  { simbolo: 'BABA', nombre: 'Alibaba Group', grupo: 'Acciones', catalogo: false },
-  { simbolo: 'PYPL', nombre: 'PayPal Holdings', grupo: 'Acciones', catalogo: false },
-  { simbolo: 'COIN', nombre: 'Coinbase Global', grupo: 'Acciones', catalogo: false },
-  { simbolo: 'PLTR', nombre: 'Palantir Tech', grupo: 'Acciones', catalogo: false }
+  { simbolo: 'WMT', nombre: 'Walmart Inc.', grupo: 'Acciones', catalogo: true }
 ];
 
 function renderQuantConnectLeanBacktester(containerId) {
@@ -1283,7 +1216,7 @@ function renderQuantConnectLeanBacktester(containerId) {
           '<h3 class="font-extrabold text-white text-lg tracking-tight">Motor de Backtest QuantConnect / LEAN</h3>' +
           '<span class="text-[11px] font-mono font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20 px-2.5 py-0.5 rounded-full">v2.5 Python & C#</span>' +
         '</div>' +
-        '<p class="text-xs text-slate-400">Simulación algorítmica cuantitativa con soporte para nuestro catálogo de 36 activos y mercado global extendido.</p>' +
+        '<p class="text-xs text-slate-400">Simulación algorítmica cuantitativa con soporte para nuestro catálogo de 34 activos y mercado global extendido.</p>' +
       '</div>' +
       '<div class="flex items-center gap-2">' +
         '<span class="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl font-bold">🟢 LEAN Engine Ready</span>' +
@@ -1308,7 +1241,7 @@ function renderQuantConnectLeanBacktester(containerId) {
           '</div>' +
 
           // Input de búsqueda
-          '<input type="text" id="busquedaActivoInput" value="' + (state.busquedaActivo || '') + '" placeholder="🔍 Buscar símbolo (ej. SPY, XAUUSD, TSLA)..." class="w-full bg-slate-950 border border-slate-800 text-white text-xs rounded-xl px-3 py-2 focus:border-sky-500 focus:outline-none font-mono" />' +
+          '<input type="text" id="busquedaActivoInput" value="' + (state.busquedaActivo || '') + '" placeholder="🔍 Buscar símbolo (ej. XAUUSD, EURUSD, NVDA)..." class="w-full bg-slate-950 border border-slate-800 text-white text-xs rounded-xl px-3 py-2 focus:border-sky-500 focus:outline-none font-mono" />' +
 
           // Scrollable List
           '<div class="max-h-56 overflow-y-auto space-y-1.5 pr-1 font-mono text-xs" id="listaActivosContainer">' +
@@ -1706,31 +1639,11 @@ function irABacktest(){
 }
 
 
-window.DEFAULT_POSICIONES_5_CUENTAS = [
-  { cuenta_id: '318680674', nombre: 'Cuenta #318680674 (SMC Principal)', simbolo: 'EURUSD', direccion: 'BUY', lotes: 0.40, precio_entrada: '1.08500', temporalidad: 'Scalping 15m', abierta_en: '2026-09-24 14:15:00', profit_usd: 142.00 },
-  { cuenta_id: '318680674', nombre: 'Cuenta #318680674 (SMC Principal)', simbolo: 'XAUUSD', direccion: 'BUY', lotes: 0.20, precio_entrada: '2650.50', temporalidad: 'Intraday 1H', abierta_en: '2026-09-24 12:30:00', profit_usd: 98.50 },
-  { cuenta_id: '318680674', nombre: 'Cuenta #318680674 (SMC Principal)', simbolo: 'US30', direccion: 'SELL', lotes: 0.50, precio_entrada: '42100.00', temporalidad: 'Intraday 4H', abierta_en: '2026-09-24 10:00:00', profit_usd: 44.00 },
-  { cuenta_id: '108460538', nombre: 'Cuenta #108460538 (Forex Liquidity)', simbolo: 'GBPUSD', direccion: 'BUY', lotes: 0.50, precio_entrada: '1.33200', temporalidad: 'Intraday 1H', abierta_en: '2026-09-24 11:20:00', profit_usd: 185.20 },
-  { cuenta_id: '108460538', nombre: 'Cuenta #108460538 (Forex Liquidity)', simbolo: 'EURJPY', direccion: 'BUY', lotes: 0.30, precio_entrada: '161.400', temporalidad: 'Scalping 15m', abierta_en: '2026-09-24 13:45:00', profit_usd: 130.00 },
-  { cuenta_id: '336903105', nombre: 'Cuenta #336903105 (Índices & Breakout)', simbolo: 'US500', direccion: 'BUY', lotes: 0.80, precio_entrada: '5720.00', temporalidad: 'Intraday 4H', abierta_en: '2026-09-24 09:15:00', profit_usd: 112.40 },
-  { cuenta_id: '336903105', nombre: 'Cuenta #336903105 (Índices & Breakout)', simbolo: 'NAS100', direccion: 'SELL', lotes: 0.40, precio_entrada: '19850.00', temporalidad: 'Intraday 1H', abierta_en: '2026-09-24 15:10:00', profit_usd: 80.00 },
-  { cuenta_id: '336903102', nombre: 'Cuenta #336903102 (Commodities & Gold)', simbolo: 'XAUUSD', direccion: 'BUY', lotes: 0.50, precio_entrada: '2642.00', temporalidad: 'Intraday 1H', abierta_en: '2026-09-24 08:30:00', profit_usd: 260.80 },
-  { cuenta_id: '336903102', nombre: 'Cuenta #336903102 (Commodities & Gold)', simbolo: 'WTI', direccion: 'BUY', lotes: 1.00, precio_entrada: '71.50', temporalidad: 'Intraday 4H', abierta_en: '2026-09-24 11:00:00', profit_usd: 150.00 },
-  { cuenta_id: '318735437', nombre: 'Cuenta #318735437 (Multi-Asset Swing)', simbolo: 'BTCUSD', direccion: 'BUY', lotes: 0.10, precio_entrada: '63500.00', temporalidad: 'Intraday D', abierta_en: '2026-09-23 18:00:00', profit_usd: 95.00 },
-  { cuenta_id: '318735437', nombre: 'Cuenta #318735437 (Multi-Asset Swing)', simbolo: 'AUDUSD', direccion: 'BUY', lotes: 0.60, precio_entrada: '0.68200', temporalidad: 'Intraday 1H', abierta_en: '2026-09-24 14:00:00', profit_usd: 50.00 }
-];
 
-window.DEFAULT_HISTORIAL_5_CUENTAS = [
-  { cuenta_id: '318680674', nombre: 'Cuenta #318680674 (SMC Principal)', simbolo: 'EURUSD', direccion: 'BUY', lotes: 0.30, profit_usd: 85.00, razon_cierre: 'Take Profit (TP)', cerrada_en: '2026-09-24 10:15:00' },
-  { cuenta_id: '108460538', nombre: 'Cuenta #108460538 (Forex Liquidity)', simbolo: 'USDJPY', direccion: 'SELL', lotes: 0.20, profit_usd: 62.40, razon_cierre: 'Trailing Stop', cerrada_en: '2026-09-24 09:30:00' },
-  { cuenta_id: '336903102', nombre: 'Cuenta #336903102 (Commodities & Gold)', simbolo: 'XAUUSD', direccion: 'BUY', lotes: 0.40, profit_usd: 195.00, razon_cierre: 'Take Profit (TP)', cerrada_en: '2026-09-23 16:45:00' },
-  { cuenta_id: '336903105', nombre: 'Cuenta #336903105 (Índices & Breakout)', simbolo: 'GER40', direccion: 'BUY', lotes: 0.50, profit_usd: -45.00, razon_cierre: 'Stop Loss (SL)', cerrada_en: '2026-09-23 14:20:00' },
-  { cuenta_id: '318735437', nombre: 'Cuenta #318735437 (Multi-Asset Swing)', simbolo: 'ETHUSD', direccion: 'BUY', lotes: 0.50, profit_usd: 110.00, razon_cierre: 'Manual Close', cerrada_en: '2026-09-23 11:10:00' }
-];
 
 function renderResumenMasterTrader(data, html) {
-  var rawPos = (data && data.posiciones_abiertas && data.posiciones_abiertas.length) ? data.posiciones_abiertas : window.DEFAULT_POSICIONES_5_CUENTAS;
-  var rawHist = (data && data.historial_posiciones && data.historial_posiciones.length) ? data.historial_posiciones : window.DEFAULT_HISTORIAL_5_CUENTAS;
+  var rawPos = (data && data.posiciones_abiertas && data.posiciones_abiertas.length) ? data.posiciones_abiertas : [];  // sin datos reales no se inventan posiciones
+  var rawHist = (data && data.historial_posiciones && data.historial_posiciones.length) ? data.historial_posiciones : [];
   var opsMes = (data && data.operaciones_mes && data.operaciones_mes.length) ? data.operaciones_mes : [
     { profit_usd: 142.00 }, { profit_usd: 98.50 }, { profit_usd: 44.00 }, { profit_usd: 185.20 }, { profit_usd: 130.00 },
     { profit_usd: 112.40 }, { profit_usd: 80.00 }, { profit_usd: 260.80 }, { profit_usd: 150.00 }, { profit_usd: 95.00 },
@@ -2106,7 +2019,7 @@ window.cargarResumen = function(forzar){ return window.renderResumenDashboard(fo
     Índices: [['US30','Dow Jones 30'],['US100','Nasdaq 100'],['US500','S&P 500'],['GER40','DAX 40'],['UK100','FTSE 100'],['JP225','Nikkei 225']],
     'Materias primas': [['WTIUSD','Petróleo WTI'],['BRENTUSD','Petróleo Brent']],
     Cripto: [['BTCUSD','Bitcoin'],['ETHUSD','Ethereum'],['XRPUSD','XRP']],
-    Acciones: [['AMXL','América Móvil'],['CEMEXCPO','Cemex'],['GOOGL','Alphabet / Google'],['NVDA','NVIDIA'],['META','Meta Platforms'],['WMT','Walmart']]
+    Acciones: [['GOOGL','Alphabet / Google'],['NVDA','NVIDIA'],['META','Meta Platforms'],['WMT','Walmart']]
   };
   const universe = Object.entries(groups).flatMap(([group,items])=>items.map(([symbol,name])=>({symbol,name,group})));
   const periods = [['Scalping 15m','M15'],['Scalping 30m','M30'],['Intraday 1H','H1'],['Intraday 4H','H4'],['Intraday D','D1'],['Swing (S)','W1'],['Swing (M)','MN1']];
@@ -2191,7 +2104,7 @@ window.cargarResumen = function(forzar){ return window.renderResumenDashboard(fo
       });
     return marketPromise;
   }
-  function status(){return {idle:'Los 36 activos están disponibles para consulta.',loading:'Consultando el análisis de mercado…',ready:'Fuente: backtest del motor SMC v2 de MexTradeBot, por temporalidad. "Sin datos" = todavía no hay muestra suficiente.',empty:'El motor todavía no tiene análisis guardados. Vuelve más tarde.',error:'No se pudo cargar el análisis del motor. Pulsa "Actualizar" para reintentar.'}[marketState]||'Fuente: análisis de MexTradeBot.';}
+  function status(){return {idle:'Los '+universe.length+' activos están disponibles para consulta.',loading:'Consultando el análisis de mercado…',ready:'Fuente: backtest del motor SMC v2 de MexTradeBot, por temporalidad. "Sin datos" = todavía no hay muestra suficiente.',empty:'El motor todavía no tiene análisis guardados. Vuelve más tarde.',error:'No se pudo cargar el análisis del motor. Pulsa "Actualizar" para reintentar.'}[marketState]||'Fuente: análisis de MexTradeBot.';}
   function refreshMarketView(){if(!initialized)return;if(activePage==='catalogoTop')renderCatalog();if(activePage==='ficha'&&selected)renderDetail();}
   function renderCatalog(){
     const container=el('catalogoTopContenido');

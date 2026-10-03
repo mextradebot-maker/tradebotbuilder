@@ -13,7 +13,7 @@ SWING = {"Swing (S)", "Swing (M)"}  # swing solo opera compras
 _FOREX = ("EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "EURGBP",
           "EURJPY", "GBPJPY", "AUDJPY", "EURAUD", "AUDCAD", "NZDJPY", "CADJPY")
 # Verificados 3 oct 2026 con exportar_simbolos_xm.py en el VPS (1639 simbolos de XM).
-# AMXL y CEMEXCPO: XM solo tiene los ADR de NY en USD (AMX.N, CX.N); nuestro feed es BMV en MXN -> no operables en XM.
+# Los 34 del catalogo tienen nombre XM (AMXL y CEMEXCPO se retiraron el 3 oct 2026: XM solo tiene sus ADR en USD).
 SIMBOLO_XM = {
     **{s: s for s in _FOREX},
     "XAUUSD": "GOLD", "XAGUSD": "SILVER", "XPTUSD": "XPTUSD", "XPDUSD": "XPDUSD",
@@ -94,7 +94,7 @@ def demo() -> None:
     assert f["USDJPY"]["n_setups"] == 0 and f["USDJPY"]["winrate"] is None  # sin tendencia: sin cifras
     assert f["NZDUSD"]["expectativa_r"] is None and f["NZDUSD"]["fuente"] is None
     assert f["XAUUSD"]["simbolo_xm"] == "GOLD" and f["EURUSD"]["simbolo_xm"] == "EURUSD"
-    assert len(SIMBOLO_XM) == 34 and SIMBOLO_XM["US500"] == "US500Cash" and SIMBOLO_XM.get("AMXL") is None  # no verificado: null
+    assert len(SIMBOLO_XM) == 34 and SIMBOLO_XM["US500"] == "US500Cash" and SIMBOLO_XM.get("AMXL") is None
     print("api/catalogo demo OK")
 
 

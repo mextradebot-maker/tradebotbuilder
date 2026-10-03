@@ -268,13 +268,24 @@ _SQL = [
     """,
 ]
 
-# 36 simbolos × 7 temporalidades = 252 pares (Scalping 30m inactiva)
+# 34 simbolos × 7 temporalidades = 238 pares (Scalping 30m inactiva)
 _SIMBOLOS_SEED = [
     "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD",
     "XAUUSD", "XAGUSD", "EURGBP", "EURJPY", "GBPJPY", "AUDJPY", "EURAUD",
     "AUDCAD", "NZDJPY", "CADJPY", "US30", "US100", "US500", "GER40", "UK100",
     "JP225", "XPTUSD", "XPDUSD", "WTIUSD", "BRENTUSD", "BTCUSD", "ETHUSD",
-    "XRPUSD", "AMXL", "CEMEXCPO", "GOOGL", "NVDA", "META", "WMT",
+    "XRPUSD", "GOOGL", "NVDA", "META", "WMT",
+]
+
+# Simbolos retirados del catalogo (idempotente, corre en cada arranque despues de _SQL):
+# AMXL y CEMEXCPO (3 oct 2026): XM solo tiene sus ADR en USD, el feed es BMV en MXN -> no operables.
+# GOLD: snapshot huerfano de poblar_snapshots.py (el oro del motor es XAUUSD); GOLD en cuentas_demo,
+# posiciones e historial es el nombre XM del Master Trader y NO se toca.
+_SQL_LIMPIEZA = [
+    *[f"DELETE FROM {t} WHERE simbolo IN ('AMXL', 'CEMEXCPO')"
+      for t in ("catalogo_activos", "smc_snapshot", "backtest_largo", "historico_tendencias", "velas", "velas_carga")],
+    *[f"DELETE FROM {t} WHERE simbolo = 'GOLD'"
+      for t in ("catalogo_activos", "smc_snapshot", "backtest_largo", "velas", "velas_carga")],
 ]
 _TEMPORALIDADES_SEED = ["Scalping 15m", "Scalping 30m", "Intraday 1H", "Intraday 4H", "Intraday D", "Swing (S)", "Swing (M)"]
 _TEMPORALIDADES_INACTIVAS = {"Scalping 30m"}  # activar a mano tras medir tiempos en produccion
@@ -298,7 +309,7 @@ def aplicar() -> None:
     with get_conn() as conn:
         # serializa arranques concurrentes (padre + workers): el bloqueo se suelta al commit
         conn.execute("SELECT pg_advisory_xact_lock(7204042901)")
-        for sql in _SQL:
+        for sql in _SQL + _SQL_LIMPIEZA:
             conn.execute(sql)
         with conn.cursor() as cur:
             cur.executemany(
@@ -363,4 +374,13 @@ def demo() -> None:
     assert not {"Scalping", "Intraday", "Swing (H)"} & (set(_TEMPORALIDADES_SEED) | {c[4] for c in _CUENTAS_SEED})
     from conectividad.historico import TEMPORALIDADES
     assert list(TEMPORALIDADES) == _TEMPORALIDADES_SEED
+    # catalogo de 34: limpieza borra retirados y GOLD huerfano de las tablas de analisis, no de cuentas_demo
+    assert len(_SIMBOLOS_SEED) == 34 and not {"AMXL", "CEMEXCPO", "GOLD"} & set(_SIMBOLOS_SEED)
+    db.execute("INSERT INTO cuentas_demo VALUES (9, 'Swing (S)')")
+    db.executemany("INSERT INTO smc_snapshot VALUES (?, 'Intraday 1H')", [("AMXL",), ("CEMEXCPO",), ("GOLD",)])
+    for sql in _SQL_LIMPIEZA:
+        if re.search(r"FROM (catalogo_activos|smc_snapshot) ", sql):
+            db.execute(sql)
+    assert {f[0] for f in db.execute("SELECT simbolo FROM catalogo_activos UNION SELECT simbolo FROM smc_snapshot")} == {"EURUSD"}
+    assert all("cuentas_demo" not in sql and "historial" not in sql and "posiciones" not in sql for sql in _SQL_LIMPIEZA)
     print("persistencia.migraciones.demo() OK", file=sys.stdout)

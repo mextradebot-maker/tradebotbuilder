@@ -3,7 +3,7 @@
 Uso en el VPS:  cd C:\\MTB; python exportar_simbolos_xm.py
   (opcional: ruta de otra terminal, p.ej. python exportar_simbolos_xm.py C:\\MT5\\cuenta2\\terminal64.exe)
 Escribe C:\\MTB\\simbolos_xm.csv con TODOS los simbolos (nombre, descripcion, ruta) y muestra
-en pantalla, para los 36 simbolos del catalogo, los candidatos XM. Con esa salida se llena
+en pantalla, para los 34 simbolos del catalogo, los candidatos XM. Con esa salida se llena
 SIMBOLO_XM en api/catalogo.py (solo nombres confirmados por XM).
 """
 
@@ -22,7 +22,7 @@ CLAVES = {
     "UK100": ["UK100", "FTSE"], "JP225": ["JP225", "NIKKEI", "JPN225"],
     "WTIUSD": ["OILCASH", "WTI", "CRUDE"], "BRENTUSD": ["BRENT", "UKOIL"],
     "BTCUSD": ["BTCUSD", "BITCOIN"], "ETHUSD": ["ETHUSD", "ETHEREUM"], "XRPUSD": ["XRPUSD", "RIPPLE"],
-    "AMXL": ["AMERICA MOVIL", "AMX"], "CEMEXCPO": ["CEMEX"], "GOOGL": ["ALPHABET", "GOOGL"],
+    "GOOGL": ["ALPHABET", "GOOGL"],
     "NVDA": ["NVIDIA", "NVDA"], "META": ["META PLATFORMS", "FACEBOOK"], "WMT": ["WALMART", "WMT"],
 }
 

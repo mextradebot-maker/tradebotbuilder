@@ -19,8 +19,8 @@ PARES_PRINCIPALES = [
     ("WTIUSD", "Swing (S)"),
     ("EURUSD", "Scalping 15m"),
     ("USDJPY", "Intraday 1H"),
-    ("GOLD", "Intraday 1H"),
-    ("GOLD", "Swing (S)"),
+    ("XAUUSD", "Intraday 1H"),  # el motor usa XAUUSD; GOLD es solo el nombre en XM
+    ("XAUUSD", "Swing (S)"),
 ]
 
 

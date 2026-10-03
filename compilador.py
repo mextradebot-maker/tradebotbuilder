@@ -36,7 +36,7 @@ SIMBOLOS = (
     "XAUUSD", "XAGUSD", "EURGBP", "EURJPY", "GBPJPY", "AUDJPY", "EURAUD",
     "AUDCAD", "NZDJPY", "CADJPY", "US30", "US100", "US500", "GER40", "UK100",
     "JP225", "XPTUSD", "XPDUSD", "WTIUSD", "BRENTUSD", "BTCUSD", "ETHUSD",
-    "XRPUSD", "AMXL", "CEMEXCPO", "GOOGL", "NVDA", "META", "WMT",
+    "XRPUSD", "GOOGL", "NVDA", "META", "WMT",
 )
 TF_POR_TEMPORALIDAD = {
     "Scalping 15m": "PERIOD_M15", "Scalping 30m": "PERIOD_M30", "Intraday 1H": "PERIOD_H1",
@@ -174,7 +174,7 @@ def demo() -> None:
     arbol = ast.parse((FUENTE.parent.parent / "persistencia" / "migraciones.py").read_text(encoding="utf-8"))
     semillas = {n.targets[0].id: ast.literal_eval(n.value) for n in arbol.body
                 if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") in ("_SIMBOLOS_SEED", "_TEMPORALIDADES_SEED")}
-    assert list(SIMBOLOS) == semillas["_SIMBOLOS_SEED"] and len(SIMBOLOS) == 36
+    assert list(SIMBOLOS) == semillas["_SIMBOLOS_SEED"] and len(SIMBOLOS) == 34
     assert list(TF_POR_TEMPORALIDAD) == semillas["_TEMPORALIDADES_SEED"]
 
     previa = os.environ.pop("COMPILADOR_KEY", None)

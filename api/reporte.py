@@ -2,7 +2,7 @@
 cálculo de T-01, que analizaba XAUUSD y EURUSD desde cero cada mañana).
 
 No calcula nada: lee los snapshots que refresco.py ya mantiene al día en Postgres
-(36 activos × 5 temporalidades). Solo lo llama n8n (T-01) con X-MTB-Service-Key; Claude
+(34 activos × 7 temporalidades). Solo lo llama n8n (T-01) con X-MTB-Service-Key; Claude
 redacta el mensaje de Telegram con este JSON.
 
 "Vigente" = conocido (indice_conocido; si no viene, confirmado) en las últimas VELAS_VIGENCIA velas de su temporalidad: la misma

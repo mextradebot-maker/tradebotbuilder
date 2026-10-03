@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 # Catálogo (ampliado 14 sep 2026 — spec docs/panel-alumnos-catalogo-indicadores-spec.md
 # §5, cerrado con Ricardo tras cruzar cada símbolo contra dukascopy Y la cuenta real
-# de XM: 36 símbolos que tienen histórico real Y son operables en el broker que
+# de XM: 34 símbolos que tienen histórico real Y son operables en el broker que
 # usan los alumnos). ponytail: sigue siendo un dict de Python, no la Sheet única —
 # la Sheet es la fuente para n8n/UI; este dict es la fuente para "que instrumento
 # de dukascopy le corresponde a cada símbolo" y hay que mantenerlo sincronizado a
@@ -63,12 +63,8 @@ SIMBOLOS = {
     "BTCUSD": inst.INSTRUMENT_VCCY_BTC_USD,
     "ETHUSD": inst.INSTRUMENT_VCCY_ETH_USD,
     "XRPUSD": inst.INSTRUMENT_VCCY_XRP_USD,
-    # Acciones MX (broker XM: CFD/ADR en USD, no la accion BMV en MXN que da
-    # dukascopy — el comportamiento de precio no es identico, ver spec §5).
-    # Las otras 4 propuestas (GFNORTEO, FEMSAUBD, GMEXICOB, WALMEX) no existen
-    # en XM, quedaron fuera.
-    "AMXL": inst.INSTRUMENT_MEXICO_AMXL_MX_MXN,
-    "CEMEXCPO": inst.INSTRUMENT_MEXICO_CEMEXCPO_MX_MXN,
+    # Acciones MX (AMXL, CEMEXCPO) retiradas el 3 oct 2026: XM solo tiene sus ADR en USD
+    # y este feed es BMV en MXN, el robot nunca podria operarlas.
     # Acciones US (broker XM llama a Meta "Facebook" — dukascopy tambien usa
     # el ticker viejo FB, ninguno de los dos actualizo el nombre)
     "GOOGL": inst.INSTRUMENT_US_GOOGL_US_USD,
@@ -198,7 +194,7 @@ class _ErrDescarga(Exception):
 
 # Simbolos sin calendario 24h forex (indices y acciones: cierran cada noche/dia): la guarda contra descargas
 # truncadas no aplica (no hay forma barata de saber si esperaban mas velas).
-_SIN_GUARDA = {"US30", "US100", "US500", "GER40", "UK100", "JP225", "AMXL", "CEMEXCPO", "GOOGL", "NVDA", "META", "WMT"}
+_SIN_GUARDA = {"US30", "US100", "US500", "GER40", "UK100", "JP225", "GOOGL", "NVDA", "META", "WMT"}
 _CRIPTO = {"BTCUSD", "ETHUSD", "XRPUSD"}
 _PASO = {iv: paso for iv, paso in _BASE.values()}
 
