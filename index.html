@@ -112,6 +112,7 @@ function mtbAcceptSession(session) {
   MTB_NOMBRE_INICIAL = session.MTB_NOMBRE_INICIAL;
   document.querySelectorAll('#app input[name=password]').forEach(function (input) { input.value = ''; });
   mostrarWizard(MTB_NOMBRE_INICIAL);
+  if (typeof window.mtbFichaTrasSesion === 'function') window.mtbFichaTrasSesion();
   return true;
 }
 async function mtbSubmitAuth(formId, errorId) {
@@ -402,44 +403,16 @@ function renderCatalogo(){
     html += '<p class="text-sm text-slate-400 mb-4">Por ahora no hay robots pre-armados. Usa la pestaña Personalizado.</p>';
   } else {
     html += '<div class="space-y-3 mb-6">' + data.robots.map(function(r){
-      return '<div class="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm"><div class="min-w-0"><div class="font-bold text-white text-sm break-all">' + nombreRobotLegible(r.robot) + '</div><div class="text-xs text-slate-400 mt-1">' + esc(r.simbolo) + ' &middot; ' + esc(r.tipo) + ' &middot; riesgo ' + esc(r.riesgo) + '</div></div><button class="mtb-btn bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition shrink-0" data-descargar-robot="' + esc(r.robot) + '">Descargar ⬇</button></div>';
+      return '<div class="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm"><div class="min-w-0"><div class="font-bold text-white text-sm break-all">' + nombreRobotLegible(r.robot) + '</div><div class="text-xs text-slate-400 mt-1">' + esc(r.simbolo) + ' &middot; ' + esc(r.tipo) + ' &middot; riesgo ' + esc(r.riesgo) + '</div></div><button class="mtb-btn bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition shrink-0" data-ficha-simbolo="' + esc(r.simbolo) + '" data-ficha-temporalidad="' + esc(r.temporalidad || r.tipo || '') + '">Descargar ⬇</button></div>';
     }).join('') + '</div>';
   }
   html += '<h3 class="font-extrabold text-white text-base mb-3">Activos monitoreados (' + viables.length + ')</h3>';
   html += renderActivosAgrupados('catalogo', viables, function(a){
-    return '<div class="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-sm"><div class="min-w-0"><div class="font-bold text-white text-sm">' + esc(a.simbolo) + '</div><div class="text-xs text-slate-400">' + esc(a.nombre) + '</div></div><button class="mtb-btn bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition shrink-0" data-rapido="' + esc(a.simbolo) + '">Descargar ↗</button></div>';
+    return '<div class="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-sm"><div class="min-w-0"><div class="font-bold text-white text-sm">' + esc(a.simbolo) + '</div><div class="text-xs text-slate-400">' + esc(a.nombre) + '</div></div><button class="mtb-btn bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition shrink-0" data-ficha-simbolo="' + esc(a.simbolo) + '" data-ficha-temporalidad="' + esc(a.temporalidad || '') + '">Descargar ↗</button></div>';
   });
   cont.innerHTML = html;
   vincularFiltrosMasterTrader();
-  cont.querySelectorAll('[data-descargar-robot]').forEach(function(btn){
-    btn.addEventListener('click', function(){ descargarArchivo({ accion: 'robot', robot: btn.getAttribute('data-descargar-robot') }).catch(function(){ alert('No se pudo descargar.'); }); });
-  });
-  cont.querySelectorAll('[data-rapido]').forEach(function(btn){
-    btn.addEventListener('click', function(){ descargarArchivo({ accion: 'activo_rapido', simbolo: btn.getAttribute('data-rapido') }).catch(function(){ alert('No se pudo descargar.'); }); });
-  });
-}
-
-function descargarArchivo(body){
-  var full = Object.assign({ clave: MTB_CLAVE }, body);
-  return fetch('/webhook/panel-alumnos-robots', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(full) })
-    .then(function(r){
-      var disposition = r.headers.get('Content-Disposition');
-      if (disposition) {
-        var direccion = r.headers.get('X-Direccion');
-        var winrate = r.headers.get('X-Winrate');
-        var expectativa = r.headers.get('X-Expectativa-R');
-        return r.blob().then(function(blob){
-          var m = /filename=([^;]+)/.exec(disposition);
-          var nombre = m ? m[1].trim() : 'robot.txt';
-          var url = URL.createObjectURL(blob);
-          var a = document.createElement('a');
-          a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
-          URL.revokeObjectURL(url);
-          return { descargado: true, direccion: direccion, winrate: winrate, expectativa: expectativa };
-        });
-      }
-      return r.json().then(function(data){ return Object.assign({ descargado: false }, data); });
-    });
+  // los botones [data-ficha-simbolo] abren la ficha de descarga (listener delegado en el script de la ficha)
 }
 
 function renderActivosAnalizados(){
@@ -449,42 +422,19 @@ function renderActivosAnalizados(){
   var activos = (data.activos_todos || []).filter(function(a){ return a.viable; });
   if (activos.length === 0) { cont.innerHTML = '<p class="text-sm text-slate-400">No hay activos con datos suficientes todavía.</p>'; return; }
   cont.innerHTML = renderActivosAgrupados('activos', activos, function(a){
-    return '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm space-y-3"><div class="flex items-center justify-between"><div class="font-bold text-white text-base">' + esc(a.simbolo) + '</div>' + badgeActivo(a) + '</div><div class="text-xs text-slate-400">' + esc(a.descripcion_larga || a.nombre) + '</div><div class="flex gap-2 pt-1"><button class="mtb-btn bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition" data-rapido="' + esc(a.simbolo) + '">Descarga rápida</button><button class="mtb-btn bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition" data-personalizar="' + esc(a.simbolo) + '">Personalizar</button></div></div>';
-  });
-  cont.querySelectorAll('[data-rapido]').forEach(function(btn){
-    btn.addEventListener('click', function(){ descargarArchivo({ accion: 'activo_rapido', simbolo: btn.getAttribute('data-rapido') }).catch(function(){ alert('No se pudo descargar.'); }); });
-  });
-  cont.querySelectorAll('[data-personalizar]').forEach(function(btn){
-    btn.addEventListener('click', function(){ window.mtbSimboloPreseleccionado = btn.getAttribute('data-personalizar'); window.cargarBotsProduccion('personalizado'); });
+    return '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm space-y-3"><div class="flex items-center justify-between"><div class="font-bold text-white text-base">' + esc(a.simbolo) + '</div>' + badgeActivo(a) + '</div><div class="text-xs text-slate-400">' + esc(a.descripcion_larga || a.nombre) + '</div><div class="flex gap-2 pt-1"><button class="mtb-btn bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition" data-ficha-simbolo="' + esc(a.simbolo) + '" data-ficha-temporalidad="' + esc(a.temporalidad || '') + '">Descarga rápida</button><button class="mtb-btn bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition" data-ficha-simbolo="' + esc(a.simbolo) + '">Personalizar</button></div></div>';
   });
 }
 
 function cargarPersonalizado(){
   var cont = document.getElementById('personalizadoContenido');
   if (!cont) return;
-  var simboloInicial = window.mtbSimboloPreseleccionado || 'EURUSD';
+  var sim = window.mtbSimboloPreseleccionado || '';
   cont.innerHTML = '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm max-w-xl">' +
-    '<h3 class="font-extrabold text-white text-lg mb-1">Personaliza tu Robot</h3>' +
-    '<p class="text-xs text-slate-400 mb-5">Configura los parámetros de la estrategia SMC antes de descargar el script para MT5.</p>' +
-    '<form id="personalizadoForm" class="space-y-4">' +
-    '<div><label class="text-xs font-bold text-slate-300 uppercase tracking-wide">Símbolo del activo</label><input name="simbolo" value="' + esc(simboloInicial) + '" class="mt-1.5 w-full bg-slate-950 border border-slate-700 text-white font-mono rounded-xl px-4 py-2.5 uppercase focus:border-sky-500 focus:outline-none" /></div>' +
-    '<div><label class="text-xs font-bold text-slate-300 uppercase tracking-wide">Temporalidad sugerida</label><select name="tipoRobot" class="mt-1.5 w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-4 py-2.5 focus:border-sky-500 focus:outline-none"><option>Scalping 15m</option><option>Scalping 30m</option><option selected>Intraday 1H</option><option>Intraday 4H</option><option>Intraday D</option><option>Swing (S)</option><option>Swing (M)</option></select></div>' +
-    '<div class="grid grid-cols-2 gap-3">' +
-    '<div><label class="text-xs font-bold text-slate-300 uppercase tracking-wide">Stop Loss (pips/puntos)</label><input name="stopLossPips" value="25" type="number" class="mt-1.5 w-full bg-slate-950 border border-slate-700 text-white font-mono rounded-xl px-4 py-2.5 focus:border-sky-500 focus:outline-none" /></div>' +
-    '<div><label class="text-xs font-bold text-slate-300 uppercase tracking-wide">Take Profit (ratio R:R)</label><input name="takeProfitRR" value="2.5" type="number" step="0.1" class="mt-1.5 w-full bg-slate-950 border border-slate-700 text-white font-mono rounded-xl px-4 py-2.5 focus:border-sky-500 focus:outline-none" /></div>' +
-    '</div>' +
-    '<div><label class="text-xs font-bold text-slate-300 uppercase tracking-wide">Lotaje fijo</label><input name="lotes" value="0.01" type="number" step="0.01" class="mt-1.5 w-full bg-slate-950 border border-slate-700 text-white font-mono rounded-xl px-4 py-2.5 focus:border-sky-500 focus:outline-none" /></div>' +
-    '<button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm py-3.5 rounded-xl shadow-md transition mt-2">Descargar robot personalizado (.mq5) 🚀</button>' +
-    '</form></div>';
-  
-  var form = document.getElementById('personalizadoForm');
-  if (form) {
-    form.addEventListener('submit', function(ev){
-      ev.preventDefault();
-      var fd = new FormData(form);
-      descargarArchivo({ accion: 'personalizado', simbolo: fd.get('simbolo'), tipoRobot: fd.get('tipoRobot'), stopLossPips: fd.get('stopLossPips'), takeProfitRR: fd.get('takeProfitRR'), lotes: fd.get('lotes') }).catch(function(){ alert('No se pudo generar la descarga.'); });
-    });
-  }
+    '<h3 class="font-extrabold text-white text-lg mb-1">Descarga tu robot</h3>' +
+    '<p class="text-xs text-slate-400 mb-5">Elige activo, temporalidad, modo y monto a operar. El stop loss, take profit y lotaje los define el Master Trader; tu robot sale listo para MT5 con tu licencia.</p>' +
+    '<button type="button" class="ag-btn ag-primary" data-ficha-simbolo="' + esc(sim) + '">Abrir ficha de descarga</button>' +
+    '</div>';
 }
 var MTB_DEMO_STATUS_URL = 'https://demo-status.mextradebot.com.mx/demo-status';
 window.MTB_CUENTAS_DEMO = null; // null = sin cargar; se llena con las cuentas MT5 reales del VPS
@@ -1730,8 +1680,8 @@ function tarjetaResumenHtml(a){
       verd +
     '</div>' +
     '<div class="flex gap-2 pt-2 border-t border-slate-100 mt-1">' +
-      '<button type="button" class="mtb-btn flex-1 bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-2 rounded-lg" onclick="descargarArchivo({accion:\'activo_rapido\',simbolo:\'' + sim + '\'}).catch(function(){alert(\'No se pudo descargar.\');})">⚡ Descarga rápida</button>' +
-      '<button type="button" class="mtb-btn flex-1 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2 rounded-lg" onclick="irAPersonalizar(\'' + sim + '\')">⚙️ Personalizar</button>' +
+      '<button type="button" class="mtb-btn flex-1 bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-2 rounded-lg" data-ficha-simbolo="' + sim + '" data-ficha-temporalidad="' + esc(a.temporalidad || '') + '">⚡ Descarga rápida</button>' +
+      '<button type="button" class="mtb-btn flex-1 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2 rounded-lg" data-ficha-simbolo="' + sim + '">⚙️ Personalizar</button>' +
     '</div>' +
   '</div>';
 }
@@ -2229,6 +2179,7 @@ window.cargarResumen = function(forzar){ return window.renderResumenDashboard(fo
     marketPromise=request('/api/catalogo')
       .then(data=>{
         const filas=Array.isArray(data?.activos_todos)?data.activos_todos:[];
+        window.MTB_FILAS_CATALOGO=filas; // todas las filas simbolo x temporalidad (la ficha de descarga las usa via market)
         window.MTB_CATALOGO={robots:data?.robots||[],activos_todos:mejoresPorSimbolo(filas)};
         ingest(filas);
       })
@@ -2318,13 +2269,15 @@ window.cargarResumen = function(forzar){ return window.renderResumenDashboard(fo
     });
     document.addEventListener('input',e=>{if(e.target.id==='ag-search'){search=e.target.value;renderGrid();}});
     document.addEventListener('change',e=>{if(e.target.id==='ag-period'){activePeriod=e.target.value;renderCatalog();}});
-    function hashRoute(){if(el('wizard').classList.contains('hidden'))return;const [page,symbol]=location.hash.slice(1).split('/');route(page==='activo'?'ficha':page,symbol,false);}
+    function hashRoute(){if(el('wizard').classList.contains('hidden'))return;const [page,symbol]=location.hash.slice(1).split('/');if(page==='ficha'){window.mtbFichaDesdeHash?.();return;}route(page==='activo'?'ficha':page,symbol,false);}
     window.addEventListener('hashchange',hashRoute);
     if(!el('wizard').classList.contains('hidden'))hashRoute();else renderCatalog();
   }
   // Replace obsolete entry points as well as direct links from legacy components.
   window.cargarCatalogo=()=>{ if(typeof renderCatalogo==='function')renderCatalogo(); loadMarket(); };window.cargarCatalogoTopLevel=()=>loadMarket();window.cargarActivosAnalizados=()=>{ if(typeof renderActivosAnalizados==='function')renderActivosAnalizados(); loadMarket(); };
-  window.irAPersonalizar=s=>{if(known(s))selected=s;window.mtbSimboloPreseleccionado=s;route('constructor');};
+  window.irAPersonalizar=s=>window.abrirFicha(s);
+  // contexto para la ficha de descarga (script siguiente)
+  window.MTB_FICHA_CTX={universe,groups,periods,known,periodKey,current,loadMarket,route,trend,state:()=>marketState};
   window.irABacktest=()=>route('backtester');window.cargarResumen=()=>window.renderResumenDashboard();
   document.addEventListener('DOMContentLoaded',init);
 })();
@@ -2338,4 +2291,352 @@ window.renderMasterTraderPanel = function() {
   c.innerHTML = "<div class='text-center py-10'><div class='text-slate-800 font-bold mb-2'>Aun no esta construido</div>" +
     "<p class='text-slate-500 text-sm max-w-sm mx-auto'>Master Trader sera el agente que orqueste tus robots automaticamente, sin que tengas que operarlos tu. Todavia no existe.</p></div>";
 };
+</script><style>/* Ficha de descarga con Capital (spec 2026-10-03). Usa los tokens --mt-* del panel. */
+.mf-overlay{position:fixed;inset:0;z-index:60;background:rgba(2,6,15,.72);display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto;animation:mfFade 160ms ease-out}
+.mf-dialog{width:100%;max-width:720px;margin:auto 0;background:var(--mt-panel);color:var(--mt-text);border:1px solid var(--mt-line);border-radius:16px;padding:24px;animation:mfIn 220ms cubic-bezier(.23,1,.32,1)}
+.mf-dialog:focus{outline:none}
+@keyframes mfFade{from{opacity:0}}
+@keyframes mfIn{from{opacity:0;transform:translateY(8px) scale(.98)}}
+@keyframes mfSpin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.mf-dialog{animation:mfFade 160ms ease-out}.mf-spin{animation:none!important}}
+.mf-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.mf-head h2{font-size:22px;font-weight:600;margin:0;letter-spacing:-.4px}
+.mf-x{flex-shrink:0;width:44px;height:44px;border-radius:8px;background:none;border:1px solid var(--mt-line);font-size:22px;line-height:1}
+.mf-x:hover{border-color:var(--mt-accent)}
+.mf-step{border-top:1px solid var(--mt-line);padding-top:18px;margin-top:18px}
+.mf-step h3{display:flex;gap:10px;align-items:center;font-size:15px;font-weight:600;margin:0 0 14px}
+.mf-num{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--mt-raised);border:1px solid var(--mt-line);color:var(--mt-accent);font-size:12px}
+.mf-field{margin:0 0 16px;border:0;padding:0;min-width:0}
+.mf-label{display:block;font-size:12px;color:var(--mt-muted);margin-bottom:6px;padding:0}
+.mf-field select,.mf-field input[type=number]{width:100%;min-height:44px;font-size:16px}
+.mf-temps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.mf-seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mf-opt{display:flex;gap:10px;align-items:flex-start;min-height:44px;padding:10px 12px;border:1px solid var(--mt-line);border-radius:10px;background:var(--mt-bg);cursor:pointer}
+.mf-opt:hover{border-color:var(--mt-muted)}
+.mf-opt:has(input:checked){border-color:var(--mt-accent);box-shadow:inset 3px 0 var(--mt-accent)}
+.mf-opt:has(input:focus-visible){outline:2px solid var(--mt-accent);outline-offset:2px}
+.mf-opt input{margin-top:3px;flex-shrink:0;accent-color:var(--mt-accent)}
+.mf-opt-body{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
+.mf-opt-top{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px}
+.mf-opt-stats{font-size:12px;color:var(--mt-muted);font-variant-numeric:tabular-nums}
+.mf-ok{color:var(--viable)!important}.mf-no{color:var(--perdida)!important}
+.mf-alert{margin:0 0 16px;padding:12px 14px;border:1px solid;border-radius:10px;font-size:13px}
+.mf-alert p{margin:0 0 6px}.mf-alert p:last-child{margin:0}
+.mf-alert-risk{background:var(--perdida-bg);border-color:var(--perdida)}
+.mf-alert-info{background:var(--advertencia-bg);border-color:var(--advertencia)}
+.mf-check{display:flex;gap:10px;align-items:center;min-height:44px;margin-top:6px;font-weight:600;cursor:pointer}
+.mf-check input{width:20px;height:20px;accent-color:var(--perdida)}
+.mf-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:20px}
+.mf-alert .mf-actions{justify-content:flex-start;margin-top:10px}
+.mf-actions .ag-btn{min-height:44px;font-size:14px;padding:10px 18px}
+.mf-dialog .ag-table th{font-size:12px;width:36%;vertical-align:top}
+.mf-dialog .ag-table td{font-variant-numeric:tabular-nums}
+.mf-wait{text-align:center;padding:36px 8px}
+.mf-spin{width:36px;height:36px;margin:0 auto 16px;border-radius:50%;border:3px solid var(--mt-line);border-top-color:var(--mt-accent);animation:mfSpin .8s linear infinite}
+.mf-wait-t{font-size:18px;font-weight:600;margin:0 0 6px}
+.mf-pasos{padding-left:20px;margin:0 0 16px;display:grid;gap:10px;font-size:14px}
+.mf-pasos code,.mf-data code{background:var(--mt-raised);border-radius:6px;padding:2px 6px;overflow-wrap:anywhere;font-size:13px}
+.mf-data{display:grid;grid-template-columns:auto 1fr;gap:10px 16px;margin:0;padding:14px;background:var(--mt-bg);border:1px solid var(--mt-line);border-radius:10px;font-size:13px}
+.mf-data dt{color:var(--mt-muted)}.mf-data dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.mf-token{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#app .mf-reg-aviso{font-size:16px;font-weight:600;color:var(--mt-text);margin:0 0 12px}
+@media (max-width:560px){.mf-overlay{padding:12px 8px}.mf-dialog{padding:18px 16px}.mf-temps{grid-template-columns:1fr}.mf-data{grid-template-columns:1fr;gap:4px}.mf-data dd{margin-bottom:8px}}
+</style><script>/* Ficha de descarga con Capital: los 4 orígenes de descarga y el deep link de Telegram abren abrirFicha(). */
+const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membresía. Vacía = "Contacta a MexTradeBot…" sin botón.
+(function () {
+  'use strict';
+  const MONTO_MIN = 300, MONTO_DEMO = 10000, TIMEOUT_MS = 150000; // la compilación tarda 10-120 s
+  const ctx = () => window.MTB_FICHA_CTX, $ = id => document.getElementById(id), esc = window.esc;
+  let st = null, ov = null, opener = null, ctrl = null, tgEnviado = false;
+  let pendiente = leerHash(); // se lee al cargar, antes de que el router reescriba el hash
+
+  function leerHash() {
+    const h = location.hash.slice(1);
+    if (!/^ficha(\/|\?|$)/.test(h)) return null;
+    const [ruta, query = ''] = h.split('?');
+    const partes = ruta.split('/');
+    const dec = v => { try { return decodeURIComponent(v || ''); } catch { return ''; } };
+    return { simbolo: dec(partes[1]).toUpperCase(), temporalidad: dec(partes[2]), estricto: true, tg: new URLSearchParams(query).get('tg') || '' };
+  }
+  if (pendiente) $('regBlock')?.insertAdjacentHTML('afterbegin', '<p class="mf-reg-aviso">Crea tu cuenta gratis para descargar tu robot</p>');
+
+  function procesarPendiente() {
+    const p = pendiente; pendiente = null;
+    if (!p) return;
+    document.querySelector('#app .mf-reg-aviso')?.remove();
+    ctx().route('botsProduccion'); // también deja el hash en #botsProduccion: no se reabre al recargar
+    if (p.tg && !tgEnviado) {
+      tgEnviado = true;
+      fetch('/api/v1/vincular-telegram', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tg: p.tg }) }).catch(() => {});
+    }
+    window.abrirFicha(p.simbolo, p.temporalidad, p);
+  }
+  window.mtbFichaTrasSesion = () => { if (pendiente) procesarPendiente(); };
+  window.mtbFichaDesdeHash = () => { pendiente = leerHash(); procesarPendiente(); };
+
+  // ---- datos ----
+  function normTemp(t, estricto) {
+    const c = ctx(), s = String(t || '').trim().toLowerCase();
+    if (!s) return '';
+    const p = c.periods.find(([n, l]) => n.toLowerCase() === s || l.toLowerCase() === s);
+    return p ? p[0] : (estricto ? '' : (c.periodKey(t) || ''));
+  }
+  const tf = name => (ctx().periods.find(p => p[0] === name) || [, ''])[1];
+  const tfLegible = name => { const l = tf(name); return l === 'W1' ? 'W1 (Weekly)' : l; };
+  function fila(temp) { // fila real del catálogo; sin fila o sin setups = "Sin datos"
+    const r = st.simbolo && temp ? ctx().current(st.simbolo, temp) : null;
+    return r && Number(r.n_setups) > 0 ? r : null;
+  }
+  const pct = v => (v == null || v === '' || !Number.isFinite(Number(v))) ? '—' : Math.round(Number(v) <= 1 ? Number(v) * 100 : Number(v)) + '%';
+  const rr = v => (v == null || v === '' || !Number.isFinite(Number(v))) ? '—' : (Number(v) > 0 ? '+' : '') + Number(v).toLocaleString('es-MX', { maximumFractionDigits: 2 }) + 'R';
+  const lineaStats = f => `Acierto ${pct(f.winrate)} · Expectativa ${rr(f.expectativa_r)} · ${Number(f.n_setups)} setups`;
+  function veredicto(f) {
+    const v = String(f.veredicto || '').trim(), u = v.toUpperCase();
+    if (u === 'RECOMENDABLE') return 'Recomendable';
+    if (u === 'NO_RECOMENDABLE') return 'No recomendable';
+    if (u === 'INSUFICIENTE') return 'Datos insuficientes';
+    return v || (f.viable === true ? 'Recomendable' : 'No recomendable');
+  }
+  function monto() { const n = Number(st.monto); return st.monto !== '' && Number.isFinite(n) && n >= MONTO_MIN ? n : null; }
+  const dinero = n => window.dinero(n);
+
+  // ---- abrir / cerrar ----
+  window.abrirFicha = function (simbolo, temporalidad, extra) {
+    const c = ctx(); extra = extra || {};
+    const s = String(simbolo || '').toUpperCase();
+    const modo = extra.modo === 'real' ? 'real' : 'demo';
+    st = { simbolo: c.known(s) ? s : '', temporalidad: normTemp(temporalidad, extra.estricto), modo,
+           monto: extra.monto != null ? String(extra.monto) : (modo === 'demo' ? String(MONTO_DEMO) : ''),
+           montoEditado: !!extra.montoEditado, riesgoOk: false, lic: null, bloqueoReal: false, vista: 'form', error: '' };
+    if (!ov || ov.hidden) opener = document.activeElement;
+    montar(); renderForm();
+    ov.hidden = false; ov.scrollTop = 0; document.body.style.overflow = 'hidden';
+    ov.querySelector('.mf-dialog').focus();
+    cargarLicencias();
+    if (c.state() !== 'ready') Promise.resolve(c.loadMarket()).then(() => { if (st && st.vista === 'form') { renderTemps(); actualizar(); } });
+  };
+  function cerrar() {
+    if (!ov || ov.hidden) return;
+    if (ctrl) ctrl.abort();
+    ctrl = null; st = null; ov.hidden = true; document.body.style.overflow = '';
+    if (opener && document.contains(opener)) opener.focus();
+  }
+  async function cargarLicencias() {
+    const yo = st;
+    try {
+      const r = await fetch('/api/v1/mis-licencias', { credentials: 'same-origin', cache: 'no-store' }); // también crea la DEMO si no existe
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json(), l = Array.isArray(d && d.licencias) ? d.licencias : [];
+      if (st !== yo) return;
+      st.lic = { real: l.some(x => (x.tipo === 'real' || x.tipo === 'vip') && x.estado === 'activa'), demoCuenta: (l.find(x => x.tipo === 'demo') || {}).cuenta || null };
+    } catch { if (st === yo) st.lic = null; } // desconocido: la API decide con 402
+    if (st === yo) actualizar();
+  }
+
+  function montar() {
+    if (ov) return;
+    document.body.insertAdjacentHTML('beforeend', '<div id="mfOverlay" class="mf-overlay" hidden><div class="mf-dialog" role="dialog" aria-modal="true" aria-labelledby="mfTitulo" tabindex="-1"><div class="mf-head"><div><p class="ag-eyebrow">DESCARGA TU ROBOT</p><h2 id="mfTitulo">Ficha de descarga</h2></div><button type="button" class="mf-x" data-mf="cerrar" aria-label="Cerrar ficha">&times;</button></div><div id="mfCuerpo"></div></div></div>');
+    ov = $('mfOverlay');
+    ov.addEventListener('click', e => {
+      if (e.target === ov && st && st.vista !== 'generando') return cerrar();
+      const b = e.target.closest('[data-mf]'); if (b) accion(b.dataset.mf, b);
+    });
+    ov.addEventListener('keydown', onKey);
+    ov.addEventListener('change', onChange);
+    ov.addEventListener('input', e => { if (e.target.id === 'mfMonto') { st.monto = e.target.value.trim(); st.montoEditado = true; actualizar(); } });
+    ov.addEventListener('submit', e => { e.preventDefault(); descargar(); });
+  }
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); return cerrar(); }
+    if (e.key !== 'Tab') return;
+    const f = [...ov.querySelectorAll('button,a[href],input,select')].filter(x => !x.disabled && x.offsetParent !== null && !(x.type === 'radio' && !x.checked && ov.querySelector(`input[name="${x.name}"]:checked`)));
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1], act = document.activeElement;
+    if (e.shiftKey && (act === first || act === ov.querySelector('.mf-dialog'))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && act === last) { e.preventDefault(); first.focus(); }
+  }
+  function onChange(e) {
+    const t = e.target;
+    if (t.id === 'mfActivo') { st.simbolo = t.value; resetRiesgo(); renderTemps(); }
+    else if (t.name === 'mfTemp') { st.temporalidad = t.value; resetRiesgo(); }
+    else if (t.name === 'mfModo') return setModo(t.value);
+    else if (t.id === 'mfRiesgoOk') st.riesgoOk = t.checked;
+    else return;
+    st.error = ''; actualizar();
+  }
+  function resetRiesgo() { st.riesgoOk = false; const c = $('mfRiesgoOk'); if (c) c.checked = false; }
+  function setModo(m) {
+    st.modo = m; st.error = '';
+    if (!st.montoEditado) { st.monto = m === 'demo' ? String(MONTO_DEMO) : ''; $('mfMonto').value = st.monto; }
+    const r = ov.querySelector(`input[name="mfModo"][value="${m}"]`); if (r) r.checked = true;
+    actualizar();
+  }
+  function accion(a, b) {
+    if (a === 'cerrar') cerrar();
+    else if (a === 'ademo') { setModo('demo'); ov.querySelector('input[name="mfModo"][value="demo"]').focus(); }
+    else if (a === 'copiar') {
+      const t = $('mfToken').textContent;
+      (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(
+        () => { b.textContent = 'Copiado'; },
+        () => { const r = document.createRange(); r.selectNodeContents($('mfToken')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Seleccionado: cópialo con Ctrl+C'; });
+    }
+  }
+
+  // ---- vista formulario ----
+  function renderForm() {
+    const c = ctx();
+    const activos = Object.entries(c.groups).map(([g, items]) => `<optgroup label="${esc(g)}">${items.map(([s, n]) => `<option value="${s}"${s === st.simbolo ? ' selected' : ''}>${s} · ${esc(n)}</option>`).join('')}</optgroup>`).join('');
+    const modos = [['demo', 'DEMO', 'Cuenta de práctica, gratis'], ['real', 'REAL', 'Dinero real, requiere membresía']].map(([v, t, d]) => `<label class="mf-opt"><input type="radio" name="mfModo" value="${v}"${st.modo === v ? ' checked' : ''}><span class="mf-opt-body"><strong>${t}</strong><span class="mf-opt-stats">${d}</span></span></label>`).join('');
+    $('mfCuerpo').innerHTML = `<form id="mfForm" novalidate>
+<section class="mf-step"><h3><span class="mf-num" aria-hidden="true">1</span>Qué operar</h3>
+<div class="mf-field"><label class="mf-label" for="mfActivo">Activo</label><select id="mfActivo"><option value="">Elige un activo</option>${activos}</select></div>
+<fieldset class="mf-field"><legend class="mf-label">Temporalidad</legend><div id="mfTemps" class="mf-temps"></div><p id="mfCatEstado" class="ag-muted" role="status"></p></fieldset>
+<div id="mfRiesgo" class="mf-alert mf-alert-risk" aria-live="polite" hidden><p id="mfRiesgoTxt"></p><label class="mf-check"><input type="checkbox" id="mfRiesgoOk"${st.riesgoOk ? ' checked' : ''}> Entiendo el riesgo</label></div>
+<fieldset class="mf-field"><legend class="mf-label">Modo</legend><div class="mf-seg">${modos}</div></fieldset>
+<div id="mfLicencia" aria-live="polite"></div>
+<div class="mf-field"><label class="mf-label" for="mfMonto">Monto a operar (USD)</label><input id="mfMonto" type="number" min="${MONTO_MIN}" step="any" inputmode="decimal" autocomplete="off" value="${esc(st.monto)}" aria-describedby="mfMontoAyuda mfMontoErr"><p id="mfMontoAyuda" class="ag-muted">Mínimo $300. El robot opera sobre el menor entre este monto y el balance de tu cuenta.</p><p id="mfMontoErr" class="ag-muted mf-no" hidden>El monto mínimo es $300.</p></div>
+</section>
+<section class="mf-step"><h3><span class="mf-num" aria-hidden="true">2</span>Cómo va a operar</h3><p class="ag-muted">Definidos por el Master Trader, no editables</p><div id="mfReglas"></div></section>
+<p id="mfError" class="mf-alert mf-alert-risk" role="alert" hidden></p>
+<div class="mf-actions"><button type="button" class="ag-btn" data-mf="cerrar">Cancelar</button><button type="submit" id="mfAceptar" class="ag-btn ag-primary">Aceptar y descargar</button></div>
+</form>`;
+    renderTemps(); actualizar();
+  }
+  function renderTemps() {
+    const c = ctx(), box = $('mfTemps'); if (!box) return;
+    box.innerHTML = c.periods.map(([name, label]) => {
+      const f = fila(name), [cls, txt] = c.trend(f && (f.tendencia || f.direccion));
+      const stats = !st.simbolo ? 'Elige un activo para ver sus datos' : f ? lineaStats(f) : 'Sin datos';
+      return `<label class="mf-opt"><input type="radio" name="mfTemp" value="${esc(name)}"${name === st.temporalidad ? ' checked' : ''}><span class="mf-opt-body"><span class="mf-opt-top"><strong>${label} · ${esc(name)}</strong>${f ? `<span class="ag-trend ag-${cls}">${txt}</span>` : ''}</span><span class="mf-opt-stats">${stats}</span>${f ? `<span class="mf-opt-stats ${f.viable === true ? 'mf-ok' : 'mf-no'}">${esc(veredicto(f))}</span>` : ''}</span></label>`;
+    }).join('');
+    $('mfCatEstado').textContent = { loading: 'Consultando el análisis del motor…', error: 'No se pudo cargar el análisis: todas las combinaciones se tratan como no recomendables.', empty: 'El motor todavía no tiene análisis guardados.' }[c.state()] || '';
+  }
+  function actualizar() {
+    if (!st || st.vista !== 'form' || !$('mfForm')) return;
+    // aviso de riesgo: combinación no viable o sin datos
+    const elegido = !!(st.simbolo && st.temporalidad), f = elegido ? fila(st.temporalidad) : null;
+    const noRec = elegido && (!f || f.viable !== true);
+    $('mfRiesgo').hidden = !noRec;
+    if (noRec) $('mfRiesgoTxt').innerHTML = f
+      ? `<strong>${st.simbolo} en ${esc(st.temporalidad)} no es recomendable ahora.</strong> ${lineaStats(f)} · Veredicto: ${esc(veredicto(f))}. Puedes descargarlo, pero el riesgo de perder es mayor.`
+      : `<strong>No hay datos de backtest para ${st.simbolo} en ${esc(st.temporalidad)}.</strong> No sabemos cómo se ha comportado esta combinación; trátala como no recomendable.`;
+    // licencia: REAL sin membresía bloquea; DEMO amarrada avisa
+    const bloqueo = st.modo === 'real' && (st.bloqueoReal || (st.lic && st.lic.real === false));
+    const cuenta = st.modo === 'demo' && st.lic && st.lic.demoCuenta;
+    const lic = $('mfLicencia'), k = bloqueo ? 'b' : cuenta ? 'd' + cuenta : '';
+    if (lic.dataset.k !== k) {
+      lic.dataset.k = k;
+      lic.innerHTML = bloqueo
+        ? `<div class="mf-alert mf-alert-risk"><p><strong>Necesitas una membresía activa para operar en real</strong></p>${MTB_URL_MEMBRESIA ? '' : '<p>Contacta a MexTradeBot para activar tu membresía</p>'}<div class="mf-actions">${MTB_URL_MEMBRESIA ? `<a class="ag-btn ag-primary" href="${esc(MTB_URL_MEMBRESIA)}" target="_blank" rel="noopener">Comprar membresía</a>` : ''}<button type="button" class="ag-btn" data-mf="ademo">Descargar en DEMO</button></div></div>`
+        : cuenta ? `<div class="mf-alert mf-alert-info">Tu licencia DEMO está amarrada a la cuenta ${esc(cuenta)}; el robot solo operará ahí</div>` : '';
+    }
+    // monto y reglas
+    const M = monto();
+    $('mfMontoErr').hidden = st.monto === '' || !!M;
+    const swing = st.temporalidad.startsWith('Swing'), pr = swing ? 1 : 2, m = v => M ? dinero(M * v) : '—';
+    const filas = [
+      ['Riesgo por operación', `${pr}% = ${m(pr / 100)}${swing ? ' (Swing: provisional, sin SL fijo)' : ''}`],
+      ['Stop Loss', 'El del motor SMC en cada setup'],
+      ['Take Profit', 'Objetivo del motor (respaldo 2R)'],
+      ['Lotaje', `Lo calcula el servidor para no arriesgar más del ${pr}%`],
+      ['Cierre forzado', `Si la pérdida llega a 3% = ${m(0.03)}`],
+      ['Protección de ganancia', 'SL a la entrada en 1R, +0.5R en 1.5R, +1R en 2R; luego trailing por estructura']
+    ];
+    $('mfReglas').innerHTML = `<div class="ag-table-wrap"><table class="ag-table"><tbody>${filas.map(([a, b]) => `<tr><th scope="row">${a}</th><td>${b}</td></tr>`).join('')}</tbody></table></div>${M ? '' : '<p class="ag-muted">Escribe tu monto para ver las cantidades.</p>'}`;
+    const err = $('mfError'); err.hidden = !st.error; err.textContent = st.error;
+    $('mfAceptar').disabled = !(elegido && M && (!noRec || st.riesgoOk) && !bloqueo);
+  }
+
+  // ---- descarga ----
+  async function descargar() {
+    if (!st || $('mfAceptar').disabled) return;
+    const yo = st, M = monto();
+    const sel = { simbolo: st.simbolo, temporalidad: st.temporalidad, modo: st.modo, monto: st.monto, montoEditado: st.montoEditado };
+    st.vista = 'generando'; st.error = '';
+    $('mfCuerpo').innerHTML = '<div class="mf-wait" role="status"><div class="mf-spin" aria-hidden="true"></div><p class="mf-wait-t">Generando tu robot…</p><p class="ag-muted">Lo compilamos con tu licencia y tus datos. Puede tardar hasta 2 minutos; no cierres esta ventana.</p><div class="mf-actions" style="justify-content:center"><button type="button" class="ag-btn" data-mf="cerrar">Cancelar</button></div></div>';
+    ov.querySelector('.mf-dialog').focus();
+    const mio = ctrl = new AbortController(), timer = setTimeout(() => mio.abort(), TIMEOUT_MS);
+    const q = `simbolo=${encodeURIComponent(sel.simbolo)}&temporalidad=${encodeURIComponent(sel.temporalidad)}&modo=${sel.modo}&capital=${encodeURIComponent(String(M))}`;
+    let res = null, data = {};
+    try {
+      res = await fetch('/api/v1/mi-robot?' + q, { credentials: 'same-origin', cache: 'no-store', signal: mio.signal });
+      if (res.status === 200) {
+        // solo un binario cuenta como robot; JSON/HTML/texto con 200 es un error
+        if (/json|html|text\//i.test(res.headers.get('Content-Type') || '')) throw new Error('no-binario');
+        const blob = await res.blob();
+        if (!blob.size) throw new Error('vacio');
+        if (st !== yo) return;
+        const nombre = nombreArchivo(res.headers.get('Content-Disposition'), sel);
+        bajar(blob, nombre);
+        return renderFinal(sel, M, nombre, (res.headers.get('X-MTB-Token') || '').trim(), (res.headers.get('X-MTB-Simbolo-XM') || '').trim());
+      }
+      try { data = await res.json(); } catch { data = {}; }
+    } catch { res = null; } // red caída, timeout o respuesta no binaria
+    finally { clearTimeout(timer); if (ctrl === mio) ctrl = null; }
+    if (st !== yo) return; // el alumno cerró la ficha
+    const s = res ? res.status : 0;
+    if (s === 401) return sesionVencida(sel);
+    st.vista = 'form';
+    if (s === 402) st.bloqueoReal = true;
+    else st.error = s === 403 ? 'Tu licencia no está vigente. Escríbenos para revisarla.'
+      : s === 503 ? 'El generador de robots se está actualizando, intenta más tarde.'
+      : s === 400 ? (data && typeof data.error === 'string' && data.error ? data.error : 'Revisa los datos de tu robot.')
+      : 'No pudimos generar tu robot, intenta en unos minutos';
+    renderForm();
+    (s === 402 ? ov.querySelector('[data-mf="ademo"]') : $('mfAceptar'))?.focus();
+  }
+  function nombreArchivo(cd, sel) {
+    let n = '';
+    const m = /filename\*\s*=\s*(?:UTF-8'')?"?([^";]+)"?|filename\s*=\s*"?([^";]+)"?/i.exec(cd || '');
+    if (m) { try { n = m[1] ? decodeURIComponent(m[1]) : m[2]; } catch { n = m[2] || ''; } }
+    n = (n || '').trim().replace(/[\\/]/g, '_');
+    return n || `MexTradeBot_${sel.simbolo}_${tf(sel.temporalidad)}.ex5`;
+  }
+  function bajar(blob, nombre) {
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+  function sesionVencida(sel) {
+    pendiente = sel; // al volver a entrar se reabre la ficha con lo elegido
+    cerrar();
+    $('wizard').classList.add('hidden'); $('app').classList.remove('hidden'); window.mostrar('loginBlock');
+    const e = $('loginErrMsg'); e.textContent = 'Tu sesión venció. Inicia sesión y volverás a tu ficha con lo que elegiste.'; e.classList.remove('hidden');
+    $('loginForm').querySelector('input')?.focus();
+  }
+
+  // ---- pantalla final (texto aprobado, spec sección 1 punto 6) ----
+  function renderFinal(sel, M, nombre, token, simboloXm) {
+    st.vista = 'final';
+    const TF = tfLegible(sel.temporalidad), activo = ctx().known(sel.simbolo);
+    const paso3 = simboloXm
+      ? `Ponlo en la gráfica <strong>${esc(simboloXm)}</strong>, temporalidad <strong>${TF}</strong>.`
+      : `Busca ${esc(activo ? activo.name : sel.simbolo)} en XM (Ver → Símbolos) y abre su gráfica. Usa la temporalidad <strong>${TF}</strong>.`;
+    $('mfCuerpo').innerHTML = `<section class="mf-step" role="status"><p class="mf-ok" style="margin:0 0 14px"><strong>Listo: se descargó ${esc(nombre)}</strong></p>
+<h3>Instala tu robot</h3>
+<ol class="mf-pasos">
+<li>Copia el archivo a <strong>MQL5\\Experts</strong> en el MT5 de tu VPS.</li>
+<li>En MT5 ve a Herramientas → Opciones → Expert Advisors: permite <strong>WebRequest</strong> a <code>https://mextradebot.com.mx</code> y activa <strong>Trading algorítmico</strong>.</li>
+<li>${paso3}</li>
+<li><strong>Verifica</strong> en MexTradeBot_SeguidorSMC (F7 → Entradas) que aparezcan estos datos. Ya vienen cargados; si alguno no coincide, corrígelo:</li>
+</ol>
+<dl class="mf-data">
+<dt>Token</dt><dd><div class="mf-token"><code id="mfToken">${esc(token) || '—'}</code>${token ? '<button type="button" class="ag-btn" data-mf="copiar">Copiar</button>' : ''}</div></dd>
+<dt>Símbolo</dt><dd>${esc(sel.simbolo)}</dd>
+<dt>Temporalidad</dt><dd>${esc(sel.temporalidad)}</dd>
+<dt>Timeframe</dt><dd>${TF}</dd>
+<dt>Monto a operar</dt><dd>${dinero(M)}</dd>
+</dl>
+<div class="mf-actions"><button type="button" class="ag-btn ag-primary" data-mf="cerrar">Listo</button></div></section>`;
+    ov.querySelector('.mf-dialog').focus();
+  }
+
+  // los 4 orígenes (Catálogo, Activos analizados, Tarjetas, Personalizado) usan data-ficha-simbolo / data-ficha-temporalidad
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-ficha-simbolo]');
+    if (!b) return;
+    e.preventDefault();
+    window.abrirFicha(b.dataset.fichaSimbolo, b.dataset.fichaTemporalidad);
+  });
+})();
 </script></body></html>
