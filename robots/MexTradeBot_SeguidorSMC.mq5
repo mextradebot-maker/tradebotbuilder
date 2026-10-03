@@ -33,6 +33,10 @@
 //| venta, arriba de cada nuevo maximo mas bajo) de InpTF, si queda   |
 //| mejor que el escalon; nunca baja.                                 |
 //| OJO: backtesting/backtest.py NO simula esta gestion todavia.      |
+//| SWING CON ESCALERA (v1.17, regla 5 de Ricardo 2 oct 2026): Swing  |
+//| S/M usa la misma escalera y trailing; como no lleva SL, su R es   |
+//| la distancia que equivale al cierre forzado (3% del balance):     |
+//| +3% -> SL a la entrada, +4.5% -> +1.5%, +6% -> +3%, luego trailing.|
 //| REINTENTO (v1.16): si /api/setups falla por red o HTTP 5xx, se    |
 //| reintenta cada 60s dentro de la misma vela.                       |
 //|                                                                    |
@@ -55,7 +59,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.16"
+#property version   "1.17"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -572,7 +576,7 @@ void CerrarPorPerdidaMaxima()
 
 //+------------------------------------------------------------------+
 //| Breakeven escalonado: el SL sube (nunca baja) segun la ganancia   |
-//| en R. Posiciones sin SL (Swing S/M) no se tocan aqui.            |
+//| en R. En Swing S/M (sin SL) 1R = 3% del balance (cierre forzado). |
 //+------------------------------------------------------------------+
 void MoverBreakeven()
 {
@@ -587,13 +591,21 @@ void MoverBreakeven()
       double sl      = PositionGetDouble(POSITION_SL);
       double tp      = PositionGetDouble(POSITION_TP);
 
-      // R = distancia del SL original; se guarda la primera vez que se ve la posicion
+      // R = distancia del SL original; se guarda la primera vez que se ve la posicion.
+      // Swing S/M (sin SL): R = distancia de precio que equivale al cierre forzado (-3% del balance).
       string clave = "MTB_R_" + IntegerToString((long)ticket);
       double r = GlobalVariableCheck(clave) ? GlobalVariableGet(clave) : 0.0;
       if(r <= 0)
       {
-         if(sl <= 0) continue;                          // sin SL (Swing S/M): no aplica
-         r = MathAbs(entrada - sl);
+         if(sl > 0)
+            r = MathAbs(entrada - sl);
+         else
+         {
+            double por_unidad = SymbolInfoDouble(simbolo, SYMBOL_TRADE_TICK_VALUE) / SymbolInfoDouble(simbolo, SYMBOL_TRADE_TICK_SIZE);
+            double volumen    = PositionGetDouble(POSITION_VOLUME);
+            if(por_unidad <= 0 || volumen <= 0) continue;
+            r = AccountInfoDouble(ACCOUNT_BALANCE) * InpPerdidaMaxPct / 100.0 / (volumen * por_unidad);
+         }
          if(r <= 0) continue;
          GlobalVariableSet(clave, r);
       }
