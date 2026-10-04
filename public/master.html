@@ -19,6 +19,7 @@
 <body class="min-h-screen">
 <main class="max-w-6xl mx-auto px-4 py-8">
   <div id="page-master"></div>
+  <section id="mtbOperacion" class="mt-8"></section>
 </main>
 <script>
 /* Cerebro Master Trader — panel de licencias conectado a /api/v1/licencias (api/licencias.py).
@@ -68,6 +69,7 @@ window.renderMasterTraderPanel = function() {
   mtbApiLicencias('GET').then(function(estado) {
     window.mtbMaster.estado = estado;
     mtbRenderPanel(container);
+    mtbCargarOperacion();
   }).catch(function(e) {
     if (!mtbAdminKey()) { mtbRenderLogin(container, e.message); return; }
     container.innerHTML = '<div class="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm">No se pudo cargar el Cerebro Master Trader: ' + mtbEsc(e.message) +
@@ -76,6 +78,7 @@ window.renderMasterTraderPanel = function() {
 };
 
 function mtbRenderLogin(container, error) {
+  var op = document.getElementById('mtbOperacion'); if (op) op.innerHTML = '';
   container.innerHTML = [
     '<div class="max-w-sm mx-auto mt-8 p-6 rounded-2xl bg-slate-900/90 border border-slate-800">',
       '<span class="ag-eyebrow">ACCESO RESTRINGIDO</span>',
@@ -353,6 +356,109 @@ function mtbBindEventos() {
       err.textContent = ex.message;
       err.classList.remove('hidden');
     }).then(function() { btn.disabled = false; });
+  });
+}
+
+/* Operacion en vivo de las cuentas demo del Master Trader: /api/v1/master/trading (api/master_trading.py).
+   Antes vivia en el Resumen del panel de alumnos; aqui solo la ve quien tiene la clave de administrador. */
+window.mtbOperacion = { datos: null, cuenta: 'todas', pagina: 1 };
+
+function mtbCargarOperacion() {
+  var cont = document.getElementById('mtbOperacion');
+  if (!cont) return;
+  cont.innerHTML = '<div class="text-slate-400 text-sm">Cargando operación en vivo...</div>';
+  fetch('/api/v1/master/trading', { headers: { 'X-Admin-Key': mtbAdminKey() } })
+    .then(function(r) {
+      return r.json().catch(function() { return {}; }).then(function(j) {
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        return j;
+      });
+    })
+    .then(function(d) { window.mtbOperacion.datos = d; mtbRenderOperacion(); })
+    .catch(function(e) {
+      cont.innerHTML = '<div class="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm">No se pudo cargar la operación en vivo: ' + mtbEsc(e.message) +
+        '</div><button type="button" class="mtb-btn mt-3 text-xs px-3 py-2 rounded-lg bg-slate-800 text-slate-200" onclick="mtbCargarOperacion()">Reintentar</button>';
+    });
+}
+
+function mtbRenderOperacion() {
+  var cont = document.getElementById('mtbOperacion');
+  var d = window.mtbOperacion.datos;
+  if (!cont || !d) return;
+  var sel = window.mtbOperacion.cuenta;
+  var cuentas = d.cuentas || [];
+  var nombres = {};
+  cuentas.forEach(function(c) { nombres[c.login] = c.nombre; });
+  var deCuenta = function(x) { return sel === 'todas' || String(x.login) === sel; };
+  var pos = (d.posiciones_abiertas || []).filter(deCuenta);
+  var hist = (d.historial || []).filter(deCuenta);
+  var pl = hist.reduce(function(s, h) { return s + (Number(h.profit_usd) || 0); }, 0);
+  var ganadoras = hist.filter(function(h) { return Number(h.profit_usd) > 0; }).length;
+  var dinero = function(n) { return (n < 0 ? '-$' : '+$') + Math.abs(n).toFixed(2); };
+  var color = function(n) { return n > 0 ? 'text-emerald-400' : (n < 0 ? 'text-rose-400' : 'text-slate-300'); };
+  var dir = function(x) {
+    return String(x || '').toUpperCase() === 'BUY'
+      ? '<span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold">BUY</span>'
+      : '<span class="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 font-bold">SELL</span>';
+  };
+  var cuentaTxt = function(login) { return mtbEsc((nombres[login] || 'Cuenta') + ' · #' + login); };
+  var chip = function(valor, texto) {
+    var act = sel === valor;
+    return '<button type="button" data-op-cuenta="' + mtbEsc(valor) + '" class="mtb-btn px-2.5 py-1 rounded-full border text-xs font-mono ' +
+      (act ? 'bg-sky-600 text-white border-sky-500' : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-500') + '">' + texto + '</button>';
+  };
+  var porPag = 10;
+  var totPag = Math.max(1, Math.ceil(hist.length / porPag));
+  var pag = Math.min(window.mtbOperacion.pagina, totPag);
+  var histPag = hist.slice((pag - 1) * porPag, pag * porPag);
+  var tabla = function(cab, filas) {
+    return '<div class="overflow-x-auto"><table class="w-full text-xs text-left text-slate-300"><thead class="text-[11px] uppercase bg-slate-800/80 text-slate-400"><tr>' +
+      cab.map(function(c) { return '<th class="p-2.5' + (c.der ? ' text-right' : '') + '">' + c.t + '</th>'; }).join('') +
+      '</tr></thead><tbody class="divide-y divide-slate-800">' + filas.join('') + '</tbody></table></div>';
+  };
+
+  var html = [
+    '<div class="mb-4 flex flex-wrap items-end justify-between gap-3">',
+      '<div><span class="ag-eyebrow">CUENTAS DEMO DEL MASTER TRADER</span>',
+      '<h2 class="text-xl font-black text-white">Operación en vivo</h2>',
+      '<p class="text-[11px] text-slate-400 mt-1">Datos del coordinador del VPS en Postgres. Actualizado ' + mtbFecha(d.actualizado_en) + '.</p></div>',
+      '<button type="button" class="mtb-btn text-xs px-3 py-2 rounded-lg bg-slate-800 text-slate-200" onclick="mtbCargarOperacion()">Actualizar</button>',
+    '</div>',
+    '<div class="flex flex-wrap gap-1.5 mb-4">', chip('todas', 'Todas (' + cuentas.length + ')'),
+      cuentas.map(function(c) { return chip(String(c.login), mtbEsc(c.nombre) + ' · #' + mtbEsc(c.login)); }).join(''), '</div>',
+    '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">',
+      '<div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800/80"><div class="text-slate-400 text-xs mb-1">Posiciones abiertas</div><div class="text-xl font-extrabold text-white">' + pos.length + '</div></div>',
+      '<div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800/80"><div class="text-slate-400 text-xs mb-1">P&amp;L de las últimas ' + hist.length + ' cerradas</div><div class="text-xl font-extrabold font-mono ' + color(pl) + '">' + dinero(pl) + '</div></div>',
+      '<div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800/80"><div class="text-slate-400 text-xs mb-1">Ganadoras / perdedoras</div><div class="text-xl font-extrabold text-white">' + ganadoras + ' / ' + (hist.length - ganadoras) + '</div></div>',
+    '</div>',
+    '<div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800/80 mb-4"><h3 class="font-extrabold text-white text-sm mb-3">Posiciones abiertas (' + pos.length + ')</h3>',
+      pos.length ? tabla([{ t: 'Cuenta' }, { t: 'Símbolo' }, { t: 'Dirección' }, { t: 'Lotes', der: 1 }, { t: 'Entrada', der: 1 }, { t: 'Temporalidad' }, { t: 'Abierta' }],
+        pos.map(function(p) {
+          return '<tr><td class="p-2.5">' + cuentaTxt(p.login) + '</td><td class="p-2.5 font-bold text-white">' + mtbEsc(p.simbolo) + '</td><td class="p-2.5">' + dir(p.direccion) +
+            '</td><td class="p-2.5 text-right font-mono">' + mtbEsc(p.lotes) + '</td><td class="p-2.5 text-right font-mono">' + mtbEsc(p.precio_entrada) +
+            '</td><td class="p-2.5">' + mtbEsc(p.temporalidad) + '</td><td class="p-2.5">' + mtbFecha(p.abierta_en) + '</td></tr>';
+        })) : '<p class="text-xs text-slate-500 py-3 text-center">No hay posiciones abiertas.</p>',
+    '</div>',
+    '<div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800/80"><div class="flex items-center justify-between mb-3"><h3 class="font-extrabold text-white text-sm">Operaciones cerradas (' + hist.length + ')</h3>',
+      '<span class="text-xs text-slate-400">Página ' + pag + ' de ' + totPag + '</span></div>',
+      hist.length ? tabla([{ t: 'Cuenta' }, { t: 'Símbolo' }, { t: 'Dirección' }, { t: 'Lotes', der: 1 }, { t: 'P&amp;L', der: 1 }, { t: 'Cierre' }, { t: 'Cerrada' }],
+        histPag.map(function(h) {
+          var p = Number(h.profit_usd) || 0;
+          return '<tr><td class="p-2.5">' + cuentaTxt(h.login) + '</td><td class="p-2.5 font-bold text-white">' + mtbEsc(h.simbolo) + '</td><td class="p-2.5">' + dir(h.direccion) +
+            '</td><td class="p-2.5 text-right font-mono">' + mtbEsc(h.lotes) + '</td><td class="p-2.5 text-right font-mono font-bold ' + color(p) + '">' + dinero(p) +
+            '</td><td class="p-2.5">' + mtbEsc(h.razon_cierre) + '</td><td class="p-2.5">' + mtbFecha(h.cerrada_en) + '</td></tr>';
+        })) : '<p class="text-xs text-slate-500 py-3 text-center">Sin operaciones cerradas.</p>',
+      totPag > 1 ? '<div class="flex items-center justify-center gap-3 mt-4">' +
+        '<button type="button" data-op-pag="' + (pag - 1) + '" class="mtb-btn text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200"' + (pag <= 1 ? ' disabled style="opacity:.4"' : '') + '>&lsaquo; Anterior</button>' +
+        '<button type="button" data-op-pag="' + (pag + 1) + '" class="mtb-btn text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200"' + (pag >= totPag ? ' disabled style="opacity:.4"' : '') + '>Siguiente &rsaquo;</button></div>' : '',
+    '</div>'
+  ].join('');
+  cont.innerHTML = html;
+  cont.querySelectorAll('[data-op-cuenta]').forEach(function(b) {
+    b.addEventListener('click', function() { window.mtbOperacion.cuenta = b.getAttribute('data-op-cuenta'); window.mtbOperacion.pagina = 1; mtbRenderOperacion(); });
+  });
+  cont.querySelectorAll('[data-op-pag]').forEach(function(b) {
+    b.addEventListener('click', function() { window.mtbOperacion.pagina = Number(b.getAttribute('data-op-pag')); mtbRenderOperacion(); });
   });
 }
 

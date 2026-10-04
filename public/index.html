@@ -411,7 +411,6 @@ function renderCatalogo(){
     return '<div class="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-sm"><div class="min-w-0"><div class="font-bold text-white text-sm">' + esc(a.simbolo) + '</div><div class="text-xs text-slate-400">' + esc(a.nombre) + '</div></div><button class="mtb-btn bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition shrink-0" data-ficha-simbolo="' + esc(a.simbolo) + '" data-ficha-temporalidad="' + esc(a.temporalidad || '') + '">Descargar ↗</button></div>';
   });
   cont.innerHTML = html;
-  vincularFiltrosMasterTrader();
   // los botones [data-ficha-simbolo] abren la ficha de descarga (listener delegado en el script de la ficha)
 }
 
@@ -520,7 +519,6 @@ function cargarCuentaDemo(){
   }
   html += '</div>';
   cont.innerHTML = html;
-  vincularFiltrosMasterTrader();
   cont.querySelectorAll('[data-cuenta-tab]').forEach(function(btn){
     btn.addEventListener('click', function(){
       window.mtbCuentaDemoSeleccionada = btn.getAttribute('data-cuenta-tab');
@@ -1641,122 +1639,10 @@ function irABacktest(){
 
 
 
-function renderResumenMasterTrader(data, html) {
-  var rawPos = (data && data.posiciones_abiertas && data.posiciones_abiertas.length) ? data.posiciones_abiertas : [];  // sin datos reales no se inventan posiciones
-  var rawHist = (data && data.historial_posiciones && data.historial_posiciones.length) ? data.historial_posiciones : [];
-  var opsMes = (data && data.operaciones_mes && data.operaciones_mes.length) ? data.operaciones_mes : [
-    { profit_usd: 142.00 }, { profit_usd: 98.50 }, { profit_usd: 44.00 }, { profit_usd: 185.20 }, { profit_usd: 130.00 },
-    { profit_usd: 112.40 }, { profit_usd: 80.00 }, { profit_usd: 260.80 }, { profit_usd: 150.00 }, { profit_usd: 95.00 },
-    { profit_usd: 50.00 }, { profit_usd: 85.00 }, { profit_usd: 62.40 }, { profit_usd: 195.00 }, { profit_usd: -45.00 }, { profit_usd: 110.00 }
-  ];
-  var totalPl = (data && data.pl_mes) || 1347.90;
-  var wr = (data && data.winrate_mes) || 65;
-  var gan = opsMes.filter(function(o){ return (parseFloat(o.profit_usd) || 0) > 0; });
-  var fmtM = function(n){ var val = parseFloat(n)||0; return (val>=0?'+$':'-$') + Math.abs(val).toFixed(2); };
-  var fmtF = function(f){ if (!f) return '-'; return String(f).replace('T',' ').substring(0,16); };
-
-  var cFiltro = mtbResumenState.cuentaFiltro || 'todas';
-  
-  var pos = rawPos;
-  var hist = rawHist;
-  if (cFiltro !== 'todas') {
-    pos = rawPos.filter(function(p){ return p.cuenta_id === cFiltro || (p.nombre && p.nombre.indexOf(cFiltro) !== -1); });
-    hist = rawHist.filter(function(h){ return h.cuenta_id === cFiltro || (h.nombre && h.nombre.indexOf(cFiltro) !== -1); });
-  }
-
-  html += '<div class="space-y-4">' +
-    '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">' +
-      '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4">' +
-        '<div class="text-xs text-slate-400 font-semibold mb-1">Posiciones abiertas en vivo</div>' +
-        '<div class="text-2xl font-extrabold font-mono text-white">' + pos.length + '</div>' +
-        '<div class="text-xs text-slate-400 mt-1">' + (pos.length > 0 ? [...new Set(pos.map(function(p){ return p.simbolo; }))].join(', ') : 'Sin posiciones activas') + '</div>' +
-      '</div>' +
-      '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4">' +
-        '<div class="text-xs text-slate-400 font-semibold mb-1">Operaciones del mes (5 Cuentas)</div>' +
-        '<div class="text-2xl font-extrabold font-mono text-white">' + opsMes.length + '</div>' +
-        '<div class="text-xs text-slate-400 mt-1">Total acumulado: <b class="text-emerald-400 font-mono">' + fmtM(totalPl) + '</b></div>' +
-      '</div>' +
-      '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4">' +
-        '<div class="text-xs text-slate-400 font-semibold mb-1">Win rate del mes (Promedio)</div>' +
-        '<div class="text-2xl font-extrabold font-mono ' + (wr >= 50 ? 'text-emerald-400' : 'text-slate-300') + '">' + wr + '%</div>' +
-        '<div class="text-xs text-slate-400 mt-1">' + gan.length + ' ganadoras / ' + (opsMes.length - gan.length) + ' perdedoras</div>' +
-      '</div>' +
-    '</div>';
-
-  html += '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4">' +
-    '<div class="flex flex-wrap items-center justify-between gap-3 mb-3">' +
-      '<h3 class="font-extrabold text-white text-sm">📈 Posiciones Abiertas en Vivo (' + pos.length + ')</h3>' +
-      '<div class="flex flex-wrap gap-1.5 text-xs font-mono" id="masterCuentaFiltros">' +
-        '<button type="button" class="mtb-btn px-2.5 py-1 rounded-full border ' + (cFiltro === 'todas' ? 'bg-sky-600 text-white border-sky-500' : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-500') + '" data-master-cuenta="todas">Todas (5)</button>' +
-        '<button type="button" class="mtb-btn px-2.5 py-1 rounded-full border ' + (cFiltro === '318680674' ? 'bg-sky-600 text-white border-sky-500' : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-500') + '" data-master-cuenta="318680674">#318680674</button>' +
-        '<button type="button" class="mtb-btn px-2.5 py-1 rounded-full border ' + (cFiltro === '108460538' ? 'bg-sky-600 text-white border-sky-500' : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-500') + '" data-master-cuenta="108460538">#108460538</button>' +
-        '<button type="button" class="mtb-btn px-2.5 py-1 rounded-full border ' + (cFiltro === '336903105' ? 'bg-sky-600 text-white border-sky-500' : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-500') + '" data-master-cuenta="336903105">#336903105</button>' +
-        '<button type="button" class="mtb-btn px-2.5 py-1 rounded-full border ' + (cFiltro === '336903102' ? 'bg-sky-600 text-white border-sky-500' : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-500') + '" data-master-cuenta="336903102">#336903102</button>' +
-        '<button type="button" class="mtb-btn px-2.5 py-1 rounded-full border ' + (cFiltro === '318735437' ? 'bg-sky-600 text-white border-sky-500' : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-500') + '" data-master-cuenta="318735437">#318735437</button>' +
-      '</div>' +
-    '</div>';
-
-  if (!pos.length) { 
-    html += '<p class="text-xs text-slate-500 py-3 text-center">No hay posiciones abiertas actualmente para la cuenta seleccionada.</p>'; 
-  } else {
-    html += '<div class="overflow-x-auto"><table class="w-full text-xs text-left text-slate-300"><thead class="text-[11px] uppercase bg-slate-800/80 text-slate-400 font-semibold"><tr><th class="p-2.5">Cuenta</th><th class="p-2.5">Símbolo</th><th class="p-2.5">Dirección</th><th class="p-2.5 text-right">Lotes</th><th class="p-2.5 text-right">Entrada</th><th class="p-2.5">Temporalidad</th><th class="p-2.5">Abierta en</th></tr></thead><tbody class="divide-y divide-slate-800">';
-    pos.forEach(function(p){
-      var dirBadge = (p.direccion || '').toUpperCase() === 'BUY' ? '<span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold">BUY</span>' : '<span class="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 font-bold">SELL</span>';
-      html += '<tr class="hover:bg-slate-800/50"><td>' + esc(p.nombre || '-') + '</td><td class="font-bold text-white">' + esc(p.simbolo) + '</td><td>' + dirBadge + '</td><td class="text-right font-mono">' + esc(p.lotes) + '</td><td class="text-right font-mono">' + esc(p.precio_entrada || '-') + '</td><td>' + esc(p.temporalidad || '-') + '</td><td>' + fmtF(p.abierta_en) + '</td></tr>';
-    });
-    html += '</tbody></table></div>';
-  }
-  html += '</div>';
-
-  var porPag = mtbResumenState.porPaginaHistorial || 10;
-  var pagActual = mtbResumenState.paginaHistorial || 1;
-  var totPags = Math.max(1, Math.ceil(hist.length / porPag));
-  if (pagActual > totPags) pagActual = totPags;
-  var inicioH = (pagActual - 1) * porPag;
-  var histPag = hist.slice(inicioH, inicioH + porPag);
-
-  html += '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4">' +
-    '<div class="flex items-center justify-between mb-3">' +
-      '<h3 class="font-extrabold text-white text-sm">📜 Histórico de Operaciones Cerradas (' + hist.length + ')</h3>' +
-      '<span class="text-xs text-slate-400">Página ' + pagActual + ' de ' + totPags + '</span>' +
-    '</div>';
-  if (!hist.length) { html += '<p class="text-xs text-slate-500 py-3 text-center">Sin operaciones cerradas aún en el histórico.</p>'; } else {
-    html += '<div class="overflow-x-auto"><table class="w-full text-xs text-left text-slate-300"><thead class="text-[11px] uppercase bg-slate-800/80 text-slate-400 font-semibold"><tr><th class="p-2.5">Cuenta</th><th class="p-2.5">Símbolo</th><th class="p-2.5">Dirección</th><th class="p-2.5 text-right">Lotes</th><th class="p-2.5 text-right">P&L ($)</th><th class="p-2.5">Razón Cierre</th><th class="p-2.5">Cerrada en</th></tr></thead><tbody class="divide-y divide-slate-800">';
-    histPag.forEach(function(h){
-      var pf = parseFloat(h.profit_usd) || 0;
-      var dirBadge = (h.direccion || '').toUpperCase() === 'BUY' ? '<span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold">BUY</span>' : '<span class="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 font-bold">SELL</span>';
-      var pfColor = pf > 0 ? 'text-emerald-400 font-bold' : (pf < 0 ? 'text-rose-400 font-bold' : 'text-slate-300');
-      html += '<tr class="hover:bg-slate-800/50"><td>' + esc(h.nombre || '-') + '</td><td class="font-bold text-white">' + esc(h.simbolo) + '</td><td>' + dirBadge + '</td><td class="text-right font-mono">' + esc(h.lotes) + '</td><td class="text-right font-mono ' + pfColor + '">' + fmtM(pf) + '</td><td>' + esc(h.razon_cierre || '-') + '</td><td>' + fmtF(h.cerrada_en) + '</td></tr>';
-    });
-    html += '</tbody></table></div>';
-    if (totPags > 1) {
-      html += '<div class="flex items-center justify-center gap-3 mt-4" id="histPaginacion">' +
-        '<button type="button" class="mtb-btn text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200"' + (pagActual <= 1 ? ' disabled style="opacity:0.4"' : '') + ' onclick="cambiarPaginaHistorial(' + (pagActual - 1) + ')">&lsaquo; Anterior</button>' +
-        '<span class="text-xs text-slate-400 font-mono">' + pagActual + ' / ' + totPags + '</span>' +
-        '<button type="button" class="mtb-btn text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200"' + (pagActual >= totPags ? ' disabled style="opacity:0.4"' : '') + ' onclick="cambiarPaginaHistorial(' + (pagActual + 1) + ')">Siguiente &rsaquo;</button>' +
-      '</div>';
-    }
-  }
-  html += '</div>';
-
-  return html;
-}
-
-function vincularFiltrosMasterTrader(){
-  var cont = document.getElementById('resumenContenido');
-  if (!cont) return;
-  cont.querySelectorAll('[data-master-cuenta]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      mtbResumenState.cuentaFiltro = btn.getAttribute('data-master-cuenta');
-      renderResumen(mtbResumenState.datos);
-    });
-  });
-}
-
 function renderResumen(data){
   var cont = document.getElementById('resumenContenido');
   if (!cont) return;
-  var modo = mtbResumenState.modoVista || 'general';
+  var modo = mtbResumenState.modoVista === 'tarjetas' ? 'tarjetas' : 'general';  // la vista en vivo del Master Trader vive en /master.html (admin)
   var html = '';
 
   // Barra de Selector de Vistas
@@ -1764,7 +1650,6 @@ function renderResumen(data){
     '<div class="flex flex-wrap gap-2">' +
       '<button type="button" class="mtb-btn text-xs font-bold px-3.5 py-2 rounded-xl transition ' + (modo === 'general' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60') + '" onclick="cambiarModoResumen(\'general\')">🏠 Vista General (Spec)</button>' +
       '<button type="button" class="mtb-btn text-xs font-bold px-3.5 py-2 rounded-xl transition ' + (modo === 'tarjetas' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60') + '" onclick="cambiarModoResumen(\'tarjetas\')">🃏 Tarjetas por Activo (Spec)</button>' +
-      '<button type="button" class="mtb-btn text-xs font-bold px-3.5 py-2 rounded-xl transition ' + (modo === 'master' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60') + '" onclick="cambiarModoResumen(\'master\')">⚡ Master Trader en Vivo (VPS)</button>' +
     '</div>' +
     '<span class="text-xs text-slate-400 font-mono pr-2">🟢 VPS Conectado</span>' +
   '</div>';
@@ -1834,7 +1719,7 @@ function renderResumen(data){
           '<div class="pt-2 flex items-start gap-3"><span class="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0"></span><div><p class="font-semibold text-slate-800">Tu robot «RSI Reversal Gold» ejecutó una operación de compra en GOLD</p><p class="text-[11px] text-slate-400 mt-0.5">Hoy &middot; 09:14</p></div></div>' +
           '<div class="pt-3 flex items-start gap-3"><span class="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0"></span><div><p class="font-semibold text-slate-800">Nueva clase disponible: Gestión de riesgo con múltiples robots</p><p class="text-[11px] text-slate-400 mt-0.5">Ayer &middot; entregado por C-01 Planificador de Contenido</p></div></div>' +
           '<div class="pt-3 flex items-start gap-3"><span class="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0"></span><div><p class="font-semibold text-slate-800">Backtest de «Breakout London Session» terminó con drawdown superior al configurado</p><p class="text-[11px] text-slate-400 mt-0.5">Ayer &middot; 18:40</p></div></div>' +
-          '<div class="pt-3 flex items-start gap-3"><span class="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0"></span><div><p class="font-semibold text-slate-800">Cuenta demo XM #318680674 sincronizada correctamente</p><p class="text-[11px] text-slate-400 mt-0.5">Hace 2 días &middot; vía T-05 Monitor Demo MT5</p></div></div>' +
+          '<div class="pt-3 flex items-start gap-3"><span class="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0"></span><div><p class="font-semibold text-slate-800">Cuenta demo XM sincronizada correctamente</p><p class="text-[11px] text-slate-400 mt-0.5">Hace 2 días &middot; vía T-05 Monitor Demo MT5</p></div></div>' +
         '</div>' +
       '</div>' +
       '<div class="lg:col-span-5 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4">' +
@@ -1917,13 +1802,9 @@ function renderResumen(data){
       '</div>';
     }
 
-  } else {
-    // 3. VISTA MASTER TRADER EN VIVO (POSICIONES Y POSTGRES)
-    html = renderResumenMasterTrader(data, html);
   }
   html += '</div>';
   cont.innerHTML = html;
-  vincularFiltrosMasterTrader();
 }
 function cambiarModoResumen(modo){
   mtbResumenState.modoVista = modo;
@@ -1946,20 +1827,6 @@ window.renderResumenDashboard = function(forzar){
   // Render instant default or cached view immediately
   if (!mtbResumenState.datos) mtbResumenState.datos = {};
   renderResumen(mtbResumenState.datos);
-  
-  // Asynchronously query live data from webhook to update if available
-  fetch('/webhook/panel-alumnos-resumen')
-    .then(function(r){
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function(data){
-      if (data && typeof data === 'object') {
-        mtbResumenState.datos = data;
-        renderResumen(data);
-      }
-    })
-    .catch(function(){});
 };
 window.cargarBotsProduccion = function(section){
   var sec = section || 'catalogo';
