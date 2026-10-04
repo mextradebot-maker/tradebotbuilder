@@ -2552,4 +2552,21 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
     window.abrirFicha(b.dataset.fichaSimbolo, b.dataset.fichaTemporalidad);
   });
 })();
+</script><style>.mtb-menu-btn{display:none}@media(max-width:800px){#wizard aside{position:relative}.mtb-menu-btn{position:absolute;top:14px;right:14px;display:inline-flex;align-items:center;gap:8px;background:var(--mt-raised);color:var(--mt-text);border:1px solid var(--mt-line);border-radius:8px;padding:8px 12px;font-size:13px;min-height:40px}#wizard aside:not(.mtb-menu-abierto) #mtbSidebarNav{display:none}#wizard aside.mtb-menu-abierto #mtbSidebarNav{display:flex}}</style>
+<script>
+/* Menú del panel en celular: se pliega bajo un botón para que el contenido quede a la vista. */
+document.addEventListener('DOMContentLoaded', function () {
+  var aside = document.querySelector('#wizard aside');
+  if (!aside) return;
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'mtb-menu-btn';
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-controls', 'mtbSidebarNav');
+  btn.innerHTML = '<span aria-hidden="true">☰</span> Menú';
+  aside.appendChild(btn);
+  function abrir(si) { aside.classList.toggle('mtb-menu-abierto', si); btn.setAttribute('aria-expanded', si ? 'true' : 'false'); }
+  btn.addEventListener('click', function () { abrir(!aside.classList.contains('mtb-menu-abierto')); });
+  aside.addEventListener('click', function (e) { if (e.target.closest('#mtbSidebarNav [data-page], #mtbSidebarNav a, #ag-glossary')) abrir(false); });
+});
 </script><script src="/legal.js" defer></script></body></html>
