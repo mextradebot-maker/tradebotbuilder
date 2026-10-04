@@ -2414,13 +2414,15 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
     const s = res ? res.status : 0;
     if (s === 401) return sesionVencida(sel);
     st.vista = 'form';
-    if (s === 402) st.bloqueoReal = true;
-    else st.error = s === 403 ? 'Tu licencia no está vigente. Escríbenos para revisarla.'
+    const limite = s === 402 && data && data.error === 'limite_descargas';
+    if (s === 402 && !limite) st.bloqueoReal = true;
+    else st.error = limite ? (typeof data.mensaje === 'string' && data.mensaje ? data.mensaje : 'Llegaste al límite de robots de tu plan.')
+      : s === 403 ? 'Tu licencia no está vigente. Escríbenos para revisarla.'
       : s === 503 ? 'El generador de robots se está actualizando, intenta más tarde.'
       : s === 400 ? (data && typeof data.error === 'string' && data.error ? data.error : 'Revisa los datos de tu robot.')
       : 'No pudimos generar tu robot, intenta en unos minutos';
     renderForm();
-    (s === 402 ? ov.querySelector('[data-mf="ademo"]') : $('mfAceptar'))?.focus();
+    (s === 402 && !limite ? ov.querySelector('[data-mf="ademo"]') : $('mfAceptar'))?.focus();
   }
   function nombreArchivo(cd, sel) {
     let n = '';

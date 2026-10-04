@@ -234,6 +234,43 @@ _SQL = [
     """
     ALTER TABLE IF EXISTS alumnos ADD COLUMN IF NOT EXISTS telegram_chat_id bigint
     """,
+    # ── Membresías Hotmart (persistencia/membresias.py, api/hotmart.py) ──
+    # una fila por correo: el nivel que pagó y si sigue vigente; las licencias real/vip
+    # de la membresía viven en `licencias` con origen 'hotmart'
+    """
+    CREATE TABLE IF NOT EXISTS membresias (
+        correo         text        PRIMARY KEY,
+        nivel          text        NOT NULL CHECK (nivel IN ('trader', 'vip')),
+        estado         text        NOT NULL CHECK (estado IN ('activa', 'pausada', 'cancelada')),
+        vence_en       timestamptz,
+        suscriptor     text,
+        producto       text,
+        ultimo_evento  text,
+        actualizada_en timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    # idempotencia: Hotmart reintenta el mismo evento (mismo id) si no recibe 200
+    """
+    CREATE TABLE IF NOT EXISTS hotmart_eventos (
+        id          text        PRIMARY KEY,
+        evento      text        NOT NULL,
+        correo      text,
+        accion      text,
+        payload     jsonb       NOT NULL,
+        recibido_en timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    # descargas de la ficha: los límites por nivel cuentan robots distintos (símbolo + temporalidad)
+    """
+    CREATE TABLE IF NOT EXISTS descargas (
+        correo       text        NOT NULL,
+        modo         text        NOT NULL CHECK (modo IN ('demo', 'real')),
+        simbolo      text        NOT NULL,
+        temporalidad text        NOT NULL,
+        creada_en    timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (correo, modo, simbolo, temporalidad)
+    )
+    """,
     # ── Etapa 2: temporalidades canonicas (idempotente: se corre en cada arranque) ──
     # 1) catalogo: 7 canonicas por simbolo con filas viejas, heredando fecha_inicio
     #    (Scalping 30m entra inactiva); sin filas viejas no hace nada.
