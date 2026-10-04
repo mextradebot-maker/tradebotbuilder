@@ -366,7 +366,8 @@ def demo() -> None:
     conf = [{"tipo": "reversion", "direccion": "long", "entrada": 1.0, "stop": 0.5, "tp": 2.0, "valido": True}]
     base = {"simbolo": sim, "temporalidad": "Scalping 15m", "velas": 5, "setups": conf, "setups_confirmados": conf}
     con = st._con_largo(st._forma_ea(base), sim, "Scalping 15m")
-    assert list(con)[-1] == "setups_confirmados" and list(con)[-2] == "backtest_largo", list(con)
+    llaves = list(con)  # backtest_largo va antes de ref_ts/ref_cierre (precio de referencia del EA)
+    assert llaves[-3:] == ["ref_ts", "ref_cierre", "setups_confirmados"] and llaves[-4] == "backtest_largo", llaves
     assert con["backtest_largo"]["velas"] == calc["velas"] and "backtests" in con["backtest_largo"]
     assert st._parser_ea(json.dumps(con, separators=(",", ":"))) == ("long", 1.0, 0.5, 2.0)
     sin = st._con_largo(st._forma_ea(base), sim, "Swing (S)")
