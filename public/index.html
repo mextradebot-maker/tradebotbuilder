@@ -455,9 +455,9 @@ function cargarCuentaDemo(){
     fetch(MTB_DEMO_STATUS_URL)
       .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function(data){
-        window.MTB_CUENTAS_DEMO = (data.cuentas || []).map(function(c){
+        window.MTB_CUENTAS_DEMO = (data.cuentas || []).map(function(c, i){
           var pl = (c.semanas || []).reduce(function(s, w){ return s + (w.profit || 0); }, 0);
-          return { id: String(c.cuenta.login), servidor: c.cuenta.server, balance: c.cuenta.balance, equity: c.cuenta.equity,
+          return { id: c.cuenta.nombre || ('Cuenta ' + (i + 1)), servidor: c.cuenta.server, balance: c.cuenta.balance, equity: c.cuenta.equity,
                    pl: pl, operaciones: c.num_operaciones || 0, drawdown: c.drawdown_pct || 0 };
         });
       })
@@ -485,7 +485,7 @@ function cargarCuentaDemo(){
     '<button type="button" class="mtb-btn text-xs font-bold px-3 py-1.5 rounded-xl border transition ' + (seleccionada === 'todas' ? 'bg-sky-600 text-white border-sky-500' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700') + '" data-cuenta-tab="todas">Resumen consolidado (' + cuentas.length + ')</button>';
   cuentas.forEach(function(c){
     var sel = seleccionada === c.id;
-    html += '<button type="button" class="mtb-btn text-xs font-mono font-bold px-3 py-1.5 rounded-xl border transition ' + (sel ? 'bg-sky-600 text-white border-sky-500' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700') + '" data-cuenta-tab="' + esc(c.id) + '">#' + esc(c.id) + '</button>';
+    html += '<button type="button" class="mtb-btn text-xs font-mono font-bold px-3 py-1.5 rounded-xl border transition ' + (sel ? 'bg-sky-600 text-white border-sky-500' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700') + '" data-cuenta-tab="' + esc(c.id) + '">' + esc(c.id) + '</button>';
   });
   html += '</div>';
 
@@ -500,7 +500,7 @@ function cargarCuentaDemo(){
     cuentas.forEach(function(c){
       var flotante = c.equity - c.balance;
       html += '<div class="bg-slate-950 border border-slate-800 rounded-xl p-4 flex items-center justify-between gap-3">' +
-        '<div><div class="font-bold text-white text-sm">Cuenta demo #' + esc(c.id) + '</div><div class="text-xs text-slate-400 mt-0.5">' + esc(c.servidor) + ' &middot; balance ' + dinero(c.balance) + (flotante ? ' &middot; flotante <span class="' + colorPL(flotante) + '">' + dineroConSigno(flotante) + '</span>' : '') + '</div></div>' +
+        '<div><div class="font-bold text-white text-sm">' + esc(c.id) + '</div><div class="text-xs text-slate-400 mt-0.5">' + esc(c.servidor) + ' &middot; balance ' + dinero(c.balance) + (flotante ? ' &middot; flotante <span class="' + colorPL(flotante) + '">' + dineroConSigno(flotante) + '</span>' : '') + '</div></div>' +
         '<div class="text-right"><div class="font-bold font-mono text-sm ' + colorPL(c.pl) + '">' + dineroConSigno(c.pl) + '</div><div class="text-xs text-slate-400 font-mono">' + c.operaciones + ' operaciones &middot; DD ' + c.drawdown.toFixed(2) + '%</div></div>' +
       '</div>';
     });
@@ -1642,46 +1642,23 @@ function irABacktest(){
 function renderResumen(data){
   var cont = document.getElementById('resumenContenido');
   if (!cont) return;
-  var modo = mtbResumenState.modoVista === 'tarjetas' ? 'tarjetas' : 'general';  // la vista en vivo del Master Trader vive en /master.html (admin)
+  var modo = ['tarjetas', 'vivo'].indexOf(mtbResumenState.modoVista) >= 0 ? mtbResumenState.modoVista : 'general';
   var html = '';
 
   // Barra de Selector de Vistas
   html += '<div class="flex flex-wrap items-center justify-between gap-3 mb-6 bg-slate-100 p-2 rounded-2xl border border-slate-200">' +
     '<div class="flex flex-wrap gap-2">' +
-      '<button type="button" class="mtb-btn text-xs font-bold px-3.5 py-2 rounded-xl transition ' + (modo === 'general' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60') + '" onclick="cambiarModoResumen(\'general\')">🏠 Vista General (Spec)</button>' +
-      '<button type="button" class="mtb-btn text-xs font-bold px-3.5 py-2 rounded-xl transition ' + (modo === 'tarjetas' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60') + '" onclick="cambiarModoResumen(\'tarjetas\')">🃏 Tarjetas por Activo (Spec)</button>' +
+      '<button type="button" class="mtb-btn text-xs font-bold px-3.5 py-2 rounded-xl transition ' + (modo === 'general' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60') + '" onclick="cambiarModoResumen(\'general\')">🏠 Vista general</button>' +
+      '<button type="button" class="mtb-btn text-xs font-bold px-3.5 py-2 rounded-xl transition ' + (modo === 'tarjetas' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60') + '" onclick="cambiarModoResumen(\'tarjetas\')">🃏 Tarjetas por activo</button>' +
+      '<button type="button" class="mtb-btn text-xs font-bold px-3.5 py-2 rounded-xl transition ' + (modo === 'vivo' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60') + '" onclick="cambiarModoResumen(\'vivo\')">⚡ Operación en vivo</button>' +
     '</div>' +
     '<span class="text-xs text-slate-400 font-mono pr-2">🟢 VPS Conectado</span>' +
   '</div>';
 
   if (modo === 'general') {
-    // 1. VISTA GENERAL EXACTA DEL SPEC MOCKUP
-    var plValor = (data && data.pl_mes != null) ? (data.pl_mes >= 0 ? '+$' + data.pl_mes.toFixed(2) : '-$' + Math.abs(data.pl_mes).toFixed(2)) : '+$284.50';
-    var numRobots = (data && data.posiciones_abiertas) ? data.posiciones_abiertas.length || 3 : 3;
-
-    // Fila 1: 4 KPI Cards
-    html += '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">' +
-      '<div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-1.5">' +
-        '<div class="text-xs font-bold text-slate-400 uppercase tracking-wide">P&L del mes (demo)</div>' +
-        '<div class="text-2xl font-extrabold text-emerald-600 font-mono tracking-tight">' + plValor + '</div>' +
-        '<div class="text-xs text-emerald-700 font-semibold bg-emerald-50 inline-block px-2 py-0.5 rounded-md">+2.8% sobre balance inicial</div>' +
-      '</div>' +
-      '<div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-1.5">' +
-        '<div class="text-xs font-bold text-slate-400 uppercase tracking-wide">Robots activos</div>' +
-        '<div class="text-2xl font-extrabold text-slate-800 font-mono tracking-tight">' + numRobots + '</div>' +
-        '<div class="text-xs text-slate-500">2 en cuenta demo &middot; 1 en backtest</div>' +
-      '</div>' +
-      '<div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-1.5">' +
-        '<div class="text-xs font-bold text-slate-400 uppercase tracking-wide">Automatizaciones tuyas</div>' +
-        '<div class="text-2xl font-extrabold text-slate-800 font-mono tracking-tight">6</div>' +
-        '<div class="text-xs text-slate-500">Onboarding, contenido y alertas</div>' +
-      '</div>' +
-      '<div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-1.5">' +
-        '<div class="text-xs font-bold text-slate-400 uppercase tracking-wide">Progreso del curso</div>' +
-        '<div class="text-2xl font-extrabold text-slate-800 font-mono tracking-tight">68%</div>' +
-        '<div class="text-xs text-slate-500">Módulo 5 de 7 &middot; Gestión de riesgo</div>' +
-      '</div>' +
-    '</div>';
+    // 1. VISTA GENERAL: resultados reales del backtest
+    var bt = mtbResumenBacktest();
+    html += bt.kpis;
 
     // Fila 2: Accesos Directos (3 Cards)
     html += '<div class="mb-6">' +
@@ -1711,26 +1688,10 @@ function renderResumen(data){
       '</div>' +
     '</div>';
 
-    // Fila 3: Grid 2 Columnas (Actividad Reciente 60% + Próximo en tu Ruta 40%)
-    html += '<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">' +
-      '<div class="lg:col-span-7 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4">' +
-        '<h2 class="text-base font-extrabold text-slate-800 flex items-center gap-2">🟢 Actividad reciente</h2>' +
-        '<div class="space-y-3.5 text-xs text-slate-600 leading-relaxed divide-y divide-slate-100">' +
-          '<div class="pt-2 flex items-start gap-3"><span class="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0"></span><div><p class="font-semibold text-slate-800">Tu robot «RSI Reversal Gold» ejecutó una operación de compra en GOLD</p><p class="text-[11px] text-slate-400 mt-0.5">Hoy &middot; 09:14</p></div></div>' +
-          '<div class="pt-3 flex items-start gap-3"><span class="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0"></span><div><p class="font-semibold text-slate-800">Nueva clase disponible: Gestión de riesgo con múltiples robots</p><p class="text-[11px] text-slate-400 mt-0.5">Ayer &middot; entregado por C-01 Planificador de Contenido</p></div></div>' +
-          '<div class="pt-3 flex items-start gap-3"><span class="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0"></span><div><p class="font-semibold text-slate-800">Backtest de «Breakout London Session» terminó con drawdown superior al configurado</p><p class="text-[11px] text-slate-400 mt-0.5">Ayer &middot; 18:40</p></div></div>' +
-          '<div class="pt-3 flex items-start gap-3"><span class="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0"></span><div><p class="font-semibold text-slate-800">Cuenta demo XM sincronizada correctamente</p><p class="text-[11px] text-slate-400 mt-0.5">Hace 2 días &middot; vía T-05 Monitor Demo MT5</p></div></div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="lg:col-span-5 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4">' +
-        '<h2 class="text-base font-extrabold text-slate-800 flex items-center gap-2">📘 Próximo en tu ruta</h2>' +
-        '<div class="space-y-4 text-xs text-slate-600 leading-relaxed">' +
-          '<div class="flex items-start gap-3"><span class="w-2.5 h-2.5 rounded-full bg-blue-600 mt-1 shrink-0"></span><div><p class="font-bold text-slate-800">Módulo 6: Backtesting avanzado y walk-forward</p><p class="text-[11px] text-slate-400 mt-0.5">Se desbloquea al 70% de progreso</p></div></div>' +
-          '<div class="flex items-start gap-3"><span class="w-2.5 h-2.5 rounded-full bg-blue-600 mt-1 shrink-0"></span><div><p class="font-bold text-slate-800">Reto semanal: mejorar el Profit Factor de tu robot activo</p><p class="text-[11px] text-slate-400 mt-0.5">Cierra el viernes</p></div></div>' +
-        '</div>' +
-      '</div>' +
-    '</div>';
+    html += bt.detalle;
 
+  } else if (modo === 'vivo') {
+    html += mtbHtmlOperacionVivo();
   } else if (modo === 'tarjetas') {
     // 2. VISTA TARJETAS POR ACTIVO SPEC
     var rawList = (data && data.tarjetas && data.tarjetas.length) ? data.tarjetas : (window.MTB_CATALOGO ? window.MTB_CATALOGO.activos_todos : []);
@@ -1808,6 +1769,7 @@ function renderResumen(data){
 }
 function cambiarModoResumen(modo){
   mtbResumenState.modoVista = modo;
+  if (modo === 'vivo' && !mtbResumenState.vivo) cargarOperacionVivo();
   renderResumen(mtbResumenState.datos);
 }
 
@@ -1815,6 +1777,101 @@ function filtrarCategoriaTarjetas(cat){ mtbResumenState.categoriaTarjetas = cat;
 function cambiarPaginaTarjetas(pag){
   mtbResumenState.paginaTarjetas = pag;
   renderResumen(mtbResumenState.datos);
+}
+// Vista general: resultados reales del backtest del motor por activo y estrategia (GET /api/catalogo)
+function cargarResultadosBacktest(){
+  mtbResumenState.backtest = 'cargando';
+  fetch('/api/catalogo')
+    .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(d){ mtbResumenState.backtest = (d && d.activos_todos) || []; })
+    .catch(function(){ mtbResumenState.backtest = 'error'; })
+    .then(function(){ if ((mtbResumenState.modoVista || 'general') === 'general') renderResumen(mtbResumenState.datos); });
+}
+function mtbResumenBacktest(){
+  var filas = mtbResumenState.backtest;
+  if (!filas) { cargarResultadosBacktest(); filas = 'cargando'; }
+  if (filas === 'cargando') return { kpis: '<div class="text-slate-400 text-sm py-6 text-center mb-6">Cargando resultados del backtest...</div>', detalle: '' };
+  if (filas === 'error') return { kpis: '<p class="text-sm text-rose-500 py-6 text-center mb-6">No se pudieron cargar los resultados del backtest. <button type="button" class="mtb-btn underline" onclick="mtbResumenState.backtest=null;renderResumen(mtbResumenState.datos)">Reintentar</button></p>', detalle: '' };
+  var medidas = filas.filter(function(f){ return f.n_setups > 0; });
+  var viables = filas.filter(function(f){ return f.viable; });
+  var setups = medidas.reduce(function(s, f){ return s + f.n_setups; }, 0);
+  var ganadas = medidas.reduce(function(s, f){ return s + f.n_setups * (f.winrate || 0); }, 0);
+  var rTotal = medidas.reduce(function(s, f){ return s + (f.r_total || 0); }, 0);
+  var fmtR = function(r){ return (r >= 0 ? '+' : '') + r.toFixed(2) + 'R'; };
+  var pct = function(x){ return Math.round(x * 100) + '%'; };
+  var color = function(r){ return r > 0 ? 'text-emerald-600' : (r < 0 ? 'text-rose-600' : 'text-slate-800'); };
+  var simbolos = {}; medidas.forEach(function(f){ simbolos[f.simbolo] = 1; });
+  var caja = function(titulo, valor, nota, clase){ return '<div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-1.5"><div class="text-xs font-bold text-slate-400 uppercase tracking-wide">' + titulo + '</div><div class="text-2xl font-extrabold font-mono tracking-tight ' + (clase || 'text-slate-800') + '">' + valor + '</div><div class="text-xs text-slate-500">' + nota + '</div></div>'; };
+  var kpis = '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">' +
+    caja('Activos analizados', Object.keys(simbolos).length, medidas.length + ' de ' + filas.length + ' combinaciones activo &middot; estrategia con backtest') +
+    caja('Recomendables', viables.length, 'Al menos 20 setups y expectativa positiva', viables.length ? 'text-emerald-600' : 'text-slate-800') +
+    caja('Acierto del backtest', setups ? pct(ganadas / setups) : '-', setups.toLocaleString('es-MX') + ' setups probados en el historico') +
+    caja('Expectativa promedio', setups ? fmtR(rTotal / setups) : '-', 'Por operacion, arriesgando 1R &middot; R total ' + fmtR(rTotal), setups ? color(rTotal) : '') +
+  '</div>';
+  var orden = ['Scalping 15m', 'Scalping 30m', 'Intraday 1H', 'Intraday 4H', 'Intraday D', 'Swing (S)', 'Swing (M)'];
+  var porEstr = {};
+  filas.forEach(function(f){ var e = porEstr[f.temporalidad] = porEstr[f.temporalidad] || { n: 0, gan: 0, r: 0, activos: 0, viables: 0 }; if (f.n_setups > 0) { e.n += f.n_setups; e.gan += f.n_setups * (f.winrate || 0); e.r += f.r_total || 0; e.activos++; } if (f.viable) e.viables++; });
+  var estrategias = Object.keys(porEstr).sort(function(a, b){ return (orden.indexOf(a) + 99) % 99 - (orden.indexOf(b) + 99) % 99; });
+  var tabla = '<div class="overflow-x-auto"><table class="w-full text-xs text-left text-slate-600"><thead class="text-[11px] uppercase text-slate-400 border-b border-slate-200"><tr><th class="py-2 pr-2">Estrategia</th><th class="py-2 px-2 text-right">Activos</th><th class="py-2 px-2 text-right">Setups</th><th class="py-2 px-2 text-right">Acierto</th><th class="py-2 px-2 text-right">Expectativa</th><th class="py-2 pl-2 text-right">Recomendables</th></tr></thead><tbody class="divide-y divide-slate-100">' +
+    estrategias.map(function(t){ var e = porEstr[t]; return '<tr><td class="py-2 pr-2 font-semibold text-slate-800">' + esc(t) + '</td><td class="py-2 px-2 text-right font-mono">' + e.activos + '</td><td class="py-2 px-2 text-right font-mono">' + e.n + '</td><td class="py-2 px-2 text-right font-mono">' + (e.n ? pct(e.gan / e.n) : '-') + '</td><td class="py-2 px-2 text-right font-mono font-bold ' + (e.n ? color(e.r) : '') + '">' + (e.n ? fmtR(e.r / e.n) : '-') + '</td><td class="py-2 pl-2 text-right font-mono">' + e.viables + '</td></tr>'; }).join('') + '</tbody></table></div>';
+  var top = medidas.filter(function(f){ return f.n_setups >= 10; }).sort(function(a, b){ return (b.viable - a.viable) || ((b.expectativa_r || 0) - (a.expectativa_r || 0)); }).slice(0, 6);
+  var badge = function(f){ return f.viable ? '<span class="mtb-badge" style="background:var(--viable-bg);color:var(--viable)">Recomendable</span>' : (f.n_setups < 20 ? '<span class="mtb-badge" style="background:var(--no-viable-bg);color:var(--no-viable)">Pocas señales</span>' : '<span class="mtb-badge" style="background:var(--perdida-bg);color:var(--perdida)">No recomendable</span>'); };
+  var lista = top.length ? '<div class="space-y-3">' + top.map(function(f){ return '<div class="flex items-start justify-between gap-3"><div><p class="font-bold text-slate-800">' + esc(f.simbolo) + ' &middot; ' + esc(f.temporalidad) + '</p><p class="text-[11px] text-slate-400 mt-0.5">' + f.n_setups + ' setups &middot; acierto ' + pct(f.winrate || 0) + ' &middot; ' + fmtR(f.expectativa_r || 0) + '</p></div>' + badge(f) + '</div>'; }).join('') + '</div>' : '<p class="text-slate-400">Todavia no hay activos con al menos 10 setups en el backtest.</p>';
+  var detalle = '<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">' +
+    '<div class="lg:col-span-7 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4"><h2 class="text-base font-extrabold text-slate-800">📊 Rentabilidad por estrategia</h2>' + tabla + '<p class="text-[11px] text-slate-400">Resultados del backtest del motor SMC sobre el historico de cada activo. Rendimientos pasados no garantizan resultados futuros.</p></div>' +
+    '<div class="lg:col-span-5 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4 text-xs"><h2 class="text-base font-extrabold text-slate-800">🏆 Mejores activos</h2>' + lista + '</div>' +
+  '</div>';
+  return { kpis: kpis, detalle: detalle };
+}
+// Operacion en vivo de las cuentas demo del Master Trader, sin numero de cuenta (GET /api/v1/operacion-en-vivo)
+function cargarOperacionVivo(){
+  mtbResumenState.vivo = 'cargando';
+  fetch('/api/v1/operacion-en-vivo', { credentials: 'same-origin' })
+    .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(d){ mtbResumenState.vivo = d; })
+    .catch(function(){ mtbResumenState.vivo = 'error'; })
+    .then(function(){ if (mtbResumenState.modoVista === 'vivo') renderResumen(mtbResumenState.datos); });
+}
+function filtrarCuentaVivo(c){ mtbResumenState.cuentaVivo = c; mtbResumenState.paginaHistorial = 1; renderResumen(mtbResumenState.datos); }
+function mtbHtmlOperacionVivo(){
+  var d = mtbResumenState.vivo;
+  if (!d || d === 'cargando') return '<div class="text-slate-400 text-sm py-6 text-center">Cargando la operacion en vivo...</div>';
+  if (d === 'error') return '<p class="text-sm text-rose-500 py-6 text-center">No se pudo cargar la operacion en vivo. <button type="button" class="mtb-btn underline" onclick="cargarOperacionVivo();renderResumen(mtbResumenState.datos)">Reintentar</button></p>';
+  var sel = mtbResumenState.cuentaVivo || 'todas';
+  var deCuenta = function(x){ return sel === 'todas' || x.cuenta === sel; };
+  var pos = (d.posiciones_abiertas || []).filter(deCuenta);
+  var hist = (d.historial || []).filter(deCuenta);
+  var nombres = []; (d.cuentas || []).forEach(function(c){ if (nombres.indexOf(c.cuenta) < 0) nombres.push(c.cuenta); });
+  var fmtM = function(n){ var v = parseFloat(n) || 0; return (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2); };
+  var fmtF = function(f){ return f ? String(f).replace('T', ' ').substring(0, 16) : '-'; };
+  var dir = function(x){ return (x || '').toUpperCase() === 'BUY' ? '<span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold">BUY</span>' : '<span class="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 font-bold">SELL</span>'; };
+  var pl = hist.reduce(function(s, h){ return s + (parseFloat(h.profit_usd) || 0); }, 0);
+  var gan = hist.filter(function(h){ return (parseFloat(h.profit_usd) || 0) > 0; }).length;
+  var chip = function(valor, texto){ return '<button type="button" class="mtb-btn text-xs font-bold px-3 py-1.5 rounded-xl border transition ' + (sel === valor ? 'bg-sky-600 text-white border-sky-500' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700') + '" onclick="filtrarCuentaVivo(' + esc(JSON.stringify(valor)) + ')">' + esc(texto) + '</button>'; };
+  var html = '<div class="space-y-4">' +
+    '<p class="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Estas son las cuentas demo con las que probamos los robots &mdash; no es tu cuenta personal.</p>' +
+    '<div class="flex flex-wrap gap-2">' + chip('todas', 'Todas (' + nombres.length + ')') + nombres.map(function(n){ return chip(n, n); }).join('') + '</div>' +
+    '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">' +
+      '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="text-xs text-slate-400 font-semibold mb-1">Posiciones abiertas</div><div class="text-2xl font-extrabold font-mono text-white">' + pos.length + '</div></div>' +
+      '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="text-xs text-slate-400 font-semibold mb-1">P&amp;L ultimas ' + hist.length + ' cerradas</div><div class="text-2xl font-extrabold font-mono ' + (pl >= 0 ? 'text-emerald-400' : 'text-rose-400') + '">' + fmtM(pl) + '</div></div>' +
+      '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="text-xs text-slate-400 font-semibold mb-1">Ganadoras / perdedoras</div><div class="text-2xl font-extrabold font-mono text-white">' + gan + ' / ' + (hist.length - gan) + '</div></div>' +
+    '</div>';
+  html += '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><h3 class="font-extrabold text-white text-sm mb-3">Posiciones abiertas (' + pos.length + ')</h3>';
+  if (!pos.length) html += '<p class="text-xs text-slate-500 py-3 text-center">No hay posiciones abiertas en este momento.</p>';
+  else html += '<div class="overflow-x-auto"><table class="w-full text-xs text-left text-slate-300"><thead class="text-[11px] uppercase bg-slate-800/80 text-slate-400"><tr><th class="p-2.5">Cuenta</th><th class="p-2.5">Simbolo</th><th class="p-2.5">Direccion</th><th class="p-2.5 text-right">Lotes</th><th class="p-2.5 text-right">Entrada</th><th class="p-2.5">Temporalidad</th><th class="p-2.5">Abierta</th></tr></thead><tbody>' +
+    pos.map(function(p){ return '<tr><td class="p-2.5">' + esc(p.cuenta) + '</td><td class="p-2.5 font-bold text-white">' + esc(p.simbolo) + '</td><td class="p-2.5">' + dir(p.direccion) + '</td><td class="p-2.5 text-right font-mono">' + esc(p.lotes) + '</td><td class="p-2.5 text-right font-mono">' + esc(p.precio_entrada == null ? '-' : p.precio_entrada) + '</td><td class="p-2.5">' + esc(p.temporalidad || '-') + '</td><td class="p-2.5">' + fmtF(p.abierta_en) + '</td></tr>'; }).join('') + '</tbody></table></div>';
+  html += '</div>';
+  var porPag = mtbResumenState.porPaginaHistorial || 10;
+  var totPags = Math.max(1, Math.ceil(hist.length / porPag));
+  var pag = Math.min(mtbResumenState.paginaHistorial || 1, totPags);
+  html += '<div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="flex items-center justify-between mb-3"><h3 class="font-extrabold text-white text-sm">Operaciones cerradas (' + hist.length + ')</h3><span class="text-xs text-slate-400">Pagina ' + pag + ' de ' + totPags + '</span></div>';
+  if (!hist.length) html += '<p class="text-xs text-slate-500 py-3 text-center">Todavia no hay operaciones cerradas.</p>';
+  else {
+    html += '<div class="overflow-x-auto"><table class="w-full text-xs text-left text-slate-300"><thead class="text-[11px] uppercase bg-slate-800/80 text-slate-400"><tr><th class="p-2.5">Cuenta</th><th class="p-2.5">Simbolo</th><th class="p-2.5">Direccion</th><th class="p-2.5 text-right">Lotes</th><th class="p-2.5 text-right">P&amp;L ($)</th><th class="p-2.5">Cierre</th><th class="p-2.5">Fecha</th></tr></thead><tbody>' +
+      hist.slice((pag - 1) * porPag, pag * porPag).map(function(h){ var pf = parseFloat(h.profit_usd) || 0; return '<tr><td class="p-2.5">' + esc(h.cuenta) + '</td><td class="p-2.5 font-bold text-white">' + esc(h.simbolo) + '</td><td class="p-2.5">' + dir(h.direccion) + '</td><td class="p-2.5 text-right font-mono">' + esc(h.lotes) + '</td><td class="p-2.5 text-right font-mono font-bold ' + (pf > 0 ? 'text-emerald-400' : (pf < 0 ? 'text-rose-400' : '')) + '">' + fmtM(pf) + '</td><td class="p-2.5">' + esc(h.razon_cierre || '-') + '</td><td class="p-2.5">' + fmtF(h.cerrada_en) + '</td></tr>'; }).join('') + '</tbody></table></div>';
+    if (totPags > 1) html += '<div class="flex items-center justify-center gap-3 mt-4"><button type="button" class="mtb-btn text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200"' + (pag <= 1 ? ' disabled style="opacity:0.4"' : '') + ' onclick="cambiarPaginaHistorial(' + (pag - 1) + ')">&lsaquo; Anterior</button><span class="text-xs text-slate-400 font-mono">' + pag + ' / ' + totPags + '</span><button type="button" class="mtb-btn text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200"' + (pag >= totPags ? ' disabled style="opacity:0.4"' : '') + ' onclick="cambiarPaginaHistorial(' + (pag + 1) + ')">Siguiente &rsaquo;</button></div>';
+  }
+  return html + '</div></div>';
 }
 function cambiarPaginaHistorial(pag){
   mtbResumenState.paginaHistorial = pag;
