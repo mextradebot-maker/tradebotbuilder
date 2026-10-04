@@ -336,7 +336,7 @@ def demo() -> None:
         estado["demo"] = {**mia, "cuenta": 318680674}  # DEMO amarrada: la cabecera lo dice
         st, body = procesar_mi_robot({**ficha, "simbolo": "US30", "temporalidad": "Swing (M)"}, con)
         assert st == 200 and body["nombre"] == "MexTradeBot_US30_MN1.ex5"
-        assert body["cabeceras"]["X-MTB-Cuenta"] == "318680674" and body["cabeceras"]["X-MTB-Simbolo-XM"] == ""
+        assert body["cabeceras"]["X-MTB-Cuenta"] == "318680674" and body["cabeceras"]["X-MTB-Simbolo-XM"] == "US30Cash"
         estado["demo"] = vieja
         assert procesar_mi_robot(ficha, con) == (403, {"error": "licencia_no_vigente"})
 
