@@ -8,7 +8,7 @@ aparecen en cuanto se registre con ese correo.
 
 Nivel: clave de seguimiento `nivel=trader|vip` en cualquier parte del evento,
 si no el nombre del plan ("Trader Mensual", "VIP Anual"), si no el id del producto
-(MTB_HOTMART_PRODUCTOS="8655745:trader,123:vip", con 8655745 = Trader de fábrica).
+(de fábrica 8655745 = Trader y 8655789 = VIP; MTB_HOTMART_PRODUCTOS="id:nivel,..." agrega otros).
 
 Siempre responde 200 a eventos válidos que no cambian nada (Hotmart reintenta lo
 que no recibe 200); 401 con hottok incorrecto; 503 si el servidor no tiene hottok.
@@ -23,7 +23,7 @@ ACTIVAR = {"PURCHASE_APPROVED", "PURCHASE_COMPLETE"}
 PAUSAR = {"PURCHASE_REFUNDED", "PURCHASE_CHARGEBACK", "PURCHASE_PROTEST", "PURCHASE_CANCELED",
           "PURCHASE_DELAYED", "PURCHASE_EXPIRED"}
 CANCELAR = {"SUBSCRIPTION_CANCELLATION"}
-PRODUCTOS_FABRICA = {"8655745": "trader"}
+PRODUCTOS_FABRICA = {"8655745": "trader", "8655789": "vip"}
 
 
 def _productos() -> dict[str, str]:
@@ -132,7 +132,7 @@ def demo() -> None:
     vip["data"]["purchase"]["origin"] = {}
     assert interpretar(vip)["accion"] == "ignorar"  # producto desconocido sin pistas
     os.environ["MTB_HOTMART_PRODUCTOS"] = "999:vip, basura, 5:oro"
-    assert interpretar(vip)["nivel"] == "vip" and _productos() == {"8655745": "trader", "999": "vip"}
+    assert interpretar(vip)["nivel"] == "vip" and _productos() == {"8655745": "trader", "8655789": "vip", "999": "vip"}
     os.environ.pop("MTB_HOTMART_PRODUCTOS")
 
     cancel = {"id": "e2", "event": "SUBSCRIPTION_CANCELLATION", "data": {
