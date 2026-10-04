@@ -391,12 +391,16 @@ def demo() -> None:
         persistencia.escribir_snapshot(sim, "Scalping 15m", {"velas": [1], "motor": "v2", "swing_length": 8}, None)
         persistencia.escribir_snapshot(sim, "Scalping 30m", {"velas": [], "motor": "v2", "swing_length": 8}, None)
         persistencia.escribir_snapshot(sim, "Swing (M)", {"velas": [1]}, None)
+        # /api/setups guarda el conteo de velas (numero): con velas cuenta como lleno, 0 como vacio
+        persistencia.escribir_snapshot(sim, "Intraday 1H", {"velas": 49800, "motor": "v2", "swing_length": 10}, None)
+        persistencia.escribir_snapshot(sim, "Scalping 5m", {"velas": 0, "motor": "v2"}, None)
         try:
-            r = persistencia.resumen_snapshots(("Scalping 15m", "Scalping 30m"))
-            assert set(r) == {(sim, "Scalping 15m"), (sim, "Scalping 30m")}, r.keys()
+            r = persistencia.resumen_snapshots(("Scalping 15m", "Scalping 30m", "Intraday 1H", "Scalping 5m"))
+            assert set(r) == {(sim, "Scalping 15m"), (sim, "Scalping 30m"), (sim, "Intraday 1H"), (sim, "Scalping 5m")}, r.keys()
             a_, b_ = r[(sim, "Scalping 15m")], r[(sim, "Scalping 30m")]
             assert a_["hay_velas"] is True and a_["motor"] == "v2" and a_["swing_length"] == 8 and a_["refrescado_en"] is not None
             assert b_["hay_velas"] is False
+            assert r[(sim, "Intraday 1H")]["hay_velas"] is True and r[(sim, "Scalping 5m")]["hay_velas"] is False
         finally:
             with almacen.get_conn() as conn:
                 conn.execute("DELETE FROM smc_snapshot WHERE simbolo = %s", (sim,))

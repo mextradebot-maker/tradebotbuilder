@@ -31,8 +31,11 @@ def resumen_snapshots(temporalidades) -> dict:
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT simbolo, temporalidad, refrescado_en,"
-            " COALESCE(jsonb_array_length(CASE WHEN jsonb_typeof(estructura_smc->'velas') = 'array'"
-            "                                  THEN estructura_smc->'velas' END), 0) > 0,"
+            # mismo criterio que bool(respuesta.get("velas")): /api/setups guarda el CONTEO de velas (numero)
+            " CASE jsonb_typeof(estructura_smc->'velas')"
+            "   WHEN 'array' THEN jsonb_array_length(estructura_smc->'velas') > 0"
+            "   WHEN 'number' THEN (estructura_smc->>'velas')::numeric <> 0"
+            "   ELSE false END,"
             " estructura_smc->'motor', estructura_smc->'swing_length'"
             " FROM smc_snapshot WHERE temporalidad = ANY(%s)", (list(temporalidades),)).fetchall()
     return {(r[0], r[1]): {"refrescado_en": r[2], "hay_velas": r[3], "motor": r[4], "swing_length": r[5]} for r in rows}
