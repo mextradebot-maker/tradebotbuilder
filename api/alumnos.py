@@ -117,6 +117,25 @@ def procesar_mi_robot(datos: dict, headers: dict) -> tuple[int, bytes | dict]:
     return compilar_robot(lid)
 
 
+MENSAJE_LIMITE = {
+    "demo": "Ya usaste tus {limite} robots DEMO gratis. Con la membresía Trader son ilimitados.",
+    "real": "Ya usaste tus {limite} robots en cuenta real del plan Trader. Con VIP son ilimitados.",
+}
+
+
+def _nivel(correo: str, ahora: datetime) -> str | None:
+    """Nivel que fija los límites: la membresía de Hotmart; una licencia real/vip emitida a mano
+    (admin) no tiene límites, como antes de las membresías."""
+    from persistencia import licencias, membresias
+
+    nivel = membresias.nivel_de(correo)
+    if nivel:
+        return nivel
+    manual = any(l["tipo"] in ("real", "vip") and l.get("origen") != "hotmart" and _estado(l, ahora) == "activa"
+                 for l in licencias.licencias_de_correo(correo))
+    return "vip" if manual else None
+
+
 def _robot_ficha(datos: dict, headers: dict) -> tuple[int, dict]:
     """200 → {"ex5", "nombre", "cabeceras"}; la API valida todo (el front solo deshabilita botones)."""
     alumno = _alumno(headers)
@@ -125,7 +144,7 @@ def _robot_ficha(datos: dict, headers: dict) -> tuple[int, dict]:
     from api.catalogo import SIMBOLO_XM
     from api.licencias import compilar_token
     from compilador import TF_POR_TEMPORALIDAD, validar_presets
-    from persistencia import licencias
+    from persistencia import licencias, membresias
 
     modo = str(datos.get("modo") or "").lower()
     try:
@@ -136,8 +155,12 @@ def _robot_ficha(datos: dict, headers: dict) -> tuple[int, dict]:
         return 400, {"error": str(e)}
 
     ahora = datetime.now(timezone.utc)
+    nivel = _nivel(alumno["correo"], ahora)
     if modo == "demo":
         lic = licencias.asegurar_licencia_demo(alumno["correo"], alumno["nombre"])
+        if nivel and _estado(lic, ahora) == "expirada":  # mientras paguen, su DEMO no caduca
+            membresias.renovar_demo(lic["id"])
+            lic = {**lic, "expira_en": None}
         if _estado(lic, ahora) != "activa":
             return 403, {"error": "licencia_no_vigente"}
     else:
@@ -145,6 +168,12 @@ def _robot_ficha(datos: dict, headers: dict) -> tuple[int, dict]:
                     if l["tipo"] in ("real", "vip") and _estado(l, ahora) == "activa"), None)
         if lic is None:
             return 402, {"error": "membresia_requerida"}
+    limite = membresias.LIMITES[nivel][modo]
+    if limite is not None:
+        ya = membresias.robots_descargados(alumno["correo"], modo)
+        if (simbolo, temporalidad) not in ya and len(ya) >= limite:
+            return 402, {"error": "limite_descargas", "modo": modo, "limite": limite,
+                         "mensaje": MENSAJE_LIMITE[modo].format(limite=limite)}
     try:
         token = licencias.token_de_licencia(lic["id"])
     except ValueError as e:  # licencia sin semilla o MTB_TOKEN_SECRET ausente
@@ -153,6 +182,7 @@ def _robot_ficha(datos: dict, headers: dict) -> tuple[int, dict]:
     status, ex5 = compilar_token(token, {"simbolo": simbolo, "temporalidad": temporalidad, "capital": capital})
     if status != 200:
         return status, ex5
+    membresias.registrar_descarga(alumno["correo"], modo, simbolo, temporalidad)
     tf = TF_POR_TEMPORALIDAD[temporalidad].removeprefix("PERIOD_")
     return 200, {"ex5": ex5, "nombre": f"MexTradeBot_{simbolo}_{tf}.ex5", "cabeceras": {
         "X-MTB-Token": token, "X-MTB-Cuenta": str(lic["cuenta"] or ""), "X-MTB-Simbolo-XM": SIMBOLO_XM.get(simbolo) or ""}}
@@ -286,10 +316,20 @@ def demo() -> None:
         token_de_licencia=lambda i: f"MTB-TOKEN-{i}",
         vincular_telegram=lambda a, c: vinculados.append((a, c)),
     )
+    LIMITES = {None: {"demo": 3, "real": 0}, "trader": {"demo": None, "real": 5}, "vip": {"demo": None, "real": None}}
+    mem = {"nivel": None, "bajadas": {}, "renovadas": []}
+    falso_mem = types.SimpleNamespace(
+        LIMITES=LIMITES,
+        nivel_de=lambda c: mem["nivel"],
+        robots_descargados=lambda c, m: set(mem["bajadas"].get((c, m), set())),
+        registrar_descarga=lambda c, m, s, t: mem["bajadas"].setdefault((c, m), set()).add((s, t)),
+        renovar_demo=lambda i: mem["renovadas"].append(i),
+    )
     compilados = []
-    previos = {k: sys.modules.get(k) for k in ("persistencia", "persistencia.licencias")}
-    sys.modules["persistencia"] = types.SimpleNamespace(licencias=falso)
+    previos = {k: sys.modules.get(k) for k in ("persistencia", "persistencia.licencias", "persistencia.membresias")}
+    sys.modules["persistencia"] = types.SimpleNamespace(licencias=falso, membresias=falso_mem)
     sys.modules["persistencia.licencias"] = falso
+    sys.modules["persistencia.membresias"] = falso_mem
     import api.licencias as api_lic
 
     original = api_lic.compilar_robot
@@ -347,6 +387,35 @@ def demo() -> None:
         estado["extra"].append({**mia, "id": 9, "tipo": "vip", "cuenta": 777})
         st, body = procesar_mi_robot(real, con)
         assert st == 200 and body["cabeceras"]["X-MTB-Token"] == "MTB-TOKEN-9" and body["cabeceras"]["X-MTB-Cuenta"] == "777"
+
+        # ── límites por nivel (robots distintos = símbolo + temporalidad) ──
+        assert mem["bajadas"][("ana@x.com", "demo")] == {("XAUUSD", "Intraday 1H"), ("US30", "Swing (M)")}
+        assert mem["bajadas"][("ana@x.com", "real")] == {("XAUUSD", "Intraday 1H")}
+        admin_vip, estado["extra"], estado["demo"] = estado["extra"], [], mia  # Gratis: sin licencias pagadas
+        def bajar(simbolo, temporalidad="Intraday 4H", modo="demo"):
+            return procesar_mi_robot({**ficha, "simbolo": simbolo, "temporalidad": temporalidad, "modo": modo}, con)
+        assert bajar("EURUSD")[0] == 200                                   # 3.º robot DEMO
+        st, body = bajar("GBPUSD")
+        assert st == 402 and body["error"] == "limite_descargas" and body["limite"] == 3 and "Trader" in body["mensaje"]
+        assert bajar("XAUUSD", "Intraday 1H")[0] == 200                     # repetir uno ya bajado no gasta cupo
+        assert bajar("GBPUSD", modo="real") == (402, {"error": "membresia_requerida"})
+        mem["nivel"] = "trader"
+        estado["extra"] = [{**mia, "id": 10, "tipo": "real", "origen": "hotmart"}]
+        assert bajar("GBPUSD")[0] == 200                                    # Trader: DEMO ilimitado
+        for sim in ("EURUSD", "USDJPY", "AUDUSD", "USDCAD"):
+            assert bajar(sim, modo="real")[0] == 200, sim                    # 2.º a 5.º REAL
+        st, body = bajar("NZDUSD", modo="real")
+        assert st == 402 and body["limite"] == 5 and "VIP" in body["mensaje"]
+        assert bajar("EURUSD", modo="real")[0] == 200
+        estado["demo"] = {**mia, "expira_en": ahora}                         # DEMO de registro caducada
+        assert bajar("EURUSD")[0] == 200 and mem["renovadas"] == [5]          # miembro: se renueva
+        mem["nivel"] = "vip"
+        estado["extra"] = [{**mia, "id": 11, "tipo": "vip", "origen": "hotmart"}]
+        assert bajar("NZDUSD", modo="real")[0] == 200                        # VIP: ilimitado
+        mem["nivel"], estado["extra"] = None, []
+        assert bajar("EURUSD")[0] == 403 and mem["renovadas"] == [5]          # sin membresía: no se renueva
+        estado["extra"], estado["demo"] = admin_vip, mia
+        assert bajar("NZDUSD", "Swing (S)")[0] == 200                        # licencia manual: sin límites
 
         compilador_nuevo["si"] = False  # VPS sin actualizar: no se entrega un .ex5 sin presets
         assert procesar_mi_robot(real, con) == (503, {"error": "generador_actualizando"})

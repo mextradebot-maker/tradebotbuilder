@@ -22,6 +22,7 @@ despacha por path hacia la lógica de cada endpoint:
   GET /api/v1/master/trading (X-Admin-Key) — posiciones e historial de las cuentas demo del Master Trader — ver api/master_trading.py
   GET /api/v1/operacion-en-vivo (cookie del alumno) — lo mismo sin número de cuenta ni servidor
   GET /api/v1/reporte-setups — setups vigentes de todos los activos para T-01 (X-MTB-Service-Key), ver api/reporte.py
+  POST /api/v1/hotmart (X-HOTMART-HOTTOK) — webhook de Hotmart: activa/pausa membresías, ver api/hotmart.py
   /api/setups pasa antes por api.licencias.gate_setups (licencia o clave de servicio)
 """
 
@@ -52,6 +53,7 @@ RUTA_TELEGRAM_ENVIAR = "/api/v1/telegram/enviar"
 RUTA_ESTADO_CARGA = "/api/v1/estado-carga"
 RUTA_MASTER_TRADING = "/api/v1/master/trading"
 RUTA_OPERACION_EN_VIVO = "/api/v1/operacion-en-vivo"
+RUTA_HOTMART = "/api/v1/hotmart"
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -175,6 +177,10 @@ class handler(BaseHTTPRequestHandler):
             from api.alumnos import procesar_vincular_telegram
 
             status, body = procesar_vincular_telegram(payload, dict(self.headers))
+        elif ruta == RUTA_HOTMART:
+            from api.hotmart import procesar as procesar_hotmart
+
+            status, body = procesar_hotmart(payload, dict(self.headers))
         elif ruta == RUTA_LICENCIAS:
             from api.licencias import procesar_admin
 
