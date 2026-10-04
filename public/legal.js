@@ -15,6 +15,8 @@
     '.mtb-legal-footer li{margin:0 0 6px}' +
     '.mtb-legal-footer a{color:#a6b6cc;text-decoration:none}' +
     '.mtb-legal-footer a:hover,.mtb-legal-footer a:focus-visible{color:#32c7df;text-decoration:underline}' +
+    '.mtb-legal-logo{background:#fff;border-radius:10px;padding:6px 10px;display:inline-block;margin-bottom:10px}.mtb-legal-logo img{display:block;width:96px;height:auto}' +
+    '.mtb-legal-redes{display:flex;gap:10px;margin-top:14px}.mtb-legal-redes a{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #2a3a50;border-radius:9px;color:#a6b6cc}.mtb-legal-redes a:hover,.mtb-legal-redes a:focus-visible{color:#32c7df;border-color:#32c7df;text-decoration:none}' +
     '.mtb-legal-riesgo{max-width:1440px;margin:22px auto 0;padding-top:16px;border-top:1px solid #2a3a50;font-size:11px;color:#899db9}' +
     '.mtb-legal-copy{max-width:1440px;margin:10px auto 0;font-size:11px;color:#899db9}' +
     '@media(max-width:800px){.mtb-legal-wrap{grid-template-columns:1fr 1fr}.mtb-legal-wrap>div:first-child{grid-column:1/-1}}' +
@@ -23,6 +25,20 @@
     '.mtb-cookies p{margin:0;flex:1 1 300px;color:#a6b6cc}' +
     '.mtb-cookies a{color:#32c7df}' +
     '.mtb-cookies button{background:#32c7df;color:#06242c;border:0;border-radius:8px;padding:10px 18px;font:inherit;font-weight:600;cursor:pointer}';
+
+  var REDES = [
+    ['YouTube', 'https://www.youtube.com/channel/UCbka7h1ybRM2nuiILr0xRdA', '<path d="M22 8.2c0-1.6-1.3-2.9-2.9-3C17.3 5 14.6 5 12 5s-5.3 0-7.1.2C3.3 5.3 2 6.6 2 8.2 1.9 9.5 1.9 10.7 1.9 12s0 2.5.1 3.8c0 1.6 1.3 2.9 2.9 3 1.8.2 4.5.2 7.1.2s5.3 0 7.1-.2c1.6-.1 2.9-1.4 2.9-3 .1-1.3.1-2.5.1-3.8s0-2.5-.1-3.8zM10 15.2V8.8l5.5 3.2-5.5 3.2z"/>'],
+    ['Facebook', 'https://www.facebook.com/mextradebot/', '<path d="M13.5 22v-8.2h2.8l.4-3.3h-3.2V8.4c0-.9.3-1.6 1.6-1.6h1.7V3.9c-.3 0-1.3-.1-2.5-.1-2.5 0-4.2 1.5-4.2 4.3v2.4H7.3v3.3h2.8V22h3.4z"/>'],
+    ['Instagram', 'https://www.instagram.com/mextradebot/', '<path d="M12 7.3a4.7 4.7 0 1 0 0 9.4 4.7 4.7 0 0 0 0-9.4zm0 7.7a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm4.9-8.9a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2zM21.9 8c-.1-1.5-.4-2.8-1.5-3.9S17.9 2.6 16.4 2.5C14.8 2.4 9.2 2.4 7.6 2.5 6.1 2.6 4.8 2.9 3.7 4S2.2 6.5 2.1 8c-.1 1.6-.1 6.4 0 8 .1 1.5.4 2.8 1.5 3.9s2.4 1.4 3.9 1.5c1.6.1 7.2.1 8.8 0 1.5-.1 2.8-.4 3.9-1.5s1.4-2.4 1.5-3.9c.1-1.6.1-6.4 0-8zm-2 9.7a3.2 3.2 0 0 1-1.8 1.8c-1.3.5-4.3.4-5.7.4s-4.4.1-5.7-.4a3.2 3.2 0 0 1-1.8-1.8c-.5-1.3-.4-4.3-.4-5.7s-.1-4.4.4-5.7A3.2 3.2 0 0 1 6.7 4.5c1.3-.5 4.3-.4 5.7-.4s4.4-.1 5.7.4a3.2 3.2 0 0 1 1.8 1.8c.5 1.3.4 4.3.4 5.7s.1 4.4-.4 5.7z"/>'],
+    ['TikTok', 'https://www.tiktok.com/@tezcaltlibot', '<path d="M16.6 2h-3.4v13.2a2.9 2.9 0 1 1-2.9-2.9c.3 0 .6 0 .9.1V9a6.3 6.3 0 1 0 5.4 6.2V8.6a7.9 7.9 0 0 0 4.6 1.5V6.7a4.6 4.6 0 0 1-4.6-4.7z"/>']
+  ];
+
+  function redes() {
+    return '<div class="mtb-legal-redes">' + REDES.map(function (r) {
+      return '<a href="' + r[1] + '" target="_blank" rel="noopener" aria-label="MexTradeBot en ' + r[0] + '" title="' + r[0] + '">' +
+        '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">' + r[2] + '</svg></a>';
+    }).join('') + '</div>';
+  }
 
   function enlace(href, texto) {
     return '<li><a href="' + href + '">' + texto + '</a></li>';
@@ -34,8 +50,9 @@
     f.setAttribute('role', 'contentinfo');
     f.innerHTML =
       '<div class="mtb-legal-wrap">' +
-        '<div><div class="mtb-legal-marca">MexTradeBot</div><div class="mtb-legal-lema">Trading agéntico</div>' +
-        '<p style="margin:0;max-width:420px">Robots de trading para MetaTrader 5, análisis de mercado y formación para operar con método.</p></div>' +
+        '<div><div class="mtb-legal-logo"><img src="/img/logo-mtb.png" alt="" width="320" height="187"></div>' +
+        '<div class="mtb-legal-marca">MexTradeBot</div><div class="mtb-legal-lema">Trading agéntico</div>' +
+        '<p style="margin:0;max-width:420px">Robots de trading para MetaTrader 5, análisis de mercado y formación para operar con método.</p>' + redes() + '</div>' +
         '<div><h4>Legal</h4><ul>' +
           enlace('/aviso-de-privacidad.html', 'Aviso de privacidad') +
           enlace('/politica-de-cookies.html', 'Política de cookies') +
