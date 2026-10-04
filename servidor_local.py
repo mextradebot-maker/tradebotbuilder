@@ -243,9 +243,25 @@ def resumen_todas(dias: int = 60) -> dict:
                 resultados.append(calcular_resumen(info_cuenta(), historial_operaciones(dias=dias)))
             except ConexionXMError as e:
                 resultados.append({"cuenta": {"login": c["login"], "server": c["server"]}, "error": str(e)})
-        return {"cuentas": resultados}
+        return {"cuentas": sin_numero_de_cuenta(resultados, _nombres_cuentas())}
     finally:
         desconectar()
+
+
+def _nombres_cuentas() -> dict:
+    try:
+        with get_conn() as conn:
+            return {int(l): n for l, n in conn.execute("SELECT login, nombre FROM cuentas_demo").fetchall()}
+    except Exception:  # sin Postgres: "Cuenta N"
+        return {}
+
+
+def sin_numero_de_cuenta(resultados: list[dict], nombres: dict) -> list[dict]:
+    """/demo-status es público: cambia el número de cuenta por su nombre en cuentas_demo (o "Cuenta N")."""
+    for i, r in enumerate(resultados, 1):
+        login = r["cuenta"].pop("login", None)
+        r["cuenta"]["nombre"] = (nombres.get(login) or "").strip() or f"Cuenta {i}"
+    return resultados
 
 
 def trading_resumen() -> dict:
@@ -394,6 +410,9 @@ def demo() -> None:
     assert round(semanas["2026-W33"]["profit"], 2) == 247.0
     assert round(semanas["2026-W34"]["profit"], 2) == -250.0
     assert resumen["drawdown_pct"] == 3.72, resumen["drawdown_pct"]
+
+    res = sin_numero_de_cuenta([{"cuenta": dict(cuenta)}, {"cuenta": {"login": 5, "server": "s"}, "error": "x"}], {318680674: "ORO"})
+    assert [r["cuenta"]["nombre"] for r in res] == ["ORO", "Cuenta 2"] and "318680674" not in str(res), res
 
     status, body = procesar({"dias": "no-es-numero"})
     assert status == 400 and "error" in body

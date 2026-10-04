@@ -3,6 +3,9 @@
 Protegido con X-Admin-Key (MTB_ADMIN_KEY), como /api/v1/licencias. Lee de Postgres lo que el coordinador
 del VPS escribe: cuentas_demo, posiciones_abiertas e historial_posiciones (últimas 100 cerradas).
 Reemplaza a la vista "Master Trader en Vivo" del panel de alumnos, que leía el VPS sin autenticación.
+
+GET /api/v1/operacion-en-vivo — lo mismo para alumnos con sesión (cookie mtb_token), sin número de cuenta
+ni servidor: cada cuenta se identifica solo por su nombre (o "Cuenta N" si no tiene).
 """
 
 from datetime import datetime, timezone
@@ -52,6 +55,39 @@ def procesar(headers: dict, leer=_leer_db) -> tuple[int, dict]:
                  "historial": _filas(CERRADA, hist), "actualizado_en": datetime.now(timezone.utc).isoformat()}
 
 
+def _alias(cuentas: list[dict]) -> dict:
+    alias, usados = {}, set()
+    for i, c in enumerate(cuentas, 1):
+        nombre = (c.get("nombre") or "").strip() or f"Cuenta {i}"
+        if nombre in usados:
+            nombre = f"{nombre} {i}"
+        usados.add(nombre)
+        alias[c["login"]] = nombre
+    return alias
+
+
+def _sin_login(filas: list[dict], alias: dict) -> list[dict]:
+    return [{"cuenta": alias.get(f["login"], "Cuenta demo"), **{k: v for k, v in f.items() if k != "login"}} for f in filas]
+
+
+def procesar_alumnos(headers: dict, leer=_leer_db, alumno=None) -> tuple[int, dict]:
+    if alumno is None:
+        from api.alumnos import _alumno as alumno
+    try:
+        if not alumno(headers):
+            return 401, {"error": "inicia sesion en el panel"}
+        cuentas, pos, hist = leer()
+    except Exception:
+        return 503, {"error": "base de datos no disponible"}
+    cuentas = _filas(CUENTA, cuentas)
+    alias = _alias(cuentas)
+    return 200, {"cuentas": [{"cuenta": alias[c["login"]], "simbolo": c["simbolo"], "temporalidad": c["temporalidad"],
+                              "activa": c["activa"]} for c in cuentas],
+                 "posiciones_abiertas": _sin_login(_filas(POSICION, pos), alias),
+                 "historial": _sin_login(_filas(CERRADA, hist), alias),
+                 "actualizado_en": datetime.now(timezone.utc).isoformat()}
+
+
 def demo() -> None:
     import os
     from decimal import Decimal
@@ -71,6 +107,16 @@ def demo() -> None:
                                                  "temporalidad": "Intraday 1H", "activa": True}
         assert b["posiciones_abiertas"][0]["lotes"] == 0.02 and b["posiciones_abiertas"][0]["abierta_en"] == t.isoformat()
         assert b["historial"][0]["profit_usd"] == -12.4 and b["historial"][0]["razon_cierre"] == "SL"
+        assert procesar_alumnos({}, lambda: datos, alumno=lambda h: None)[0] == 401
+        assert procesar_alumnos({}, lambda: 1 / 0, alumno=lambda h: {"correo": "a@b"})[0] == 503
+        dos = ([(318680674, "XMGlobal-MT5 7", "ORO", "GOLD", "Intraday 1H", True), (5, "s", "", "EURUSD", "Intraday 4H", True)],
+               [(318680674, "GOLD", "Intraday 1H", "BUY", Decimal("0.02"), Decimal("2650.5"), t),
+                (5, "EURUSD", "Intraday 4H", "SELL", Decimal("0.1"), Decimal("1.1"), t)],
+               [(318680674, "GOLD", "Intraday 1H", "SELL", Decimal("0.02"), Decimal("-12.4"), "SL", t)])
+        st, b = procesar_alumnos({}, lambda: dos, alumno=lambda h: {"correo": "a@b"})
+        assert st == 200 and "318680674" not in str(b) and "XMGlobal" not in str(b), b
+        assert [c["cuenta"] for c in b["cuentas"]] == ["ORO", "Cuenta 2"]
+        assert [p["cuenta"] for p in b["posiciones_abiertas"]] == ["ORO", "Cuenta 2"] and b["historial"][0]["cuenta"] == "ORO"
     finally:
         os.environ.pop("MTB_ADMIN_KEY", None)
         if previa is not None:
