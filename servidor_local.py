@@ -30,6 +30,17 @@ RUTA_TRADING_RESUMEN = "/trading-resumen"
 RUTA_PANEL_RESUMEN = "/panel-resumen-page"
 RUTA_PANEL_RESUMEN_JSON = "/panel-resumen-json"
 PUERTO_DEFAULT = 8765
+# Posiciones e historial del Master Trader: solo con la clave de servicio (MTB_SERVICE_KEY en el .env del VPS).
+# Falla cerrado si la clave no está configurada. El admin las ve en /master.html vía mtb-api (/api/v1/master/trading).
+RUTAS_PRIVADAS = {RUTA_TRADING_RESUMEN, RUTA_PANEL_RESUMEN, RUTA_PANEL_RESUMEN_JSON}
+
+
+def clave_servicio_ok(headers: dict) -> bool:
+    import hmac
+
+    esperada = os.environ.get("MTB_SERVICE_KEY", "")
+    recibida = next((v for k, v in headers.items() if k.lower() == "x-mtb-service-key"), "") or ""
+    return bool(esperada) and hmac.compare_digest(recibida.encode(), esperada.encode())
 
 _HTML_TEMPLATE = """<!doctype html>
 <html lang="es">
@@ -298,6 +309,9 @@ class Handler(BaseHTTPRequestHandler):
         if ruta == RUTA_DEMO_STATUS:
             qs = {k: v[0] for k, v in parse_qs(partes.query).items()}
             status, body = procesar(qs)
+        elif ruta in RUTAS_PRIVADAS and not clave_servicio_ok(dict(self.headers)):
+            self._responder(401, {"error": "se requiere X-MTB-Service-Key"})
+            return
         elif ruta == RUTA_TRADING_RESUMEN:
             try:
                 status, body = 200, trading_resumen()
@@ -383,6 +397,17 @@ def demo() -> None:
 
     status, body = procesar({"dias": "no-es-numero"})
     assert status == 400 and "error" in body
+
+    previa = os.environ.pop("MTB_SERVICE_KEY", None)
+    try:
+        assert not clave_servicio_ok({"X-MTB-Service-Key": ""})  # sin clave configurada falla cerrado
+        os.environ["MTB_SERVICE_KEY"] = "svc"
+        assert clave_servicio_ok({"x-mtb-service-key": "svc"})
+        assert not clave_servicio_ok({}) and not clave_servicio_ok({"X-MTB-Service-Key": "otra"})
+    finally:
+        os.environ.pop("MTB_SERVICE_KEY", None)
+        if previa is not None:
+            os.environ["MTB_SERVICE_KEY"] = previa
 
     print(f"servidor_local.demo() OK — calcular_resumen pasa; resumen_todas requiere MT5 en vivo")
 

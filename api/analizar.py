@@ -19,6 +19,7 @@ despacha por path hacia la lógica de cada endpoint:
   GET /api/v1/mi-robot?simbolo&temporalidad&modo&capital — ficha de descarga (.ex5 con presets), ver api/alumnos.py
   POST /api/v1/telegram/enlace y /api/v1/telegram/enviar (X-MTB-Service-Key), POST /api/v1/vincular-telegram (cookie) — ver api/alumnos.py
   GET /api/v1/estado-carga (X-MTB-Service-Key) — avance de la carga historica y del backtest largo — ver api/estado_carga.py
+  GET /api/v1/master/trading (X-Admin-Key) — posiciones e historial de las cuentas demo del Master Trader — ver api/master_trading.py
   GET /api/v1/reporte-setups — setups vigentes de todos los activos para T-01 (X-MTB-Service-Key), ver api/reporte.py
   /api/setups pasa antes por api.licencias.gate_setups (licencia o clave de servicio)
 """
@@ -48,6 +49,7 @@ RUTA_TELEGRAM_ENLACE = "/api/v1/telegram/enlace"
 RUTA_VINCULAR_TELEGRAM = "/api/v1/vincular-telegram"
 RUTA_TELEGRAM_ENVIAR = "/api/v1/telegram/enviar"
 RUTA_ESTADO_CARGA = "/api/v1/estado-carga"
+RUTA_MASTER_TRADING = "/api/v1/master/trading"
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -129,6 +131,10 @@ class handler(BaseHTTPRequestHandler):
             from api.estado_carga import procesar as procesar_estado_carga
 
             status, body = procesar_estado_carga(dict(self.headers))
+        elif ruta == RUTA_MASTER_TRADING:
+            from api.master_trading import procesar as procesar_master_trading
+
+            status, body = procesar_master_trading(dict(self.headers))
         else:
             status, body = 200, {"uso": "POST /api/analizar con {'ohlc': [...]}. GET/POST /api/setups, /api/tendencia, /api/backtest, /api/catalogo — ver README"}
         self._responder(status, body)
