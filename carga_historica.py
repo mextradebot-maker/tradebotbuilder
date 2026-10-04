@@ -64,7 +64,8 @@ def cargar_bloque(simbolo: str, serie: str, ahora, descargar, estado: dict) -> s
     """Baja UN bloque hacia atras desde la cobertura registrada. Devuelve:
     "ok" (bloque guardado), "completa" (objetivo alcanzado o fin de la historia), "vacio" (sin datos: se
     reintenta en otra pasada; vacio VACIOS_FIN_HISTORIA veces seguidas = inicio de la historia) o "falla" (descarga truncada: no se
-    guarda ni se registra, se reintenta luego). `estado` cuenta los vacios por serie (en memoria)."""
+    guarda ni se registra, se reintenta luego). Los vacios se cuentan en velas_carga (sobreviven a un reinicio);
+    `estado` (en memoria) solo cuenta las descargas truncadas."""
     from conectividad import almacen, historico
 
     ahora, clave = pd.Timestamp(ahora), (simbolo, serie)
@@ -77,8 +78,8 @@ def cargar_bloque(simbolo: str, serie: str, ahora, descargar, estado: dict) -> s
     ini = fin - BLOQUE[serie]
     if limite is not None:
         ini = max(ini, limite)
-    kv, kf = ("vacio", clave), ("falla", clave)
-    ultimo = estado.get(kv)  # (vacios contados, cuando se conto el ultimo)
+    kf = ("falla", clave)
+    ultimo = almacen.vacios(simbolo, serie)  # (vacios contados, cuando se conto el ultimo); en la BD: sobrevive reinicios
     if ultimo is not None and ahora - ultimo[1] < ESPERA_VACIO:
         return "vacio"  # sin descargar: los vacios solo cuentan con >= 1 h de separacion (fallas transitorias)
     df = descargar(ini, fin)
@@ -88,18 +89,19 @@ def cargar_bloque(simbolo: str, serie: str, ahora, descargar, estado: dict) -> s
             return "vacio"
         if not descargar(ahora - SONDA, ahora).empty:  # Dukascopy responde: el vacio es real (o esporadico)
             n = (ultimo[0] if ultimo else 0) + 1
-            estado[kv] = (n, ahora)
+            almacen.registrar_vacios(simbolo, serie, n, ahora)
             if n < VACIOS_FIN_HISTORIA:
                 log.info("carga historica %s %s: bloque %s..%s sin datos (%d/%d), se reintenta despues",
                          simbolo, serie, ini, fin, n, VACIOS_FIN_HISTORIA)
                 return "vacio"
-            estado.pop(kv, None)
+            almacen.registrar_vacios(simbolo, serie, 0)
             almacen.marcar_completa(simbolo, serie)
             log.info("carga historica %s %s: completa (inicio de la historia en %s)", simbolo, serie, fin)
             return "completa"
         log.warning("carga historica %s %s: la sonda reciente tambien vino vacia (Dukascopy caido?); no cuenta", simbolo, serie)
         return "vacio"
-    estado.pop(kv, None)
+    if ultimo is not None:
+        almacen.registrar_vacios(simbolo, serie, 0)
     if historico.truncada(simbolo, df, historico._BASE[serie][1], fin, ahora):
         fallas = estado.get(kf, 0)
         if fallas < MAX_FALLAS:
@@ -273,7 +275,9 @@ def demo() -> None:
         n = len(f.calls)
         assert cargar_bloque(sim, "15m", ahora + h1 / 2, f, est) == "vacio" and len(f.calls) == n  # < 1 h: ni descarga ni cuenta
         assert cargar_bloque(sim, "15m", ahora + h1, f, est) == "vacio" and (sim, "15m") not in almacen.completas()
-        assert cargar_bloque(sim, "15m", ahora + 2 * h1, f, est) == "completa"
+        assert almacen.vacios(sim, "15m") == (2, ahora + h1)
+        assert cargar_bloque(sim, "15m", ahora + 2 * h1, f, {}) == "completa"  # estado nuevo (reinicio): la cuenta sigue
+        assert almacen.vacios(sim, "15m") is None
         assert (sim, "15m") in almacen.completas() and almacen.carga(sim, "15m")[0] == ahora - pd.Timedelta(days=60)
         assert n_filas("15m") == len(f.h)
         # vacio esporadico: la siguiente descarga trae datos y el contador se reinicia
@@ -282,7 +286,7 @@ def demo() -> None:
         est = {}
         assert [cargar_bloque(sim, "15m", ahora, f, est) for _ in range(3)] == ["ok", "ok", "vacio"]
         assert cargar_bloque(sim, "15m", ahora + h1, f, est) == "ok"
-        assert ("vacio", (sim, "15m")) not in est and (sim, "15m") not in almacen.completas()
+        assert almacen.vacios(sim, "15m") is None and (sim, "15m") not in almacen.completas()
         assert almacen.carga(sim, "15m")[0] == ahora - pd.Timedelta(days=90)
         # caida de Dukascopy: la sonda reciente tambien viene vacia -> no cuenta, nunca marca completa
         limpiar()
@@ -292,7 +296,7 @@ def demo() -> None:
         assert cargar_bloque(sim, "15m", ahora, f, est) == "ok"
         caido["si"] = True
         assert [cargar_bloque(sim, "15m", ahora + i * h1, f, est) for i in range(1, 7)] == ["vacio"] * 6
-        assert est == {} and (sim, "15m") not in almacen.completas()
+        assert est == {} and almacen.vacios(sim, "15m") is None and (sim, "15m") not in almacen.completas()
         # el primer bloque (sin cobertura) vacio jamas marca completa
         limpiar()
         f = Fake("15m", 0)

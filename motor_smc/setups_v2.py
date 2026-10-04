@@ -167,9 +167,11 @@ def evaluar(c: dict, ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, ve
     es_reversion = c["tipo"] == "reversion"
     # swing_highs_lows borra swings consecutivos del mismo tipo mirando swings posteriores: para R6 y
     # las divergencias se recalculan solo con lo visible en indice_conocido (el recorte empieza en 0,
-    # así que los índices posicionales coinciden). Memoizado por conocido.
+    # así que los índices posicionales coinciden). Memo de UNA entrada (el ultimo conocido): guardar uno por
+    # conocido crece como candidatos x velas (15m de 3 años: ~3 GB) y tumbaba el servicio.
     swings = pre["swings"].get(conocido)
     if swings is None:
+        pre["swings"].clear()
         swings = pre["swings"][conocido] = smc.swing_highs_lows(ohlc.iloc[: conocido + 1], swing_length=swing_length)
     reglas = {
         "R1": R.r1_volumen(ohlc, c["indice_barrido"], vela) if es_reversion else R.NO_APLICA,
@@ -208,7 +210,10 @@ def detectar_setups_v2(ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, 
     pre = _precalculo(ohlc, ohlc_mayor, vela_mayor)
     candidatos = (candidatos_reversion(ohlc, res, swing_length, pre["atr"])
                   + candidatos_continuacion(ohlc, res, swing_length, pre["atr"]))
-    filas = [evaluar(c, ohlc, ohlc_mayor, vela, vela_mayor, res, swing_length, pre) for c in candidatos]
+    filas = [None] * len(candidatos)
+    # en orden de indice_conocido para que el memo de swings sirva; las filas vuelven a su orden original
+    for i in sorted(range(len(candidatos)), key=lambda i: candidatos[i]["indice_conocido"]):
+        filas[i] = evaluar(candidatos[i], ohlc, ohlc_mayor, vela, vela_mayor, res, swing_length, pre)
     return pd.DataFrame(filas, columns=COLUMNAS).sort_values("indice_conocido", ignore_index=True)
 
 

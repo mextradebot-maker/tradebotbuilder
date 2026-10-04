@@ -140,6 +140,15 @@ _SQL = [
     )
     """,
 
+    # vacios seguidos del bloque mas viejo (carga_historica: fin de la historia); en la BD para que un reinicio
+    # del servicio no vuelva a empezar la cuenta
+    """
+    ALTER TABLE velas_carga ADD COLUMN IF NOT EXISTS vacios int NOT NULL DEFAULT 0
+    """,
+    """
+    ALTER TABLE velas_carga ADD COLUMN IF NOT EXISTS ultimo_vacio timestamptz
+    """,
+
     # -- Backtest largo semanal (backtest_largo.py) --
     """
     CREATE TABLE IF NOT EXISTS backtest_largo (

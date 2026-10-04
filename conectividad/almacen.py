@@ -113,6 +113,21 @@ def marcar_completa(simbolo: str, serie: str) -> None:
                      "ON CONFLICT (simbolo, serie) DO UPDATE SET completa = true", (simbolo, serie))
 
 
+def vacios(simbolo: str, serie: str):
+    """(vacios seguidos contados, cuando se conto el ultimo) del bloque mas viejo, o None si no hay cuenta."""
+    with get_conn() as conn:
+        f = conn.execute("SELECT vacios, ultimo_vacio FROM velas_carga WHERE simbolo = %s AND serie = %s",
+                         (simbolo, serie)).fetchone()
+    return None if f is None or not f[0] else (f[0], _utc(f[1]))
+
+
+def registrar_vacios(simbolo: str, serie: str, n: int, cuando=None) -> None:
+    """Guarda la cuenta de vacios (n=0 la reinicia). Solo sobre una fila existente: el primer bloque nunca cuenta."""
+    with get_conn() as conn:
+        conn.execute("UPDATE velas_carga SET vacios = %s, ultimo_vacio = %s WHERE simbolo = %s AND serie = %s",
+                     (n, None if cuando is None else _utc(cuando), simbolo, serie))
+
+
 def completas() -> set:
     """{(simbolo, serie)} con la carga historica terminada."""
     with get_conn() as conn:

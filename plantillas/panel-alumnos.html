@@ -627,7 +627,7 @@ function rankClass(r){
 function verdictBadgeHtml(v){
   if (v === 'RECOMENDABLE' || v === 'recomendable') return '<span class="mtb-verdict v-rec">✓ Recomendable</span>';
   if (v === 'NO_RECOMENDABLE' || v === 'no_recomendable') return '<span class="mtb-verdict v-norec">✕ No recomendable</span>';
-  return '<span class="mtb-verdict v-insuf">⚠ Datos insuficientes</span>';
+  return '<span class="mtb-verdict v-insuf">⚠ Pocas señales históricas</span>';
 }
 function tarjetaResumenHtml(a){
   var rClass = rankClass(a.rank || a.ranking || 1);
