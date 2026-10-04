@@ -1576,7 +1576,7 @@ function rankClass(r){
 function verdictBadgeHtml(v){
   if (v === 'RECOMENDABLE' || v === 'recomendable') return '<span class="mtb-verdict v-rec">✓ Recomendable</span>';
   if (v === 'NO_RECOMENDABLE' || v === 'no_recomendable') return '<span class="mtb-verdict v-norec">✕ No recomendable</span>';
-  return '<span class="mtb-verdict v-insuf">⚠ Datos insuficientes</span>';
+  return '<span class="mtb-verdict v-insuf">⚠ Pocas señales históricas</span>';
 }
 function tarjetaResumenHtml(a){
   var rankBadge = a.rank ? '<span class="mtb-rank-badge ' + rankClass(a.rank) + '">#' + a.rank + '</span>' : '';
@@ -2307,7 +2307,7 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
     const v = String(f.veredicto || '').trim(), u = v.toUpperCase();
     if (u === 'RECOMENDABLE') return 'Recomendable';
     if (u === 'NO_RECOMENDABLE') return 'No recomendable';
-    if (u === 'INSUFICIENTE') return 'Datos insuficientes';
+    if (u === 'INSUFICIENTE') return 'Pocas señales históricas';
     return v || (f.viable === true ? 'Recomendable' : 'No recomendable');
   }
   function monto() { const n = Number(st.monto); return st.monto !== '' && Number.isFinite(n) && n >= MONTO_MIN ? n : null; }
