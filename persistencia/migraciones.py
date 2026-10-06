@@ -271,6 +271,18 @@ _SQL = [
         PRIMARY KEY (correo, modo, simbolo, temporalidad)
     )
     """,
+    # robots que el admin bajó por licencia (boton Robot): las licencias de admin no tienen correo,
+    # asi que no aparecen en descargas. NO cuentan para los limites de alumnos; solo alimentan el
+    # "un clic" del modal Robot.
+    """
+    CREATE TABLE IF NOT EXISTS licencias_robots (
+        licencia_id  bigint      NOT NULL REFERENCES licencias(id) ON DELETE CASCADE,
+        simbolo      text        NOT NULL,
+        temporalidad text        NOT NULL,
+        creada_en    timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (licencia_id, simbolo, temporalidad)
+    )
+    """,
     # ── Etapa 2: temporalidades canonicas (idempotente: se corre en cada arranque) ──
     # 1) catalogo: 7 canonicas por simbolo con filas viejas, heredando fecha_inicio
     #    (Scalping 30m entra inactiva); sin filas viejas no hace nada.

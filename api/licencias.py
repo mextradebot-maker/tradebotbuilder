@@ -162,21 +162,36 @@ def modo_de_tipo(tipo: str) -> str:
 
 
 def _con_robots(estado: dict) -> dict:
-    """Cada licencia del panel admin lleva `robots`: lo que ese alumno ya bajó desde la ficha en su modo,
-    para que el boton Robot ofrezca "Oro (XAUUSD) · Swing (S)" en un clic en vez de volver a elegir."""
+    """Cada licencia del panel admin lleva `robots` para que el boton Robot ofrezca "Oro (XAUUSD) · Swing (S)"
+    en un clic en vez de volver a elegir. Junta (sin repetir, más reciente primero):
+      - lo que el admin ya bajó para ESA licencia (licencias_robots; las de admin no tienen correo), y
+      - lo que su alumno bajó desde la ficha (descargas por correo, en el modo de la licencia).
+    """
     from api.catalogo import robot_legible
 
     lics = estado.get("licencias") or []
     try:
+        from persistencia import licencias
+
+        por_licencia = licencias.robots_de_licencias([l.get("id") for l in lics])
+    except Exception:  # sin la tabla o BD caída: el panel sigue, el modal cae a los selectores
+        por_licencia = []
+    try:
         from persistencia import membresias
 
-        filas = membresias.robots_de_correos([l.get("correo") for l in lics])
-    except Exception:  # sin la tabla o BD caída: el panel sigue, el modal cae a los selectores
-        filas = []
+        por_correo = membresias.robots_de_correos([l.get("correo") for l in lics])
+    except Exception:
+        por_correo = []
     for l in lics:
         correo, modo = str(l.get("correo") or "").strip().lower(), modo_de_tipo(l.get("tipo"))
-        l["robots"] = [robot_legible(f["simbolo"], f["temporalidad"]) for f in filas
-                       if correo and f["correo"] == correo and f["modo"] == modo]
+        filas = [f for f in por_licencia if f["licencia_id"] == l.get("id")] + \
+                [f for f in por_correo if correo and f["correo"] == correo and f["modo"] == modo]
+        filas.sort(key=lambda f: str(f.get("creada_en") or ""), reverse=True)
+        vistos, l["robots"] = set(), []
+        for f in filas:
+            if (f["simbolo"], f["temporalidad"]) not in vistos:
+                vistos.add((f["simbolo"], f["temporalidad"]))
+                l["robots"].append(robot_legible(f["simbolo"], f["temporalidad"]))
     return estado
 
 
@@ -281,6 +296,10 @@ def procesar_robot(datos: dict, headers: dict) -> tuple[int, bytes | dict]:
         return status, cuerpo
     from persistencia import licencias
 
+    try:  # para el "un clic" del modal la proxima vez; NO cuenta en los limites de alumnos (tabla aparte)
+        licencias.registrar_robot(int(datos["id"]), simbolo, temporalidad)
+    except Exception:  # el .ex5 ya está: no se pierde la descarga por no poder anotarla
+        pass
     try:
         cuenta = licencias.cuenta_de_licencia(int(datos["id"]))
     except Exception:  # el .ex5 ya está: el nombre cae a MTB_lic<id> antes que perder la descarga
@@ -344,22 +363,31 @@ def demo() -> None:
             # listado admin: cada licencia trae los robots que su alumno ya bajó (en el modo de la licencia)
             falso.estado_panel = lambda: {"licencias": [
                 {"id": 1, "tipo": "demo", "correo": "Ana@x.com"}, {"id": 2, "tipo": "vip", "correo": "ana@x.com"},
-                {"id": 3, "tipo": "real", "correo": None}], "eventos": []}
-            bajadas = [{"correo": "ana@x.com", "modo": "demo", "simbolo": "XAUUSD", "temporalidad": "Swing (S)"},
-                       {"correo": "ana@x.com", "modo": "real", "simbolo": "US30", "temporalidad": "Intraday 4H"},
-                       {"correo": "otro@x.com", "modo": "demo", "simbolo": "EURUSD", "temporalidad": "Intraday 1H"}]
-            pedidos_correos = []
+                {"id": 3, "tipo": "real", "correo": None}, {"id": 4, "tipo": "real", "correo": None}], "eventos": []}
+            bajadas = [{"correo": "ana@x.com", "modo": "demo", "simbolo": "XAUUSD", "temporalidad": "Swing (S)", "creada_en": "2026-10-02"},
+                       {"correo": "ana@x.com", "modo": "real", "simbolo": "US30", "temporalidad": "Intraday 4H", "creada_en": "2026-10-01"},
+                       {"correo": "otro@x.com", "modo": "demo", "simbolo": "EURUSD", "temporalidad": "Intraday 1H", "creada_en": "2026-10-01"}]
+            del_admin = [{"licencia_id": 3, "simbolo": "XAUUSD", "temporalidad": "Swing (S)", "creada_en": "2026-10-06"},
+                         {"licencia_id": 2, "simbolo": "US30", "temporalidad": "Intraday 4H", "creada_en": "2026-10-05"},
+                         {"licencia_id": 2, "simbolo": "BTCUSD", "temporalidad": "Intraday D", "creada_en": "2026-09-30"}]
+            pedidos_correos, pedidos_ids = [], []
+            falso.robots_de_licencias = lambda ids: (pedidos_ids.append(sorted(ids)), del_admin)[1]
             _s.modules["persistencia"].membresias = _t.SimpleNamespace(
                 robots_de_correos=lambda cs: (pedidos_correos.append(sorted(c for c in cs if c)), bajadas)[1])
             _s.modules["persistencia.membresias"] = _s.modules["persistencia"].membresias
             st, est = procesar_admin("GET", {}, h)
-            r = {l["id"]: l["robots"] for l in est["licencias"]}
-            assert st == 200 and [x["etiqueta"] for x in r[1]] == ["Oro (XAUUSD) · Swing (S)"], r
-            assert [x["etiqueta"] for x in r[2]] == ["Dow Jones 30 (US30) · Intraday 4H"] and r[3] == [], r
-            assert pedidos_correos == [["Ana@x.com", "ana@x.com"]], pedidos_correos  # una sola consulta
+            r = {l["id"]: [x["etiqueta"] for x in l["robots"]] for l in est["licencias"]}
+            assert st == 200 and r[1] == ["Oro (XAUUSD) · Swing (S)"], r
+            # licencia de admin sin correo (el caso de prod): lo que el admin ya bajó para ella
+            assert r[3] == ["Oro (XAUUSD) · Swing (S)"] and r[4] == [], r
+            # se juntan admin + ficha, sin repetir, más reciente primero
+            assert r[2] == ["Dow Jones 30 (US30) · Intraday 4H", "Bitcoin (BTCUSD) · Intraday D"], r
+            assert pedidos_correos == [["Ana@x.com", "ana@x.com"]] and pedidos_ids == [[1, 2, 3, 4]]  # una consulta c/u
             _s.modules["persistencia"].membresias = _t.SimpleNamespace(
                 robots_de_correos=lambda cs: (_ for _ in ()).throw(RuntimeError("BD caída")))
             _s.modules["persistencia.membresias"] = _s.modules["persistencia"].membresias
+            assert [x["simbolo"] for x in procesar_admin("GET", {}, h)[1]["licencias"][2]["robots"]] == ["XAUUSD"]
+            falso.robots_de_licencias = lambda ids: (_ for _ in ()).throw(RuntimeError("BD caída"))
             assert all(l["robots"] == [] for l in procesar_admin("GET", {}, h)[1]["licencias"])  # el panel no se cae
             assert procesar_admin("POST", {"accion": "liberar", "id": 7}, h) == (200, {"ok": True})
             assert procesar_admin("POST", {"accion": "emitir", "cliente": "x", "cuenta": "", "tipo": "demo", "robot": "r"}, h)[0] == 200
@@ -368,6 +396,8 @@ def demo() -> None:
             # robot personalizado: regenera el token y lo manda al compilador
             falso.token_de_licencia = lambda i: "MTB-ABCDE-FGHJK-LMNPQ-RS234"
             falso.cuenta_de_licencia = lambda i: 108460538
+            anotados = []
+            falso.registrar_robot = lambda i, s, t: anotados.append((i, s, t))
             enviados = []
             global _pedir_compilacion
             original_pedir = _pedir_compilacion
@@ -402,9 +432,14 @@ def demo() -> None:
                 # listo para arrastrar: simbolo + temporalidad viajan al compilador, capital NO
                 # (InpCapital se queda en 0 = balance de la cuenta) y el nombre identifica el terminal
                 enviados.clear()
+                assert anotados == []  # 400, 401 y compilador viejo: no se anota nada
                 st, cuerpo = procesar_robot({"id": "3", "simbolo": "XAUUSD", "temporalidad": "Swing (S)"}, h)
                 assert st == 200 and cuerpo == {"ex5": b"EX5P", "nombre": "MTB_108460538_XAUUSD_SwingS.ex5"}, cuerpo
                 assert enviados == [{"simbolo": "XAUUSD", "temporalidad": "Swing (S)"}], enviados
+                assert anotados == [(3, "XAUUSD", "Swing (S)")], anotados  # por licencia, no en descargas (limites)
+                falso.registrar_robot = lambda i, s, t: (_ for _ in ()).throw(RuntimeError("BD caída"))
+                assert procesar_robot({"id": "3", "simbolo": "XAUUSD", "temporalidad": "Swing (S)"}, h)[0] == 200
+                falso.registrar_robot = lambda i, s, t: anotados.append((i, s, t))
 
                 # presets a medias o fuera del catalogo: 400 antes de tocar el compilador
                 enviados.clear()

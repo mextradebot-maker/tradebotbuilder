@@ -122,7 +122,7 @@ def robots_descargados(correo: str, modo: str) -> set[tuple[str, str]]:
 
 
 def robots_de_correos(correos) -> list[dict]:
-    """Robots ya bajados desde la ficha, más reciente primero: [{correo, modo, simbolo, temporalidad}].
+    """Robots ya bajados desde la ficha, más reciente primero: [{correo, modo, simbolo, temporalidad, creada_en}].
 
     Una sola consulta para varios correos (panel admin) o uno (Mis robots del alumno).
     """
@@ -131,9 +131,9 @@ def robots_de_correos(correos) -> list[dict]:
         return []
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT correo, modo, simbolo, temporalidad FROM descargas WHERE correo = ANY(%s) ORDER BY creada_en DESC",
+            "SELECT correo, modo, simbolo, temporalidad, creada_en FROM descargas WHERE correo = ANY(%s) ORDER BY creada_en DESC",
             (correos,)).fetchall()
-    return [{"correo": r[0], "modo": r[1], "simbolo": r[2], "temporalidad": r[3]} for r in rows]
+    return [{"correo": r[0], "modo": r[1], "simbolo": r[2], "temporalidad": r[3], "creada_en": r[4]} for r in rows]
 
 
 def registrar_descarga(correo: str, modo: str, simbolo: str, temporalidad: str) -> None:
