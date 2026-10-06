@@ -189,3 +189,18 @@ vela nueva de su temporalidad (reemplaza el workflow n8n "MTB Refrescar Snapshot
 Variables del servicio: `DATABASE_URL`, `MTB_ADMIN_KEY`, `MTB_SERVICE_KEY`, opcionales
 `MTB_TELEGRAM_BOT_TOKEN` (token del bot para `POST /api/v1/telegram/enviar`, el menu con teclado dinamico de T-04), `N8N_URL`, `REFRESCO_ACTIVO=0`, `PORT` (8000). Build: `Dockerfile` (dependencias de `uv.lock`).
 Prueba local: `REFRESCO_ACTIVO=0 python app.py`.
+
+## Coordinador del Master Trader en el VPS Windows
+
+La tarea programada `MTB-Coordinador` corre `python run_coordinador.py` cada 15 min en `C:\MTB`
+(ver `setup_coordinador_task.ps1`). Necesita una terminal MT5 de XM abierta y logueada, y en el
+`.env` del VPS `DATABASE_URL` + `XM_LOGIN/XM_PASSWORD/XM_SERVER` (y `XM_LOGIN_2..5` para las demás
+cuentas). Sincroniza `posiciones_abiertas` e `historial_posiciones`, que es lo que ve
+`/api/v1/master/trading` en `master.html`.
+
+Cada ciclo deja un latido en `log_coordinador`: `CICLO_OK` cuando terminó, `ERROR_CICLO` con el
+motivo cuando MT5 no responde, `ERROR_CUENTA` / `ERROR_CONEXION_CUENTA` cuando falla una cuenta
+sola. Si no aparece ningún renglón nuevo, la tarea no está corriendo:
+`Get-ScheduledTask -TaskName MTB-Coordinador | Get-ScheduledTaskInfo` y
+`Start-ScheduledTask -TaskName MTB-Coordinador` en PowerShell. Autoverificación del módulo,
+sin MT5 ni Postgres: `python -m coordinador.coordinador`.
