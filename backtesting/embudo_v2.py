@@ -10,7 +10,7 @@ Uso: PYTHONIOENCODING=utf-8 .venv/Scripts/python -m backtesting.embudo_v2 [SIMBO
 import sys
 from datetime import datetime, timedelta, timezone
 
-from api.setups import DIAS_POR_TEMPORALIDAD, PERFIL_A_VELAS_V2, VELA_A_INTERVALO
+from api.setups import DIAS_POR_TEMPORALIDAD, PERFIL_A_VELAS_V2, VELA_A_INTERVALO, inicio_mayor
 from backtesting.backtest import backtest_v2
 from conectividad import TEMPORALIDADES, obtener_velas
 from motor_smc.setups_v2 import detectar_setups_v2, embudo
@@ -23,7 +23,8 @@ def correr(simbolo: str, perfil: str) -> dict:
     fin = datetime.now(timezone.utc)
     inicio = fin - timedelta(days=DIAS_POR_TEMPORALIDAD[perfil])
     ohlc = obtener_velas(simbolo, inicio, fin, intervalo=VELA_A_INTERVALO[vela])
-    ohlc_mayor = ohlc if vela_mayor == vela else obtener_velas(simbolo, inicio, fin, intervalo=VELA_A_INTERVALO[vela_mayor])
+    ohlc_mayor = ohlc if vela_mayor == vela else obtener_velas(simbolo, inicio_mayor(inicio, vela_mayor), fin,
+                                                                           intervalo=VELA_A_INTERVALO[vela_mayor])
     setups = detectar_setups_v2(ohlc, ohlc_mayor, vela, vela_mayor)
     invalidos_sin_razon = setups[~setups["valido"].astype(bool) & (setups["razon_descarte"] == "")]
     assert invalidos_sin_razon.empty, f"{simbolo} {perfil}: descartes sin razón"
