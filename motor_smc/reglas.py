@@ -194,6 +194,24 @@ class ContextoMayor:
         return "sin_definir", alto, bajo
 
 
+def zona_usada(ohlc: pd.DataFrame, desde: int, conocido: int, entrada: float, extremo: float, direccion: str) -> str | None:
+    """Razón de descarte si, entre `desde` (la zona ya existe) y `conocido` (el setup se confirma), el precio
+    ya llegó a la entrada o cerró más allá del extremo de la zona: esa orden se habría llenado o invalidado
+    antes de existir. None si la zona sigue intacta."""
+    if desde > conocido:
+        return None
+    v = ohlc.iloc[desde : conocido + 1]
+    long = direccion == "long"
+    toca = ((v["low"] <= entrada) if long else (v["high"] >= entrada)).to_numpy()
+    rompe = ((v["close"] < extremo) if long else (v["close"] > extremo)).to_numpy()
+    usada = np.flatnonzero(toca | rompe)
+    if len(usada) == 0:
+        return None
+    p = int(usada[0])
+    que = "cerró más allá de la zona" if rompe[p] else "tocó la entrada"
+    return f"zona ya usada antes de confirmarse: el precio {que} en {v.index[p]}"
+
+
 def r4_estructura(mayor: pd.DataFrame, direccion: str, vela_mayor: str, contexto: tuple | None = None) -> dict:
     if mayor.empty:
         return _res(False, None, "sin velas cerradas de la temporalidad mayor")

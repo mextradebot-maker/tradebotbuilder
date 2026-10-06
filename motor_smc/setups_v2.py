@@ -182,6 +182,11 @@ def evaluar(c: dict, ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, ve
         "R6": R.r6_tp_liquidez(ohlc, swings, conocido, c["entrada"], c["stop"], d, swing_length),
     }
     fallas = [f"{nombre}: {r['razon']}" for nombre, r in reglas.items() if r["cumple"] is False]
+    # la zona existe desde j+2 (el FVG en j se completa en j+1) o, en continuación, desde la vela que rompe
+    desde = c["indice_zona"] + 2 if es_reversion else k + 1
+    usada = R.zona_usada(ohlc, desde, conocido, c["entrada"], c["zona_extremo"], d)
+    if usada:
+        fallas.insert(0, usada)
     div_rsi, div_macd = (_divergencias(ohlc, swings, c["indice_barrido"], d, pre["rsi"], pre["macd"])
                          if es_reversion else (None, None))
     direccion_num = 1 if d == "long" else -1
@@ -228,6 +233,7 @@ def embudo(setups: pd.DataFrame) -> dict:
                 regla: int(sum(1 for r in sub["reglas"] if r[regla]["cumple"] is False))
                 for regla in ("R1", "R2", "R3", "R4", "R5", "R6")
             },
+            "zona_usada": int(sub["razon_descarte"].str.startswith("zona ya usada").sum()) if len(sub) else 0,
             "validos": int(sub["valido"].sum()) if len(sub) else 0,
         }
     return salida
@@ -326,6 +332,22 @@ def demo() -> None:
     assert candidatos_reversion(ohlc_f, res_f, swing_length=1) == []
     res_f["fvg"].loc[23, ["FVG", "Top", "Bottom"]] = [1, 105.0, 103.0]  # j = 23: completo en 24
     assert [c["indice_zona"] for c in candidatos_reversion(ohlc_f, res_f, swing_length=1)] == [23]
+
+    # zona ya usada: si antes de confirmarse (conocido 29) el precio ya llegó a la entrada (104) o cerró bajo
+    # el FVG (103), la orden se habría llenado o invalidado antes de existir -> descartado con su razón
+    ohlc_u = ohlc.copy()
+    ohlc_u.iloc[24:30, :4] = (107.0, 108.0, 106.0, 107.5)  # tras el FVG el precio sigue arriba de la zona
+    assert R.zona_usada(ohlc_u, 24, 29, 104.0, 103.0, "long") is None
+    assert "zona ya usada" not in evaluar(rev[0], ohlc_u, mayor_pasado, "15m", "1H", res, 3)["razon_descarte"]
+    ohlc_u.iloc[27, ohlc_u.columns.get_loc("low")] = 103.8  # mecha hasta la entrada
+    ev_u = evaluar(rev[0], ohlc_u, mayor_pasado, "15m", "1H", res, 3)
+    assert ev_u["valido"] is False and ev_u["razon_descarte"].startswith("zona ya usada"), ev_u["razon_descarte"]
+    assert "tocó la entrada" in ev_u["razon_descarte"]
+    assert embudo(pd.DataFrame([ev_u], columns=COLUMNAS))["reversion"]["zona_usada"] == 1
+    assert R.zona_usada(ohlc_u, 28, 29, 104.0, 103.0, "long") is None  # antes de `desde` no cuenta
+    ohlc_u.iloc[27, :4] = (104.5, 104.6, 102.0, 102.5)  # cierra bajo el FVG
+    assert "cerró más allá" in R.zona_usada(ohlc_u, 24, 29, 101.0, 103.0, "long")
+    assert R.zona_usada(ohlc_u, 24, 29, 110.0, 112.0, "short") is None  # venta: zona arriba, intacta
 
     # la anotación de liquidez no usa barridos posteriores a indice_conocido
     ev_rev = evaluar(rev[0], ohlc, mayor_pasado, "15m", "1H", res, 3)          # conocido 29
