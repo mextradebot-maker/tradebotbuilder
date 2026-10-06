@@ -14,9 +14,9 @@ despacha por path hacia la lógica de cada endpoint:
   GET/POST /api/calendario?simbolo=XAUUSD&horas=24 — ver api/calendario.py
   GET/POST /api/mejor-indicador?simbolo=XAUUSD&direccion=compra — ver api/mejor_indicador.py
   POST /api/v1/auth, GET/POST /api/v1/licencias — cerebro de licencias, ver api/licencias.py
-  GET /api/v1/licencias/robot?id=N[&simbolo&temporalidad] — .ex5 personalizado y ya configurado
-      (admin), nombrado MTB_<cuenta>_<SIMBOLO>_<TF>.ex5; ver api/licencias.procesar_robot
-  GET /api/v1/mis-licencias, /api/v1/mi-robot?id=N — alumno con sesión del panel, ver api/alumnos.py
+  GET /api/v1/licencias/robot?id=N&simbolo&temporalidad — .ex5 personalizado y ya configurado
+      (admin; simbolo y temporalidad obligatorios), nombrado MTB_<cuenta>_<SIMBOLO>_<TF>.ex5; ver api/licencias.procesar_robot
+  GET /api/v1/mis-licencias (licencias + robots ya bajados) — alumno con sesión del panel, ver api/alumnos.py
   GET /api/v1/mi-robot?simbolo&temporalidad&modo&capital — ficha de descarga (.ex5 con presets), ver api/alumnos.py
   POST /api/v1/telegram/enlace y /api/v1/telegram/enviar (X-MTB-Service-Key), POST /api/v1/vincular-telegram (cookie) — ver api/alumnos.py
   GET /api/v1/estado-carga (X-MTB-Service-Key) — avance de la carga historica y del backtest largo — ver api/estado_carga.py
@@ -94,16 +94,12 @@ class handler(BaseHTTPRequestHandler):
             from api.alumnos import procesar_mi_robot
 
             status, body = procesar_mi_robot(qs, dict(self.headers))
-            if isinstance(body, bytes):
-                return self._responder_archivo(body, "MexTradeBot_SeguidorSMC.ex5")
-            if status == 200 and "ex5" in body:  # ficha de descarga: nombre y cabeceras propios
+            if status == 200 and "ex5" in body:  # ficha (y "Descargar de nuevo"): .ex5 configurado, nombre y cabeceras
                 return self._responder_archivo(body["ex5"], body["nombre"], body["cabeceras"])
         elif ruta == RUTA_ROBOT:
             from api.licencias import procesar_robot
 
             status, body = procesar_robot(qs, dict(self.headers))
-            if isinstance(body, bytes):  # respuesta vieja (sin nombre): se queda con el de siempre
-                return self._responder_archivo(body, "MexTradeBot_SeguidorSMC.ex5")
             if status == 200 and "ex5" in body:  # nombre por cuenta/simbolo/temporalidad
                 return self._responder_archivo(body["ex5"], body["nombre"], {"X-MTB-Nombre": body["nombre"]})
         elif ruta == RUTA_LICENCIAS:

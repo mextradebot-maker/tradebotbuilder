@@ -203,6 +203,27 @@ def token_de_licencia(licencia_id: int) -> str:
     return derivar_token(row[0], _secreto())
 
 
+def registrar_robot(licencia_id: int, simbolo: str, temporalidad: str) -> None:
+    """El admin bajó ese robot para esa licencia; repetirlo solo refresca la fecha (sale primero en el modal)."""
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO licencias_robots (licencia_id, simbolo, temporalidad) VALUES (%s, %s, %s)
+               ON CONFLICT (licencia_id, simbolo, temporalidad) DO UPDATE SET creada_en = now()""",
+            (licencia_id, simbolo, temporalidad))
+
+
+def robots_de_licencias(ids) -> list[dict]:
+    """[{licencia_id, simbolo, temporalidad, creada_en}], más reciente primero, en una sola consulta."""
+    ids = sorted({int(i) for i in ids if i is not None})
+    if not ids:
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT licencia_id, simbolo, temporalidad, creada_en FROM licencias_robots
+               WHERE licencia_id = ANY(%s) ORDER BY creada_en DESC""", (ids,)).fetchall()
+    return [{"licencia_id": r[0], "simbolo": r[1], "temporalidad": r[2], "creada_en": r[3]} for r in rows]
+
+
 def cuenta_de_licencia(licencia_id: int) -> int | None:
     """Cuenta MT5 amarrada a la licencia (None si todavía no se amarró) — para nombrar el .ex5."""
     with get_conn() as conn:

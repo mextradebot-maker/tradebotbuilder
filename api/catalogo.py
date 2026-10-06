@@ -23,6 +23,28 @@ SIMBOLO_XM = {
     "GOOGL": "Google", "NVDA": "Nvidia", "META": "Facebook", "WMT": "WalMart",
 }
 
+# Nombre legible, copia del catalogo de public/index.html (demo() verifica que sigan iguales).
+NOMBRE_ACTIVO = {
+    "EURUSD": "Euro / Dólar", "GBPUSD": "Libra / Dólar", "USDJPY": "Dólar / Yen", "AUDUSD": "Dólar australiano / Dólar",
+    "USDCAD": "Dólar / Dólar canadiense", "USDCHF": "Dólar / Franco suizo", "NZDUSD": "Dólar neozelandés / Dólar",
+    "EURGBP": "Euro / Libra", "EURJPY": "Euro / Yen", "GBPJPY": "Libra / Yen", "AUDJPY": "Dólar australiano / Yen",
+    "EURAUD": "Euro / Dólar australiano", "AUDCAD": "Dólar australiano / Dólar canadiense",
+    "NZDJPY": "Dólar neozelandés / Yen", "CADJPY": "Dólar canadiense / Yen",
+    "XAUUSD": "Oro", "XAGUSD": "Plata", "XPTUSD": "Platino", "XPDUSD": "Paladio",
+    "US30": "Dow Jones 30", "US100": "Nasdaq 100", "US500": "S&P 500", "GER40": "DAX 40", "UK100": "FTSE 100",
+    "JP225": "Nikkei 225", "WTIUSD": "Petróleo WTI", "BRENTUSD": "Petróleo Brent",
+    "BTCUSD": "Bitcoin", "ETHUSD": "Ethereum", "XRPUSD": "XRP",
+    "GOOGL": "Alphabet / Google", "NVDA": "NVIDIA", "META": "Meta Platforms", "WMT": "Walmart",
+}
+
+
+def robot_legible(simbolo: str, temporalidad: str) -> dict:
+    """{simbolo, temporalidad, nombre, etiqueta: "Oro (XAUUSD) · Swing (S)", simbolo_xm} para botones de descarga."""
+    nombre = NOMBRE_ACTIVO.get(simbolo) or simbolo
+    return {"simbolo": simbolo, "temporalidad": temporalidad, "nombre": nombre,
+            "etiqueta": f"{nombre} ({simbolo}) · {temporalidad}" if nombre != simbolo else f"{simbolo} · {temporalidad}",
+            "simbolo_xm": SIMBOLO_XM.get(simbolo) or ""}
+
 
 def _iso(t):
     return t.isoformat() if hasattr(t, "isoformat") else t
@@ -95,6 +117,17 @@ def demo() -> None:
     assert f["NZDUSD"]["expectativa_r"] is None and f["NZDUSD"]["fuente"] is None
     assert f["XAUUSD"]["simbolo_xm"] == "GOLD" and f["EURUSD"]["simbolo_xm"] == "EURUSD"
     assert len(SIMBOLO_XM) == 34 and SIMBOLO_XM["US500"] == "US500Cash" and SIMBOLO_XM.get("AMXL") is None
+    from pathlib import Path
+
+    from compilador import SIMBOLOS
+
+    assert set(NOMBRE_ACTIVO) == set(SIMBOLOS), set(NOMBRE_ACTIVO) ^ set(SIMBOLOS)
+    index = (Path(__file__).resolve().parent.parent / "public" / "index.html").read_text(encoding="utf-8")
+    for simbolo, nombre in NOMBRE_ACTIVO.items():  # mismo nombre que el catalogo de la web
+        assert f"['{simbolo}','{nombre}']" in index, (simbolo, nombre)
+    assert robot_legible("XAUUSD", "Swing (S)") == {"simbolo": "XAUUSD", "temporalidad": "Swing (S)", "nombre": "Oro",
+                                                    "etiqueta": "Oro (XAUUSD) · Swing (S)", "simbolo_xm": "GOLD"}
+    assert robot_legible("ZZZ", "Intraday 1H")["etiqueta"] == "ZZZ · Intraday 1H"
     print("api/catalogo demo OK")
 
 

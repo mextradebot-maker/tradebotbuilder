@@ -121,6 +121,21 @@ def robots_descargados(correo: str, modo: str) -> set[tuple[str, str]]:
     return {(r[0], r[1]) for r in rows}
 
 
+def robots_de_correos(correos) -> list[dict]:
+    """Robots ya bajados desde la ficha, más reciente primero: [{correo, modo, simbolo, temporalidad, creada_en}].
+
+    Una sola consulta para varios correos (panel admin) o uno (Mis robots del alumno).
+    """
+    correos = sorted({str(c).strip().lower() for c in correos if c})
+    if not correos:
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT correo, modo, simbolo, temporalidad, creada_en FROM descargas WHERE correo = ANY(%s) ORDER BY creada_en DESC",
+            (correos,)).fetchall()
+    return [{"correo": r[0], "modo": r[1], "simbolo": r[2], "temporalidad": r[3], "creada_en": r[4]} for r in rows]
+
+
 def registrar_descarga(correo: str, modo: str, simbolo: str, temporalidad: str) -> None:
     with get_conn() as conn:
         conn.execute("INSERT INTO descargas (correo, modo, simbolo, temporalidad) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",

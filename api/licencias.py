@@ -129,7 +129,7 @@ def procesar_admin(metodo: str, datos: dict, headers: dict) -> tuple[int, dict]:
 
     try:
         if metodo == "GET":
-            return 200, licencias.estado_panel()
+            return 200, _con_robots(licencias.estado_panel())
 
         accion = datos.get("accion")
         dias = int(datos["vigencia_dias"]) if datos.get("vigencia_dias") else None
@@ -154,6 +154,45 @@ def procesar_admin(metodo: str, datos: dict, headers: dict) -> tuple[int, dict]:
         return 400, {"error": "accion debe ser emitir | revocar | reautorizar | liberar | kill_switch"}
     except (KeyError, TypeError, ValueError) as e:
         return 400, {"error": str(e)}
+
+
+def modo_de_tipo(tipo: str) -> str:
+    """La ficha registra descargas por modo: licencia demo → 'demo'; real / vip → 'real'."""
+    return "demo" if tipo == "demo" else "real"
+
+
+def _con_robots(estado: dict) -> dict:
+    """Cada licencia del panel admin lleva `robots` para que el boton Robot ofrezca "Oro (XAUUSD) · Swing (S)"
+    en un clic en vez de volver a elegir. Junta (sin repetir, más reciente primero):
+      - lo que el admin ya bajó para ESA licencia (licencias_robots; las de admin no tienen correo), y
+      - lo que su alumno bajó desde la ficha (descargas por correo, en el modo de la licencia).
+    """
+    from api.catalogo import robot_legible
+
+    lics = estado.get("licencias") or []
+    try:
+        from persistencia import licencias
+
+        por_licencia = licencias.robots_de_licencias([l.get("id") for l in lics])
+    except Exception:  # sin la tabla o BD caída: el panel sigue, el modal cae a los selectores
+        por_licencia = []
+    try:
+        from persistencia import membresias
+
+        por_correo = membresias.robots_de_correos([l.get("correo") for l in lics])
+    except Exception:
+        por_correo = []
+    for l in lics:
+        correo, modo = str(l.get("correo") or "").strip().lower(), modo_de_tipo(l.get("tipo"))
+        filas = [f for f in por_licencia if f["licencia_id"] == l.get("id")] + \
+                [f for f in por_correo if correo and f["correo"] == correo and f["modo"] == modo]
+        filas.sort(key=lambda f: str(f.get("creada_en") or ""), reverse=True)
+        vistos, l["robots"] = set(), []
+        for f in filas:
+            if (f["simbolo"], f["temporalidad"]) not in vistos:
+                vistos.add((f["simbolo"], f["temporalidad"]))
+                l["robots"].append(robot_legible(f["simbolo"], f["temporalidad"]))
+    return estado
 
 
 def _pedir_compilacion(url: str, clave: str, token: str, presets: dict | None = None) -> tuple[bytes, bool]:
@@ -188,27 +227,35 @@ def compilar_token(token: str, presets: dict | None = None) -> tuple[int, bytes 
     return 200, ex5
 
 
+ERROR_SIN_PRESETS = ("elige el activo y la temporalidad del robot: sin ellos el .ex5 saldria con los valores "
+                     "de fabrica (XAUUSD / Intraday 1H) y habria que configurarlo a mano")
+
+
+def faltan_presets(simbolo, temporalidad) -> bool:
+    return not simbolo or not temporalidad
+
+
 def compilar_robot(licencia_id: int, simbolo=None, temporalidad=None) -> tuple[int, bytes | dict]:
     """.ex5 compilado con el token de esa licencia (lo usan el admin y "Mis robots" del alumno).
 
-    Con simbolo + temporalidad el .ex5 sale ya configurado para ese par/marco; InpCapital se queda
-    en 0 (el robot usa el balance de la cuenta). Sin ellos, el robot sale con sus valores por defecto.
+    simbolo + temporalidad son OBLIGATORIOS: el .ex5 siempre sale configurado para ese par/marco
+    (InpSimboloConsulta / InpTemporalidad / InpTF); InpCapital se queda en 0 (el robot usa el balance
+    de la cuenta). Un alumno no sabe arreglar un robot mal configurado, así que sin presets → 400, y
+    si el VPS tiene el compilador viejo (ignora presets) → 503 generador_actualizando (compilar_token).
     """
+    if faltan_presets(simbolo, temporalidad):
+        return 400, {"error": ERROR_SIN_PRESETS}
     if not os.environ.get("COMPILADOR_URL") or not os.environ.get("COMPILADOR_KEY"):
         return 503, {"error": "compilador no configurado (COMPILADOR_URL / COMPILADOR_KEY)"}
+    from compilador import validar_presets
     from persistencia import licencias
 
     try:
-        presets = None
-        if simbolo is not None or temporalidad is not None:
-            from compilador import validar_presets
-
-            simbolo, temporalidad, _ = validar_presets(simbolo, temporalidad)
-            presets = {"simbolo": simbolo, "temporalidad": temporalidad}
+        simbolo, temporalidad, _ = validar_presets(simbolo, temporalidad)
         token = licencias.token_de_licencia(int(licencia_id))
     except (TypeError, ValueError) as e:
         return 400, {"error": str(e)}
-    return compilar_token(token, presets)
+    return compilar_token(token, {"simbolo": simbolo, "temporalidad": temporalidad})
 
 
 def nombre_ex5(licencia_id, cuenta=None, simbolo=None, temporalidad=None) -> str:
@@ -229,8 +276,9 @@ def nombre_ex5(licencia_id, cuenta=None, simbolo=None, temporalidad=None) -> str
 
 
 def procesar_robot(datos: dict, headers: dict) -> tuple[int, bytes | dict]:
-    """GET /api/v1/licencias/robot?id=N[&simbolo=XAUUSD&temporalidad=Swing+(S)] (admin)
+    """GET /api/v1/licencias/robot?id=N&simbolo=XAUUSD&temporalidad=Swing+(S) (admin)
 
+    simbolo y temporalidad son obligatorios (400 sin ellos): ya no existe el robot "sin configurar".
     200 → {"ex5": bytes, "nombre": "MTB_108460538_XAUUSD_SwingS.ex5"}; api/analizar.py lo manda
     como descarga con ese nombre y la cabecera X-MTB-Nombre (la que lee el panel).
     """
@@ -241,11 +289,17 @@ def procesar_robot(datos: dict, headers: dict) -> tuple[int, bytes | dict]:
     if "id" not in datos:
         return 400, {"error": "falta id"}
     simbolo, temporalidad = datos.get("simbolo") or None, datos.get("temporalidad") or None
+    if faltan_presets(simbolo, temporalidad):  # antes de tocar el compilador
+        return 400, {"error": ERROR_SIN_PRESETS}
     status, cuerpo = compilar_robot(datos["id"], simbolo, temporalidad)
     if status != 200:
         return status, cuerpo
     from persistencia import licencias
 
+    try:  # para el "un clic" del modal la proxima vez; NO cuenta en los limites de alumnos (tabla aparte)
+        licencias.registrar_robot(int(datos["id"]), simbolo, temporalidad)
+    except Exception:  # el .ex5 ya está: no se pierde la descarga por no poder anotarla
+        pass
     try:
         cuenta = licencias.cuenta_de_licencia(int(datos["id"]))
     except Exception:  # el .ex5 ya está: el nombre cae a MTB_lic<id> antes que perder la descarga
@@ -301,11 +355,40 @@ def demo() -> None:
             liberar=lambda i: llamadas.append(("liberar", i)),
             emitir=lambda c, cu, t, r, d: (llamadas.append(("emitir", cu)) or ("MTB-T", {"id": 1})),
         )
-        previos = {k: _s.modules.get(k) for k in ("persistencia", "persistencia.licencias")}
+        previos = {k: _s.modules.get(k) for k in ("persistencia", "persistencia.licencias", "persistencia.membresias")}
         _s.modules["persistencia"] = _t.SimpleNamespace(licencias=falso)
         _s.modules["persistencia.licencias"] = falso
         try:
             h = {"X-Admin-Key": "adm"}
+            # listado admin: cada licencia trae los robots que su alumno ya bajó (en el modo de la licencia)
+            falso.estado_panel = lambda: {"licencias": [
+                {"id": 1, "tipo": "demo", "correo": "Ana@x.com"}, {"id": 2, "tipo": "vip", "correo": "ana@x.com"},
+                {"id": 3, "tipo": "real", "correo": None}, {"id": 4, "tipo": "real", "correo": None}], "eventos": []}
+            bajadas = [{"correo": "ana@x.com", "modo": "demo", "simbolo": "XAUUSD", "temporalidad": "Swing (S)", "creada_en": "2026-10-02"},
+                       {"correo": "ana@x.com", "modo": "real", "simbolo": "US30", "temporalidad": "Intraday 4H", "creada_en": "2026-10-01"},
+                       {"correo": "otro@x.com", "modo": "demo", "simbolo": "EURUSD", "temporalidad": "Intraday 1H", "creada_en": "2026-10-01"}]
+            del_admin = [{"licencia_id": 3, "simbolo": "XAUUSD", "temporalidad": "Swing (S)", "creada_en": "2026-10-06"},
+                         {"licencia_id": 2, "simbolo": "US30", "temporalidad": "Intraday 4H", "creada_en": "2026-10-05"},
+                         {"licencia_id": 2, "simbolo": "BTCUSD", "temporalidad": "Intraday D", "creada_en": "2026-09-30"}]
+            pedidos_correos, pedidos_ids = [], []
+            falso.robots_de_licencias = lambda ids: (pedidos_ids.append(sorted(ids)), del_admin)[1]
+            _s.modules["persistencia"].membresias = _t.SimpleNamespace(
+                robots_de_correos=lambda cs: (pedidos_correos.append(sorted(c for c in cs if c)), bajadas)[1])
+            _s.modules["persistencia.membresias"] = _s.modules["persistencia"].membresias
+            st, est = procesar_admin("GET", {}, h)
+            r = {l["id"]: [x["etiqueta"] for x in l["robots"]] for l in est["licencias"]}
+            assert st == 200 and r[1] == ["Oro (XAUUSD) · Swing (S)"], r
+            # licencia de admin sin correo (el caso de prod): lo que el admin ya bajó para ella
+            assert r[3] == ["Oro (XAUUSD) · Swing (S)"] and r[4] == [], r
+            # se juntan admin + ficha, sin repetir, más reciente primero
+            assert r[2] == ["Dow Jones 30 (US30) · Intraday 4H", "Bitcoin (BTCUSD) · Intraday D"], r
+            assert pedidos_correos == [["Ana@x.com", "ana@x.com"]] and pedidos_ids == [[1, 2, 3, 4]]  # una consulta c/u
+            _s.modules["persistencia"].membresias = _t.SimpleNamespace(
+                robots_de_correos=lambda cs: (_ for _ in ()).throw(RuntimeError("BD caída")))
+            _s.modules["persistencia.membresias"] = _s.modules["persistencia"].membresias
+            assert [x["simbolo"] for x in procesar_admin("GET", {}, h)[1]["licencias"][2]["robots"]] == ["XAUUSD"]
+            falso.robots_de_licencias = lambda ids: (_ for _ in ()).throw(RuntimeError("BD caída"))
+            assert all(l["robots"] == [] for l in procesar_admin("GET", {}, h)[1]["licencias"])  # el panel no se cae
             assert procesar_admin("POST", {"accion": "liberar", "id": 7}, h) == (200, {"ok": True})
             assert procesar_admin("POST", {"accion": "emitir", "cliente": "x", "cuenta": "", "tipo": "demo", "robot": "r"}, h)[0] == 200
             assert llamadas == [("liberar", 7), ("emitir", None)], llamadas
@@ -313,20 +396,30 @@ def demo() -> None:
             # robot personalizado: regenera el token y lo manda al compilador
             falso.token_de_licencia = lambda i: "MTB-ABCDE-FGHJK-LMNPQ-RS234"
             falso.cuenta_de_licencia = lambda i: 108460538
+            anotados = []
+            falso.registrar_robot = lambda i, s, t: anotados.append((i, s, t))
             enviados = []
             global _pedir_compilacion
             original_pedir = _pedir_compilacion
             _pedir_compilacion = lambda url, clave, token, presets=None: (enviados.append((url, clave, token, presets)) or (b"EX5", False))
+            listo = {"simbolo": "XAUUSD", "temporalidad": "Swing (S)"}
             try:
                 os.environ.pop("COMPILADOR_URL", None)
-                assert procesar_robot({"id": "3"}, h)[0] == 503
+                assert procesar_robot({"id": "3", **listo}, h)[0] == 503
                 os.environ["COMPILADOR_URL"], os.environ["COMPILADOR_KEY"] = "https://c/compilar", "ck"
-                st, cuerpo = procesar_robot({"id": "3"}, h)
-                assert st == 200 and cuerpo["ex5"] == b"EX5", (st, cuerpo)
-                # sin presets el robot sale con sus valores por defecto, pero el nombre ya lleva la cuenta
-                assert cuerpo["nombre"] == "MTB_108460538.ex5", cuerpo
-                assert enviados == [("https://c/compilar", "ck", "MTB-ABCDE-FGHJK-LMNPQ-RS234", None)]
-                assert procesar_robot({"id": "3"}, {"X-Admin-Key": "mala"})[0] == 401
+                # nunca un robot sin configurar: id solo, o presets vacios → 400 claro, sin llamar al compilador
+                for sin in ({}, {"simbolo": "", "temporalidad": ""}, {"simbolo": "XAUUSD", "temporalidad": ""},
+                            {"simbolo": None, "temporalidad": "Swing (S)"}):
+                    st, cuerpo = procesar_robot({"id": "3", **sin}, h)
+                    assert st == 400 and cuerpo == {"error": ERROR_SIN_PRESETS}, (sin, st, cuerpo)
+                assert compilar_robot(3) == (400, {"error": ERROR_SIN_PRESETS})
+                assert "activo y la temporalidad" in ERROR_SIN_PRESETS
+                assert enviados == [], enviados
+                assert procesar_robot({"id": "3", **listo}, {"X-Admin-Key": "mala"})[0] == 401
+                # compilador viejo (sin la marca X-Compilador-Presets): el .ex5 que ignoro los presets no sale
+                st, cuerpo = procesar_robot({"id": "3", **listo}, h)
+                assert (st, cuerpo) == (503, {"error": "generador_actualizando"}), (st, cuerpo)
+                assert enviados == [("https://c/compilar", "ck", "MTB-ABCDE-FGHJK-LMNPQ-RS234", listo)], enviados
                 # presets: sin la marca X-Compilador-Presets el .ex5 no se entrega
                 p = {"simbolo": "XAUUSD", "temporalidad": "Intraday 1H", "capital": 1000.0}
                 assert compilar_token("MTB-T", p) == (503, {"error": "generador_actualizando"})
@@ -339,13 +432,18 @@ def demo() -> None:
                 # listo para arrastrar: simbolo + temporalidad viajan al compilador, capital NO
                 # (InpCapital se queda en 0 = balance de la cuenta) y el nombre identifica el terminal
                 enviados.clear()
+                assert anotados == []  # 400, 401 y compilador viejo: no se anota nada
                 st, cuerpo = procesar_robot({"id": "3", "simbolo": "XAUUSD", "temporalidad": "Swing (S)"}, h)
                 assert st == 200 and cuerpo == {"ex5": b"EX5P", "nombre": "MTB_108460538_XAUUSD_SwingS.ex5"}, cuerpo
                 assert enviados == [{"simbolo": "XAUUSD", "temporalidad": "Swing (S)"}], enviados
+                assert anotados == [(3, "XAUUSD", "Swing (S)")], anotados  # por licencia, no en descargas (limites)
+                falso.registrar_robot = lambda i, s, t: (_ for _ in ()).throw(RuntimeError("BD caída"))
+                assert procesar_robot({"id": "3", "simbolo": "XAUUSD", "temporalidad": "Swing (S)"}, h)[0] == 200
+                falso.registrar_robot = lambda i, s, t: anotados.append((i, s, t))
 
                 # presets a medias o fuera del catalogo: 400 antes de tocar el compilador
                 enviados.clear()
-                for malo in ({"simbolo": "XAUUSD"}, {"temporalidad": "Swing (S)"}, {"simbolo": "GOLD", "temporalidad": "Swing (S)"},
+                for malo in ({}, {"simbolo": "XAUUSD"}, {"temporalidad": "Swing (S)"}, {"simbolo": "GOLD", "temporalidad": "Swing (S)"},
                              {"simbolo": "XAUUSD", "temporalidad": "Swing"}, {"simbolo": 'XAUUSD"', "temporalidad": "Swing (S)"}):
                     assert procesar_robot({"id": "3", **malo}, h)[0] == 400, malo
                 assert enviados == [], enviados
@@ -355,7 +453,7 @@ def demo() -> None:
                 assert procesar_robot({"id": "3", "simbolo": "US100", "temporalidad": "Scalping 15m"}, h)[1]["nombre"] \
                     == "MTB_lic3_US100_Scalping15m.ex5"
                 falso.cuenta_de_licencia = lambda i: (_ for _ in ()).throw(RuntimeError("BD caída"))
-                assert procesar_robot({"id": "7"}, h)[1]["nombre"] == "MTB_lic7.ex5"
+                assert procesar_robot({"id": "7", **listo}, h)[1]["nombre"] == "MTB_lic7_XAUUSD_SwingS.ex5"
                 falso.cuenta_de_licencia = lambda i: 108460538
 
                 # el nombre nunca arrastra caracteres raros al Content-Disposition
@@ -390,6 +488,8 @@ def demo() -> None:
         return _re.findall(r"'([^']*)'", bloque.group(1))
     assert _lista("MTB_SIMBOLOS") == list(SIMBOLOS), _lista("MTB_SIMBOLOS")
     assert _lista("MTB_TEMPORALIDADES") == list(TF_POR_TEMPORALIDAD), _lista("MTB_TEMPORALIDADES")
+    # el modal Robot ofrece primero los robots ya grabados (un clic) y deja los selectores tras "Otro activo"
+    assert "lic.robots" in html and "data-grabado" in html and ">Otro activo<" in html and "robotSin" not in html
     print("api.licencias.demo() OK")
 
 

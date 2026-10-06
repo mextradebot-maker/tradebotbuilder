@@ -1,8 +1,10 @@
 """Panel de Alumnos servido por mtb-api (antes era HTML fijo dentro de n8n).
 
   GET /alumnos, GET /webhook/panel-alumnos  → plantillas/panel-alumnos.html con los datos de la sesión
-  GET /api/v1/mis-licencias                → licencias del alumno (crea su DEMO la primera vez)
-  GET /api/v1/mi-robot?id=N                → .ex5 personalizado, solo de una licencia suya y vigente
+  GET /api/v1/mis-licencias                → licencias del alumno (crea su DEMO la primera vez) + `robots`:
+      los que ya bajo desde la ficha ({modo, simbolo, temporalidad, etiqueta}) para "Descargar de nuevo"
+  GET /api/v1/mi-robot?id=N                → 400: ya no existe; todo robot de alumno sale de la ficha (ya
+      configurado y contado contra los limites de su membresia)
   GET /api/v1/mi-robot?simbolo&temporalidad&modo=demo|real&capital  → .ex5 de la ficha de descarga
       (token + presets grabados; cabeceras X-MTB-Token, X-MTB-Cuenta, X-MTB-Simbolo-XM)
   POST /api/v1/telegram/enlace  (X-MTB-Service-Key) {chat_id, simbolo?, temporalidad?} → {url} firmada 7 dias
@@ -84,9 +86,14 @@ def procesar_mis_licencias(headers: dict) -> tuple[int, dict]:
         return 401, {"error": "inicia sesion en el panel"}
     from persistencia import licencias
 
+    from api.catalogo import robot_legible
+    from persistencia import membresias
+
     licencias.asegurar_licencia_demo(alumno["correo"], alumno["nombre"])
     ahora = datetime.now(timezone.utc)
     return 200, {
+        "robots": [{"modo": r["modo"], **robot_legible(r["simbolo"], r["temporalidad"])}
+                   for r in membresias.robots_de_correos([alumno["correo"]])],
         "alumno": {"nombre": alumno["nombre"], "correo": alumno["correo"]},
         "licencias": [
             {"id": l["id"], "tipo": l["tipo"], "prefijo": l["token_prefijo"], "cuenta": l["cuenta"],
@@ -96,25 +103,19 @@ def procesar_mis_licencias(headers: dict) -> tuple[int, dict]:
     }
 
 
-def procesar_mi_robot(datos: dict, headers: dict) -> tuple[int, bytes | dict]:
-    if "id" not in datos:
-        return _robot_ficha(datos, headers)
-    alumno = _alumno(headers)
-    if not alumno:
-        return 401, {"error": "inicia sesion en el panel"}
-    from api.licencias import compilar_robot
-    from persistencia import licencias
+ERROR_USA_LA_FICHA = ("descarga tu robot desde la ficha de su activo (Catalogo de activos): llega ya configurado "
+                      "con el activo y la temporalidad. Los que ya bajaste estan en Mis robots → Descargar de nuevo")
 
-    try:
-        lid = int(datos.get("id") or 0)
-    except ValueError:
-        return 400, {"error": "id invalido"}
-    lic = next((l for l in licencias.licencias_de_correo(alumno["correo"]) if l["id"] == lid), None)
-    if lic is None:  # no existe o es de otro alumno: misma respuesta, no se revela cuál
-        return 404, {"error": "licencia no encontrada"}
-    if _estado(lic, datetime.now(timezone.utc)) != "activa":
-        return 403, {"error": "tu licencia no esta vigente"}
-    return compilar_robot(lid)
+
+def procesar_mi_robot(datos: dict, headers: dict) -> tuple[int, dict]:
+    """Ficha de descarga (?simbolo&temporalidad&modo[&capital]). 200 → {"ex5", "nombre", "cabeceras"}.
+
+    ?id=N (la descarga por licencia de "Mis robots") ya no sirve a alumnos: el activo y la temporalidad
+    se eligen en la ficha, que además cuenta los limites de la membresia.
+    """
+    if "id" in datos:
+        return 400, {"error": ERROR_USA_LA_FICHA}
+    return _robot_ficha(datos, headers)
 
 
 MENSAJE_LIMITE = {
@@ -184,8 +185,9 @@ def _robot_ficha(datos: dict, headers: dict) -> tuple[int, dict]:
         return status, ex5
     membresias.registrar_descarga(alumno["correo"], modo, simbolo, temporalidad)
     tf = TF_POR_TEMPORALIDAD[temporalidad].removeprefix("PERIOD_")
-    return 200, {"ex5": ex5, "nombre": f"MexTradeBot_{simbolo}_{tf}.ex5", "cabeceras": {
-        "X-MTB-Token": token, "X-MTB-Cuenta": str(lic["cuenta"] or ""), "X-MTB-Simbolo-XM": SIMBOLO_XM.get(simbolo) or ""}}
+    nombre = f"MexTradeBot_{simbolo}_{tf}.ex5"
+    return 200, {"ex5": ex5, "nombre": nombre, "cabeceras": {
+        "X-MTB-Nombre": nombre, "X-MTB-Token": token, "X-MTB-Cuenta": str(lic["cuenta"] or ""), "X-MTB-Simbolo-XM": SIMBOLO_XM.get(simbolo) or ""}}
 
 
 # ── Telegram: el bot capta, la web registra y entrega ──────────────────────
@@ -324,6 +326,8 @@ def demo() -> None:
         robots_descargados=lambda c, m: set(mem["bajadas"].get((c, m), set())),
         registrar_descarga=lambda c, m, s, t: mem["bajadas"].setdefault((c, m), set()).add((s, t)),
         renovar_demo=lambda i: mem["renovadas"].append(i),
+        robots_de_correos=lambda cs: [{"correo": c, "modo": m, "simbolo": s, "temporalidad": t}
+                                      for (c, m), robots in mem["bajadas"].items() if c in cs for s, t in sorted(robots)],
     )
     compilados = []
     previos = {k: sys.modules.get(k) for k in ("persistencia", "persistencia.licencias", "persistencia.membresias")}
@@ -334,7 +338,7 @@ def demo() -> None:
 
     original = api_lic.compilar_robot
     original_pedir = api_lic._pedir_compilacion
-    api_lic.compilar_robot = lambda i: (compilados.append(i) or (200, b"EX5"))
+    api_lic.compilar_robot = lambda *a: (compilados.append(a) or (200, b"EX5"))
     previas_env = {k: os.environ.get(k) for k in ("COMPILADOR_URL", "COMPILADOR_KEY", "MTB_TOKEN_SECRET", "MTB_SERVICE_KEY", "MTB_TELEGRAM_BOT_TOKEN")}
     try:
         con = {"Cookie": "otra=1; mtb_token=ok"}
@@ -342,11 +346,13 @@ def demo() -> None:
         st, body = procesar_mis_licencias(con)
         assert st == 200 and creadas == ["ana@x.com"], (st, body)
         assert [l["estado"] for l in body["licencias"]] == ["activa", "revocada"]
+        assert body["robots"] == []  # todavia no baja nada de la ficha
 
-        assert procesar_mi_robot({"id": "5"}, {})[0] == 401
-        assert procesar_mi_robot({"id": "99"}, con)[0] == 404          # no es suya
-        assert procesar_mi_robot({"id": "6"}, con)[0] == 403           # revocada
-        assert procesar_mi_robot({"id": "5"}, con) == (200, b"EX5") and compilados == [5]
+        # ── ?id=N ya no entrega robots: todo sale de la ficha (configurado y con limites) ──
+        for pedido in ({"id": "5"}, {"id": "5", "simbolo": "XAUUSD", "temporalidad": "Swing (S)"}, {"id": "99"}):
+            for h in ({}, con):
+                assert procesar_mi_robot(pedido, h) == (400, {"error": ERROR_USA_LA_FICHA}), (pedido, h)
+        assert "ficha" in ERROR_USA_LA_FICHA and compilados == []
 
         html = pagina_panel(con, "error=credenciales_invalidas")
         assert "var MTB_CLAVE = \"MXTB-CURSO-2026\";" in html
@@ -370,7 +376,8 @@ def demo() -> None:
 
         st, body = procesar_mi_robot(ficha, con)
         assert st == 200 and body["ex5"] == b"EX5P" and body["nombre"] == "MexTradeBot_XAUUSD_H1.ex5", (st, body)
-        assert body["cabeceras"] == {"X-MTB-Token": "MTB-TOKEN-5", "X-MTB-Cuenta": "", "X-MTB-Simbolo-XM": "GOLD"}
+        assert body["cabeceras"] == {"X-MTB-Nombre": "MexTradeBot_XAUUSD_H1.ex5", "X-MTB-Token": "MTB-TOKEN-5",
+                                     "X-MTB-Cuenta": "", "X-MTB-Simbolo-XM": "GOLD"}, body["cabeceras"]
         assert pedidos == [("MTB-TOKEN-5", {"simbolo": "XAUUSD", "temporalidad": "Intraday 1H", "capital": 10000.0})]
 
         estado["demo"] = {**mia, "cuenta": 318680674}  # DEMO amarrada: la cabecera lo dice
@@ -391,6 +398,12 @@ def demo() -> None:
         # ── límites por nivel (robots distintos = símbolo + temporalidad) ──
         assert mem["bajadas"][("ana@x.com", "demo")] == {("XAUUSD", "Intraday 1H"), ("US30", "Swing (M)")}
         assert mem["bajadas"][("ana@x.com", "real")] == {("XAUUSD", "Intraday 1H")}
+        # Mis robots los lista con nombre legible, cada uno en su modo, para "Descargar de nuevo"
+        robots = procesar_mis_licencias(con)[1]["robots"]
+        assert {(r["modo"], r["etiqueta"]) for r in robots} == {
+            ("demo", "Oro (XAUUSD) · Intraday 1H"), ("demo", "Dow Jones 30 (US30) · Swing (M)"),
+            ("real", "Oro (XAUUSD) · Intraday 1H")}, robots
+        assert all(r["simbolo_xm"] for r in robots) and "correo" not in robots[0]
         admin_vip, estado["extra"], estado["demo"] = estado["extra"], [], mia  # Gratis: sin licencias pagadas
         def bajar(simbolo, temporalidad="Intraday 4H", modo="demo"):
             return procesar_mi_robot({**ficha, "simbolo": simbolo, "temporalidad": temporalidad, "modo": modo}, con)
@@ -419,7 +432,7 @@ def demo() -> None:
 
         compilador_nuevo["si"] = False  # VPS sin actualizar: no se entrega un .ex5 sin presets
         assert procesar_mi_robot(real, con) == (503, {"error": "generador_actualizando"})
-        assert procesar_mi_robot({"id": "5"}, con) == (200, b"EX5")  # ?id=N sigue igual
+        compilador_nuevo["si"] = True
 
         # ── Telegram: enlace firmado + vinculacion ──
         os.environ.pop("MTB_SERVICE_KEY", None)
@@ -487,6 +500,15 @@ def demo() -> None:
                 sys.modules.pop(k, None)
             else:
                 sys.modules[k] = v
+
+    # "Mis robots" ya no pide activo ni temporalidad: re-descarga por la ficha y manda a elegir otro al catalogo
+    panel = PLANTILLA.read_text(encoding="utf-8")
+    assert "mi-robot?id=" not in panel and "data-mi-simbolo" not in panel and "MTB_SIMBOLOS" not in panel
+    assert "'/api/v1/mi-robot?' + q" in panel and "'simbolo=' + encodeURIComponent(r.simbolo)" in panel and "'&modo='" in panel
+    assert "X-MTB-Nombre" in panel
+    assert "Descargar de nuevo" in panel and "Elegir otro activo" in panel and "/#catalogoTop" in panel
+    assert "Elige tu activo en el catalogo y descarga tu robot desde su ficha; llega ya configurado." in panel
+    assert "a.download = 'MexTradeBot_SeguidorSMC.ex5'" not in panel  # el nombre lo decide el servidor
     print("api.alumnos.demo() OK")
 
 
