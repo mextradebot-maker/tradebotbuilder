@@ -26,6 +26,19 @@
    Toda accion exige la clave de administrador (MTB_ADMIN_KEY), guardada solo en esta pestana. */
 window.mtbMaster = { estado: null, filtro: 'all' };
 
+/* Catálogo que acepta el compilador. Copia de compilador.SIMBOLOS / TF_POR_TEMPORALIDAD:
+   api.licencias.demo() falla si estas listas se separan de las del servidor. */
+var MTB_SIMBOLOS = [
+  'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD',
+  'XAUUSD', 'XAGUSD', 'EURGBP', 'EURJPY', 'GBPJPY', 'AUDJPY', 'EURAUD',
+  'AUDCAD', 'NZDJPY', 'CADJPY', 'US30', 'US100', 'US500', 'GER40', 'UK100',
+  'JP225', 'XPTUSD', 'XPDUSD', 'WTIUSD', 'BRENTUSD', 'BTCUSD', 'ETHUSD',
+  'XRPUSD', 'GOOGL', 'NVDA', 'META', 'WMT'
+];
+var MTB_TEMPORALIDADES = [
+  'Scalping 15m', 'Scalping 30m', 'Intraday 1H', 'Intraday 4H', 'Intraday D', 'Swing (S)', 'Swing (M)'
+];
+
 function mtbEsc(v) {
   return String(v == null ? '' : v).replace(/[&<>"']/g, function(c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -242,7 +255,7 @@ function mtbRenderTabla() {
     var ultimo = l.ultimo_resultado && l.ultimo_resultado !== 'ok'
       ? '<div class="text-[10px] text-rose-400">' + mtbEsc(l.ultimo_resultado) + '</div>' : '';
     var accion = est === 'activa'
-      ? '<button type="button" class="mtb-btn text-[11px] bg-sky-900/60 hover:bg-sky-800 text-sky-200 border border-sky-700/60 px-2.5 py-1 rounded-lg mr-1" data-robot="' + l.id + '" title="Descargar .ex5 con el token de esta licencia">Robot</button>' + (l.cuenta ? '<button type="button" class="mtb-btn text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1 rounded-lg mr-1" data-liberar="' + l.id + '">Liberar cuenta</button>' : '') + '<button type="button" class="mtb-btn text-[11px] bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-slate-700 px-2.5 py-1 rounded-lg" data-revocar="' + l.id + '">Revocar</button>'
+      ? '<button type="button" class="mtb-btn text-[11px] bg-sky-900/60 hover:bg-sky-800 text-sky-200 border border-sky-700/60 px-2.5 py-1 rounded-lg mr-1" data-robot="' + l.id + '" title="Descargar .ex5 con el token de esta licencia, ya configurado con el par y la temporalidad">Robot</button>' + (l.cuenta ? '<button type="button" class="mtb-btn text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1 rounded-lg mr-1" data-liberar="' + l.id + '">Liberar cuenta</button>' : '') + '<button type="button" class="mtb-btn text-[11px] bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-slate-700 px-2.5 py-1 rounded-lg" data-revocar="' + l.id + '">Revocar</button>'
       : '<button type="button" class="mtb-btn text-[11px] bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/40 px-2.5 py-1 rounded-lg" data-reautorizar="' + l.id + '" data-expirada="' + (est === 'expirada') + '">' + (est === 'expirada' ? 'Renovar' : 'Reautorizar') + '</button>';
     return '<tr class="hover:bg-slate-800/40">' +
       '<td class="p-3"><div class="font-bold text-white">' + mtbEsc(l.cliente) + '</div><div class="text-[11px] text-slate-400 font-mono">' + mtbEsc(l.token_prefijo) + '…</div></td>' +
@@ -270,6 +283,77 @@ function mtbAccion(cuerpo) {
     .catch(function(e) { alert('No se pudo completar: ' + e.message); });
 }
 
+/* Descarga del .ex5 ya configurado. El nombre lo decide el servidor (X-MTB-Nombre):
+   MTB_<cuenta>_<SIMBOLO>_<temporalidad>.ex5, para que en el Navegador de MT5 se vea a qué
+   terminal y a qué par pertenece cada robot y no se vuelvan a cruzar dos descargas. */
+function mtbDescargarRobot(boton, id, simbolo, temporalidad) {
+  var url = '/api/v1/licencias/robot?id=' + encodeURIComponent(id);
+  if (simbolo && temporalidad) {
+    url += '&simbolo=' + encodeURIComponent(simbolo) + '&temporalidad=' + encodeURIComponent(temporalidad);
+  }
+  var texto = boton.textContent; boton.disabled = true; boton.textContent = 'Compilando…';
+  var nombre = 'MexTradeBot_SeguidorSMC.ex5';
+  return fetch(url, { headers: { 'X-Admin-Key': mtbAdminKey() } })
+    .then(function(r) {
+      if (!r.ok) return r.json().catch(function() { return {}; }).then(function(j) {
+        if (j.error === 'generador_actualizando') {
+          throw new Error('El generador del VPS todavía no sabe grabar el símbolo y la temporalidad en el robot. ' +
+            'Actualiza el VPS (git pull + reiniciar MTB-ServidorLocal) o descarga el robot sin configurar y ponle el par a mano.');
+        }
+        throw new Error(j.error || ('HTTP ' + r.status));
+      });
+      nombre = r.headers.get('X-MTB-Nombre') || nombre;
+      return r.blob();
+    })
+    .then(function(blob) {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = nombre;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function() { URL.revokeObjectURL(a.href); }, 5000);
+    })
+    .catch(function(e) { alert('No se pudo generar el robot: ' + e.message); })
+    .then(function() { boton.disabled = false; boton.textContent = texto; });
+}
+
+/* Antes de compilar se elige par y temporalidad: el robot sale listo para arrastrar al gráfico
+   (el capital se queda en 0 = balance real de la cuenta). "Sin configurar" deja el flujo de antes. */
+function mtbElegirRobot(boton) {
+  var id = boton.dataset.robot;
+  var lic = (window.mtbMaster.estado.licencias || []).filter(function(l) { return String(l.id) === String(id); })[0] || {};
+  var ops = function(lista) {
+    return lista.map(function(v) { return '<option value="' + mtbEsc(v) + '">' + mtbEsc(v) + '</option>'; }).join('');
+  };
+  var fondo = document.createElement('div');
+  fondo.className = 'fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-4';
+  fondo.innerHTML = '<div class="w-full max-w-sm p-5 rounded-2xl bg-slate-900 border border-slate-800 text-sm">' +
+    '<p class="font-bold text-white mb-1">Robot listo para arrastrar</p>' +
+    '<p class="text-[11px] text-slate-400 mb-4">' + mtbEsc(lic.cliente || '') +
+      (lic.cuenta ? ' · cuenta <span class="font-mono">' + mtbEsc(lic.cuenta) + '</span>' : ' · cuenta sin amarrar') + '</p>' +
+    '<label class="block text-slate-300 font-medium mb-1" for="robotSimbolo">Par</label>' +
+    '<select id="robotSimbolo" class="w-full mb-3 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200">' + ops(MTB_SIMBOLOS) + '</select>' +
+    '<label class="block text-slate-300 font-medium mb-1" for="robotTemporalidad">Temporalidad</label>' +
+    '<select id="robotTemporalidad" class="w-full mb-4 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200">' +
+      '<option value="">— elige la temporalidad —</option>' + ops(MTB_TEMPORALIDADES) + '</select>' +
+    '<button type="button" id="robotOk" class="mtb-btn w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs">Compilar y descargar</button>' +
+    '<div class="flex justify-between mt-3 text-[11px]">' +
+      '<button type="button" id="robotSin" class="text-slate-400 hover:text-slate-200 underline">Descargar sin configurar</button>' +
+      '<button type="button" id="robotCancelar" class="text-slate-400 hover:text-slate-200">Cancelar</button>' +
+    '</div></div>';
+  document.body.appendChild(fondo);
+  fondo.querySelector('#robotSimbolo').value = 'XAUUSD';
+  var cerrar = function() { fondo.remove(); };
+  fondo.addEventListener('click', function(e) { if (e.target === fondo) cerrar(); });
+  fondo.querySelector('#robotCancelar').addEventListener('click', cerrar);
+  fondo.querySelector('#robotSin').addEventListener('click', function() { cerrar(); mtbDescargarRobot(boton, id); });
+  fondo.querySelector('#robotOk').addEventListener('click', function() {
+    var s = fondo.querySelector('#robotSimbolo').value, t = fondo.querySelector('#robotTemporalidad').value;
+    if (!t) { alert('Elige la temporalidad con la que va a operar este robot.'); return; }
+    cerrar();
+    mtbDescargarRobot(boton, id, s, t);
+  });
+}
+
 function mtbBindEventos() {
   document.querySelectorAll('.node-filter-btn').forEach(function(btn) {
     btn.addEventListener('click', function() { window.mtbMaster.filtro = btn.dataset.nodeFilter; mtbRenderPanel(document.getElementById('page-master')); });
@@ -277,23 +361,7 @@ function mtbBindEventos() {
   document.getElementById('nodeTableBody').addEventListener('click', function(e) {
     var b = e.target.closest('button');
     if (!b) return;
-    if (b.dataset.robot) {
-      var texto = b.textContent; b.disabled = true; b.textContent = 'Compilando…';
-      fetch('/api/v1/licencias/robot?id=' + encodeURIComponent(b.dataset.robot), { headers: { 'X-Admin-Key': mtbAdminKey() } })
-        .then(function(r) {
-          if (!r.ok) return r.json().catch(function() { return {}; }).then(function(j) { throw new Error(j.error || ('HTTP ' + r.status)); });
-          return r.blob();
-        })
-        .then(function(blob) {
-          var a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = 'MexTradeBot_SeguidorSMC.ex5';
-          document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(function() { URL.revokeObjectURL(a.href); }, 5000);
-        })
-        .catch(function(e) { alert('No se pudo generar el robot: ' + e.message); })
-        .then(function() { b.disabled = false; b.textContent = texto; });
-    }
+    if (b.dataset.robot) { mtbElegirRobot(b); }
     if (b.dataset.liberar && confirm('¿Liberar la cuenta? El próximo robot que se conecte con este token quedará amarrado a su cuenta.')) {
       mtbAccion({ accion: 'liberar', id: Number(b.dataset.liberar) });
     }

@@ -203,6 +203,15 @@ def token_de_licencia(licencia_id: int) -> str:
     return derivar_token(row[0], _secreto())
 
 
+def cuenta_de_licencia(licencia_id: int) -> int | None:
+    """Cuenta MT5 amarrada a la licencia (None si todavía no se amarró) — para nombrar el .ex5."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT cuenta FROM licencias WHERE id = %s", (licencia_id,)).fetchone()
+    if row is None:
+        raise ValueError("licencia no encontrada")
+    return row[0]
+
+
 def revocar(licencia_id: int) -> None:
     with get_conn() as conn:
         conn.execute("UPDATE licencias SET revocada_en = now() WHERE id = %s", (licencia_id,))

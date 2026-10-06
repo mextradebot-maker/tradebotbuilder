@@ -3,7 +3,9 @@
 POST /compilar  X-Compilador-Key: <COMPILADOR_KEY>
      {"token": "MTB-XXXXX-XXXXX-XXXXX-XXXXX", "simbolo"?: "XAUUSD", "temporalidad"?: "Intraday 1H", "capital"?: 10000}
   → 200 application/octet-stream: MexTradeBot_SeguidorSMC.ex5 con MTB_LICENSE_TOKEN ya puesto
-    y, si vienen los presets (los 3 juntos), InpSimboloConsulta / InpTemporalidad / InpTF / InpCapital.
+    y, si vienen los presets, InpSimboloConsulta / InpTemporalidad / InpTF (y InpCapital solo si
+    mandan capital: sin él la línea queda en 0, que para el robot significa "usa el balance de la cuenta").
+    simbolo y temporalidad van juntos y son obligatorios en cuanto se pida cualquier preset.
   servidor_local.py agrega `X-Compilador-Presets: 1` a toda respuesta: mtb-api no entrega un
   .ex5 con presets pedidos si el VPS sigue con el compilador viejo (que los ignora).
 
@@ -46,12 +48,17 @@ CAPITAL_MIN, CAPITAL_MAX = 300.0, 10_000_000.0  # ponytail: tope solo contra nú
 _candado = threading.Lock()  # ponytail: una compilación a la vez; MetaEditor tarda ~1-2 s
 
 
-def validar_presets(simbolo, temporalidad, capital) -> tuple[str, str, float]:
-    """Listas cerradas + capital en rango; ValueError si algo no cuadra. La usa también mtb-api."""
+def validar_presets(simbolo, temporalidad, capital=None) -> tuple[str, str, float | None]:
+    """Listas cerradas + capital en rango; ValueError si algo no cuadra. La usa también mtb-api.
+
+    capital=None es válido: el robot se queda con InpCapital = 0, o sea "usa el balance de la cuenta".
+    """
     if not isinstance(simbolo, str) or simbolo not in SIMBOLOS:
         raise ValueError("simbolo fuera del catalogo")
     if not isinstance(temporalidad, str) or temporalidad not in TF_POR_TEMPORALIDAD:
         raise ValueError(f"temporalidad debe ser una de {list(TF_POR_TEMPORALIDAD)}")
+    if capital is None:
+        return simbolo, temporalidad, None
     try:
         capital = float(capital)
     except (TypeError, ValueError):
@@ -71,8 +78,9 @@ def preparar_fuente(fuente: str, token: str, simbolo=None, temporalidad=None, ca
             LINEA_SIMBOLO: f'input string InpSimboloConsulta  = "{simbolo}";',
             LINEA_TEMPORALIDAD: f'input string InpTemporalidad     = "{temporalidad}";',
             LINEA_TF: f"input ENUM_TIMEFRAMES InpTF      = {TF_POR_TEMPORALIDAD[temporalidad]};",
-            LINEA_CAPITAL: f"input double InpCapital = {capital:.2f};",
         })
+        if capital is not None:  # sin capital, InpCapital = 0 → el robot usa el balance de la cuenta
+            cambios[LINEA_CAPITAL] = f"input double InpCapital = {capital:.2f};"
     for vieja, nueva in cambios.items():
         if fuente.count(vieja) != 1:
             raise ValueError(f"el .mq5 no tiene exactamente una vez la línea esperada: {vieja}")
@@ -143,6 +151,14 @@ def demo() -> None:
     assert 'InpTemporalidad     = "Swing (S)"; //' in con
     assert "InpTF      = PERIOD_W1;     //" in con and "input double InpCapital = 12345.68; //" in con
     assert preparar_fuente(fuente, token) == fuente.replace(LINEA_TOKEN, f'input string MTB_LICENSE_TOKEN   = "{token}";')
+
+    # presets sin capital (lo que pide el boton "Robot" del admin): simbolo y TF si, InpCapital
+    # intacto en 0 para que el robot calcule con el balance real de la cuenta
+    sin_capital = preparar_fuente(fuente, token, "XAUUSD", "Swing (S)")
+    assert 'InpSimboloConsulta  = "XAUUSD";' in sin_capital and "InpTF      = PERIOD_W1;" in sin_capital
+    assert 'InpTemporalidad     = "Swing (S)";' in sin_capital and LINEA_CAPITAL in sin_capital
+    assert validar_presets("XAUUSD", "Swing (S)") == ("XAUUSD", "Swing (S)", None)
+    assert preparar_fuente(fuente.replace(LINEA_CAPITAL, "//"), token, "XAUUSD", "Swing (S)")  # sin capital no la exige
     for t, tf in TF_POR_TEMPORALIDAD.items():
         assert f"InpTF      = {tf};" in preparar_fuente(fuente, token, "EURUSD", t, 300)
     malos = [
@@ -151,8 +167,8 @@ def demo() -> None:
         ("xauusd", "Intraday 1H", 1000), ("GOLD", "Intraday 1H", 1000),
         ("XAUUSD", 'Intraday 1H"; //', 1000), ("XAUUSD", "Intraday\n1H", 1000), ("XAUUSD", "Intraday", 1000),
         ("XAUUSD", "Intraday 1H", 299.99), ("XAUUSD", "Intraday 1H", "1e400"), ("XAUUSD", "Intraday 1H", "nan"),
-        ("XAUUSD", "Intraday 1H", "1000; //"), ("XAUUSD", "Intraday 1H", 10_000_001), ("XAUUSD", "Intraday 1H", None),
-        (["XAUUSD"], "Intraday 1H", 1000), ("XAUUSD", None, 1000),
+        ("XAUUSD", "Intraday 1H", "1000; //"), ("XAUUSD", "Intraday 1H", 10_000_001),
+        (["XAUUSD"], "Intraday 1H", 1000), ("XAUUSD", None, 1000), ("XAUUSD", None, None), (None, "Intraday 1H", None),
     ]
     for s, t, c in malos:
         try:
@@ -188,6 +204,8 @@ def demo() -> None:
         assert procesar_http({"x-compilador-key": "k"}, json.dumps(malo).encode())[0] == 400
         parcial = {"token": token, "simbolo": "XAUUSD"}  # presets incompletos: no se compila a medias
         assert procesar_http({"x-compilador-key": "k"}, json.dumps(parcial).encode())[0] == 400
+        solo_tf = {"token": token, "temporalidad": "Intraday 1H"}
+        assert procesar_http({"x-compilador-key": "k"}, json.dumps(solo_tf).encode())[0] == 400
         try:
             metaeditor()
         except RuntimeError:
@@ -198,6 +216,9 @@ def demo() -> None:
         presets = {"token": token, "simbolo": "WTIUSD", "temporalidad": "Swing (S)", "capital": 10000}
         st, tipo, ex5p = procesar_http({"X-Compilador-Key": "k"}, json.dumps(presets).encode())
         assert st == 200 and len(ex5p) > 10_000 and ex5p != ex5, (st, ex5p[:200])
+        sin_cap = {"token": token, "simbolo": "WTIUSD", "temporalidad": "Swing (S)"}
+        st, tipo, ex5s = procesar_http({"X-Compilador-Key": "k"}, json.dumps(sin_cap).encode())
+        assert st == 200 and len(ex5s) > 10_000, (st, ex5s[:200])
     finally:
         os.environ.pop("COMPILADOR_KEY", None)
         if previa is not None:
