@@ -61,6 +61,16 @@ SWING_LENGTH_POR_TEMPORALIDAD = {n: t["swing_length"] for n, t in TEMPORALIDADES
 PERFIL_A_VELAS_V2 = {n: (t["vela"], t["vela_mayor"]) for n, t in TEMPORALIDADES.items()}
 VELA_A_INTERVALO = {t["vela"]: t["intervalo"] for t in TEMPORALIDADES.values()}
 
+# La temporalidad mayor se pide con VELAS_PREVIAS_MAYOR velas más antes de `inicio`. R4/R5 necesitan
+# swings mayores ya confirmados (swing_length velas a cada lado) y una ruptura: con la misma ventana
+# que la vela, Swing (S) veía solo 36 mensuales y la estructura M salía "sin_definir" (sin swing alto y
+# bajo) para casi todos sus setups — XAUUSD necesita >= 60 mensuales (revisado 6 oct 2026).
+VELAS_PREVIAS_MAYOR = 60
+
+
+def inicio_mayor(inicio: datetime, vela_mayor: str) -> datetime:
+    return (pd.Timestamp(inicio) - DURACION_VELA[vela_mayor] * VELAS_PREVIAS_MAYOR).to_pydatetime()
+
 _PRIMERO_EA = ("direccion", "entrada", "stop", "tp")
 
 
@@ -114,7 +124,8 @@ def motor_v2(simbolo: str, temporalidad: str, ohlc, inicio, fin) -> dict:
         else:
             motivo = None
             try:
-                ohlc_mayor = obtener_velas(simbolo, inicio, fin, intervalo=VELA_A_INTERVALO[vela_mayor])
+                ohlc_mayor = obtener_velas(simbolo, inicio_mayor(inicio, vela_mayor), fin,
+                                           intervalo=VELA_A_INTERVALO[vela_mayor])
             except Exception as e:
                 ohlc_mayor, motivo = None, f"{type(e).__name__}: {e}"
             if ohlc_mayor is None or ohlc_mayor.empty:
@@ -308,6 +319,16 @@ def _demo_aislamiento() -> None:
         g.obtener_velas = lambda *a, **k: ohlc
         g.backtest_v2 = lambda *a, **k: {"x": float("nan")}
         assert motor_v2("XAUUSD", "Intraday 1H", ohlc, ini, fin)["estado"] == "error"
+
+        # la mayor se pide con historia previa (R4/R5 necesitan swings confirmados): Swing (S) -> 60 mensuales
+        pedidos = []
+        g.obtener_velas = lambda sim, a, b, **k: pedidos.append((a, k["intervalo"])) or ohlc
+        motor_v2("XAUUSD", "Swing (S)", ohlc, datetime(2023, 10, 6, tzinfo=timezone.utc), fin)
+        assert pedidos == [(datetime(2018, 10, 6, tzinfo=timezone.utc), VELA_A_INTERVALO["M"])], pedidos
+        pedidos.clear()
+        motor_v2("XAUUSD", "Intraday 1H", ohlc, ini, fin)
+        assert pedidos == [(ini - timedelta(days=60), VELA_A_INTERVALO["D"])], pedidos
+        g.obtener_velas = lambda *a, **k: ohlc
 
         g.backtest_v2 = orig["backtest_v2"]
         r = motor_v2("XAUUSD", "Intraday 1H", ohlc, ini, fin)
