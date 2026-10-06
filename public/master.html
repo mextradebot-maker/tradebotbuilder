@@ -318,7 +318,8 @@ function mtbDescargarRobot(boton, id, simbolo, temporalidad) {
 
 /* Antes de compilar se elige par y temporalidad: el robot sale listo para arrastrar al gráfico
    (el capital se queda en 0 = balance real de la cuenta). "Sin configurar" deja el flujo de antes. */
-/* El nombre de la licencia ya dice par y temporalidad ("Master Trader - PETROLEO CRUDO SWING"):
+/* Par y temporalidad: primero los de la cuenta en cuentas_demo (robot_config); si no, el nombre
+   de la licencia ya los dice ("Master Trader - PETROLEO CRUDO SWING"):
    si se leen los dos, el robot se descarga directo, sin preguntar nada. */
 var MTB_ALIAS_SIMBOLO = [
   [/PETROLEO|CRUDO|\bWTI\b|\bOIL\b/, 'WTIUSD'], [/\bORO\b|\bGOLD\b/, 'XAUUSD'], [/\bPLATA\b|\bSILVER\b/, 'XAGUSD']
@@ -339,7 +340,12 @@ function mtbInferirRobot(nombre) {
 function mtbElegirRobot(boton) {
   var id = boton.dataset.robot;
   var lic = (window.mtbMaster.estado.licencias || []).filter(function(l) { return String(l.id) === String(id); })[0] || {};
-  var inferido = mtbInferirRobot(lic.cliente);
+  var cfg = lic.robot_config || {};  // cuentas_demo: con qué par y temporalidad opera esa cuenta
+  var nombre = mtbInferirRobot(lic.cliente);
+  var inferido = {
+    simbolo: MTB_SIMBOLOS.indexOf(cfg.simbolo) >= 0 ? cfg.simbolo : nombre.simbolo,
+    temporalidad: MTB_TEMPORALIDADES.indexOf(cfg.temporalidad) >= 0 ? cfg.temporalidad : nombre.temporalidad
+  };
   if (inferido.simbolo && inferido.temporalidad) { mtbDescargarRobot(boton, id, inferido.simbolo, inferido.temporalidad); return; }
   var ops = function(lista) {
     return lista.map(function(v) { return '<option value="' + mtbEsc(v) + '">' + mtbEsc(v) + '</option>'; }).join('');
