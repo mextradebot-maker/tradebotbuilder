@@ -14,7 +14,8 @@ despacha por path hacia la lógica de cada endpoint:
   GET/POST /api/calendario?simbolo=XAUUSD&horas=24 — ver api/calendario.py
   GET/POST /api/mejor-indicador?simbolo=XAUUSD&direccion=compra — ver api/mejor_indicador.py
   POST /api/v1/auth, GET/POST /api/v1/licencias — cerebro de licencias, ver api/licencias.py
-  GET /api/v1/licencias/robot?id=N — .ex5 personalizado (admin), ver api/licencias.procesar_robot
+  GET /api/v1/licencias/robot?id=N[&simbolo&temporalidad] — .ex5 personalizado y ya configurado
+      (admin), nombrado MTB_<cuenta>_<SIMBOLO>_<TF>.ex5; ver api/licencias.procesar_robot
   GET /api/v1/mis-licencias, /api/v1/mi-robot?id=N — alumno con sesión del panel, ver api/alumnos.py
   GET /api/v1/mi-robot?simbolo&temporalidad&modo&capital — ficha de descarga (.ex5 con presets), ver api/alumnos.py
   POST /api/v1/telegram/enlace y /api/v1/telegram/enviar (X-MTB-Service-Key), POST /api/v1/vincular-telegram (cookie) — ver api/alumnos.py
@@ -101,8 +102,10 @@ class handler(BaseHTTPRequestHandler):
             from api.licencias import procesar_robot
 
             status, body = procesar_robot(qs, dict(self.headers))
-            if isinstance(body, bytes):
+            if isinstance(body, bytes):  # respuesta vieja (sin nombre): se queda con el de siempre
                 return self._responder_archivo(body, "MexTradeBot_SeguidorSMC.ex5")
+            if status == 200 and "ex5" in body:  # nombre por cuenta/simbolo/temporalidad
+                return self._responder_archivo(body["ex5"], body["nombre"], {"X-MTB-Nombre": body["nombre"]})
         elif ruta == RUTA_LICENCIAS:
             from api.licencias import procesar_admin
 
