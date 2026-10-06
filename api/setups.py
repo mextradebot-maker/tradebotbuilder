@@ -64,7 +64,8 @@ VELA_A_INTERVALO = {t["vela"]: t["intervalo"] for t in TEMPORALIDADES.values()}
 # La temporalidad mayor se pide con VELAS_PREVIAS_MAYOR velas más antes de `inicio`. R4/R5 necesitan
 # swings mayores ya confirmados (swing_length velas a cada lado) y una ruptura: con la misma ventana
 # que la vela, Swing (S) veía solo 36 mensuales y la estructura M salía "sin_definir" (sin swing alto y
-# bajo) para casi todos sus setups — XAUUSD necesita >= 60 mensuales (revisado 6 oct 2026).
+# bajo) para casi todos sus setups — XAUUSD necesita >= 60 mensuales (revisado 6 oct 2026). Aplica
+# también a Swing (M), cuya mayor es la misma vela M.
 VELAS_PREVIAS_MAYOR = 60
 
 
@@ -119,21 +120,20 @@ def motor_v2(simbolo: str, temporalidad: str, ohlc, inicio, fin) -> dict:
         # obtener_velas incluye la vela en curso (a propósito para la semanal/mensual): no está cerrada
         if len(ohlc) and ohlc.index[-1] + DURACION_VELA[vela] > pd.Timestamp.now(tz="UTC"):
             ohlc = ohlc.iloc[:-1]
-        if vela_mayor == vela:
-            ohlc_mayor = ohlc
-        else:
-            motivo = None
-            try:
-                ohlc_mayor = obtener_velas(simbolo, inicio_mayor(inicio, vela_mayor), fin,
-                                           intervalo=VELA_A_INTERVALO[vela_mayor])
-            except Exception as e:
-                ohlc_mayor, motivo = None, f"{type(e).__name__}: {e}"
-            if ohlc_mayor is None or ohlc_mayor.empty:
-                sin = {"estado": "sin_datos_temporalidad_mayor", "vela": vela, "vela_mayor": vela_mayor,
-                       "velas": len(ohlc), "setups": [], "setups_validos": []}
-                if motivo:
-                    sin["error"] = motivo
-                return sin
+        # también cuando vela_mayor == vela (Swing (M), M -> M): la serie de la ventana no trae la historia
+        # previa que R4/R5 necesitan (Petróleo salía "sin_definir" en 18 de los últimos 36 meses)
+        motivo = None
+        try:
+            ohlc_mayor = obtener_velas(simbolo, inicio_mayor(inicio, vela_mayor), fin,
+                                       intervalo=VELA_A_INTERVALO[vela_mayor])
+        except Exception as e:
+            ohlc_mayor, motivo = None, f"{type(e).__name__}: {e}"
+        if ohlc_mayor is None or ohlc_mayor.empty:
+            sin = {"estado": "sin_datos_temporalidad_mayor", "vela": vela, "vela_mayor": vela_mayor,
+                   "velas": len(ohlc), "setups": [], "setups_validos": []}
+            if motivo:
+                sin["error"] = motivo
+            return sin
         setups = detectar_setups_v2(ohlc, ohlc_mayor, vela, vela_mayor)
         # jsonb no acepta NaN: celdas vacías -> None
         registros = setups.astype(object).where(setups.notna(), None).to_dict(orient="records")
@@ -328,6 +328,9 @@ def _demo_aislamiento() -> None:
         pedidos.clear()
         motor_v2("XAUUSD", "Intraday 1H", ohlc, ini, fin)
         assert pedidos == [(ini - timedelta(days=60), VELA_A_INTERVALO["D"])], pedidos
+        pedidos.clear()  # Swing (M): la mayor es la misma vela M, pero igual con historia previa
+        motor_v2("XAUUSD", "Swing (M)", ohlc, datetime(2019, 10, 6, tzinfo=timezone.utc), fin)
+        assert pedidos == [(datetime(2014, 10, 6, tzinfo=timezone.utc), VELA_A_INTERVALO["M"])], pedidos
         g.obtener_velas = lambda *a, **k: ohlc
 
         g.backtest_v2 = orig["backtest_v2"]

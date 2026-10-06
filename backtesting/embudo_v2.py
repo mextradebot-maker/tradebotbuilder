@@ -23,8 +23,7 @@ def correr(simbolo: str, perfil: str) -> dict:
     fin = datetime.now(timezone.utc)
     inicio = fin - timedelta(days=DIAS_POR_TEMPORALIDAD[perfil])
     ohlc = obtener_velas(simbolo, inicio, fin, intervalo=VELA_A_INTERVALO[vela])
-    ohlc_mayor = ohlc if vela_mayor == vela else obtener_velas(simbolo, inicio_mayor(inicio, vela_mayor), fin,
-                                                                           intervalo=VELA_A_INTERVALO[vela_mayor])
+    ohlc_mayor = obtener_velas(simbolo, inicio_mayor(inicio, vela_mayor), fin, intervalo=VELA_A_INTERVALO[vela_mayor])
     setups = detectar_setups_v2(ohlc, ohlc_mayor, vela, vela_mayor)
     invalidos_sin_razon = setups[~setups["valido"].astype(bool) & (setups["razon_descarte"] == "")]
     assert invalidos_sin_razon.empty, f"{simbolo} {perfil}: descartes sin razón"
