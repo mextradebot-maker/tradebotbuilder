@@ -188,27 +188,35 @@ def compilar_token(token: str, presets: dict | None = None) -> tuple[int, bytes 
     return 200, ex5
 
 
+ERROR_SIN_PRESETS = ("elige el activo y la temporalidad del robot: sin ellos el .ex5 saldria con los valores "
+                     "de fabrica (XAUUSD / Intraday 1H) y habria que configurarlo a mano")
+
+
+def faltan_presets(simbolo, temporalidad) -> bool:
+    return not simbolo or not temporalidad
+
+
 def compilar_robot(licencia_id: int, simbolo=None, temporalidad=None) -> tuple[int, bytes | dict]:
     """.ex5 compilado con el token de esa licencia (lo usan el admin y "Mis robots" del alumno).
 
-    Con simbolo + temporalidad el .ex5 sale ya configurado para ese par/marco; InpCapital se queda
-    en 0 (el robot usa el balance de la cuenta). Sin ellos, el robot sale con sus valores por defecto.
+    simbolo + temporalidad son OBLIGATORIOS: el .ex5 siempre sale configurado para ese par/marco
+    (InpSimboloConsulta / InpTemporalidad / InpTF); InpCapital se queda en 0 (el robot usa el balance
+    de la cuenta). Un alumno no sabe arreglar un robot mal configurado, así que sin presets → 400, y
+    si el VPS tiene el compilador viejo (ignora presets) → 503 generador_actualizando (compilar_token).
     """
+    if faltan_presets(simbolo, temporalidad):
+        return 400, {"error": ERROR_SIN_PRESETS}
     if not os.environ.get("COMPILADOR_URL") or not os.environ.get("COMPILADOR_KEY"):
         return 503, {"error": "compilador no configurado (COMPILADOR_URL / COMPILADOR_KEY)"}
+    from compilador import validar_presets
     from persistencia import licencias
 
     try:
-        presets = None
-        if simbolo is not None or temporalidad is not None:
-            from compilador import validar_presets
-
-            simbolo, temporalidad, _ = validar_presets(simbolo, temporalidad)
-            presets = {"simbolo": simbolo, "temporalidad": temporalidad}
+        simbolo, temporalidad, _ = validar_presets(simbolo, temporalidad)
         token = licencias.token_de_licencia(int(licencia_id))
     except (TypeError, ValueError) as e:
         return 400, {"error": str(e)}
-    return compilar_token(token, presets)
+    return compilar_token(token, {"simbolo": simbolo, "temporalidad": temporalidad})
 
 
 def nombre_ex5(licencia_id, cuenta=None, simbolo=None, temporalidad=None) -> str:
@@ -229,8 +237,9 @@ def nombre_ex5(licencia_id, cuenta=None, simbolo=None, temporalidad=None) -> str
 
 
 def procesar_robot(datos: dict, headers: dict) -> tuple[int, bytes | dict]:
-    """GET /api/v1/licencias/robot?id=N[&simbolo=XAUUSD&temporalidad=Swing+(S)] (admin)
+    """GET /api/v1/licencias/robot?id=N&simbolo=XAUUSD&temporalidad=Swing+(S) (admin)
 
+    simbolo y temporalidad son obligatorios (400 sin ellos): ya no existe el robot "sin configurar".
     200 → {"ex5": bytes, "nombre": "MTB_108460538_XAUUSD_SwingS.ex5"}; api/analizar.py lo manda
     como descarga con ese nombre y la cabecera X-MTB-Nombre (la que lee el panel).
     """
@@ -241,6 +250,8 @@ def procesar_robot(datos: dict, headers: dict) -> tuple[int, bytes | dict]:
     if "id" not in datos:
         return 400, {"error": "falta id"}
     simbolo, temporalidad = datos.get("simbolo") or None, datos.get("temporalidad") or None
+    if faltan_presets(simbolo, temporalidad):  # antes de tocar el compilador
+        return 400, {"error": ERROR_SIN_PRESETS}
     status, cuerpo = compilar_robot(datos["id"], simbolo, temporalidad)
     if status != 200:
         return status, cuerpo
@@ -317,16 +328,24 @@ def demo() -> None:
             global _pedir_compilacion
             original_pedir = _pedir_compilacion
             _pedir_compilacion = lambda url, clave, token, presets=None: (enviados.append((url, clave, token, presets)) or (b"EX5", False))
+            listo = {"simbolo": "XAUUSD", "temporalidad": "Swing (S)"}
             try:
                 os.environ.pop("COMPILADOR_URL", None)
-                assert procesar_robot({"id": "3"}, h)[0] == 503
+                assert procesar_robot({"id": "3", **listo}, h)[0] == 503
                 os.environ["COMPILADOR_URL"], os.environ["COMPILADOR_KEY"] = "https://c/compilar", "ck"
-                st, cuerpo = procesar_robot({"id": "3"}, h)
-                assert st == 200 and cuerpo["ex5"] == b"EX5", (st, cuerpo)
-                # sin presets el robot sale con sus valores por defecto, pero el nombre ya lleva la cuenta
-                assert cuerpo["nombre"] == "MTB_108460538.ex5", cuerpo
-                assert enviados == [("https://c/compilar", "ck", "MTB-ABCDE-FGHJK-LMNPQ-RS234", None)]
-                assert procesar_robot({"id": "3"}, {"X-Admin-Key": "mala"})[0] == 401
+                # nunca un robot sin configurar: id solo, o presets vacios → 400 claro, sin llamar al compilador
+                for sin in ({}, {"simbolo": "", "temporalidad": ""}, {"simbolo": "XAUUSD", "temporalidad": ""},
+                            {"simbolo": None, "temporalidad": "Swing (S)"}):
+                    st, cuerpo = procesar_robot({"id": "3", **sin}, h)
+                    assert st == 400 and cuerpo == {"error": ERROR_SIN_PRESETS}, (sin, st, cuerpo)
+                assert compilar_robot(3) == (400, {"error": ERROR_SIN_PRESETS})
+                assert "activo y la temporalidad" in ERROR_SIN_PRESETS
+                assert enviados == [], enviados
+                assert procesar_robot({"id": "3", **listo}, {"X-Admin-Key": "mala"})[0] == 401
+                # compilador viejo (sin la marca X-Compilador-Presets): el .ex5 que ignoro los presets no sale
+                st, cuerpo = procesar_robot({"id": "3", **listo}, h)
+                assert (st, cuerpo) == (503, {"error": "generador_actualizando"}), (st, cuerpo)
+                assert enviados == [("https://c/compilar", "ck", "MTB-ABCDE-FGHJK-LMNPQ-RS234", listo)], enviados
                 # presets: sin la marca X-Compilador-Presets el .ex5 no se entrega
                 p = {"simbolo": "XAUUSD", "temporalidad": "Intraday 1H", "capital": 1000.0}
                 assert compilar_token("MTB-T", p) == (503, {"error": "generador_actualizando"})
@@ -345,7 +364,7 @@ def demo() -> None:
 
                 # presets a medias o fuera del catalogo: 400 antes de tocar el compilador
                 enviados.clear()
-                for malo in ({"simbolo": "XAUUSD"}, {"temporalidad": "Swing (S)"}, {"simbolo": "GOLD", "temporalidad": "Swing (S)"},
+                for malo in ({}, {"simbolo": "XAUUSD"}, {"temporalidad": "Swing (S)"}, {"simbolo": "GOLD", "temporalidad": "Swing (S)"},
                              {"simbolo": "XAUUSD", "temporalidad": "Swing"}, {"simbolo": 'XAUUSD"', "temporalidad": "Swing (S)"}):
                     assert procesar_robot({"id": "3", **malo}, h)[0] == 400, malo
                 assert enviados == [], enviados
@@ -355,7 +374,7 @@ def demo() -> None:
                 assert procesar_robot({"id": "3", "simbolo": "US100", "temporalidad": "Scalping 15m"}, h)[1]["nombre"] \
                     == "MTB_lic3_US100_Scalping15m.ex5"
                 falso.cuenta_de_licencia = lambda i: (_ for _ in ()).throw(RuntimeError("BD caída"))
-                assert procesar_robot({"id": "7"}, h)[1]["nombre"] == "MTB_lic7.ex5"
+                assert procesar_robot({"id": "7", **listo}, h)[1]["nombre"] == "MTB_lic7_XAUUSD_SwingS.ex5"
                 falso.cuenta_de_licencia = lambda i: 108460538
 
                 # el nombre nunca arrastra caracteres raros al Content-Disposition

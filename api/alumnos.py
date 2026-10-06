@@ -2,7 +2,9 @@
 
   GET /alumnos, GET /webhook/panel-alumnos  → plantillas/panel-alumnos.html con los datos de la sesión
   GET /api/v1/mis-licencias                → licencias del alumno (crea su DEMO la primera vez)
-  GET /api/v1/mi-robot?id=N                → .ex5 personalizado, solo de una licencia suya y vigente
+  GET /api/v1/mi-robot?id=N&simbolo&temporalidad → .ex5 de una licencia suya y vigente, ya configurado
+      para ese activo/temporalidad (sin ellos 400: nunca sale con los valores de fabrica);
+      nombre MTB_<cuenta>_<SIMBOLO>_<TF>.ex5 en Content-Disposition y X-MTB-Nombre
   GET /api/v1/mi-robot?simbolo&temporalidad&modo=demo|real&capital  → .ex5 de la ficha de descarga
       (token + presets grabados; cabeceras X-MTB-Token, X-MTB-Cuenta, X-MTB-Simbolo-XM)
   POST /api/v1/telegram/enlace  (X-MTB-Service-Key) {chat_id, simbolo?, temporalidad?} → {url} firmada 7 dias
@@ -96,25 +98,38 @@ def procesar_mis_licencias(headers: dict) -> tuple[int, dict]:
     }
 
 
-def procesar_mi_robot(datos: dict, headers: dict) -> tuple[int, bytes | dict]:
+def procesar_mi_robot(datos: dict, headers: dict) -> tuple[int, dict]:
+    """"Mis robots" (?id=N&simbolo&temporalidad) o la ficha de descarga (sin id).
+
+    200 → {"ex5", "nombre", "cabeceras"}; api/analizar.py lo manda como descarga con ese nombre.
+    """
     if "id" not in datos:
         return _robot_ficha(datos, headers)
     alumno = _alumno(headers)
     if not alumno:
         return 401, {"error": "inicia sesion en el panel"}
-    from api.licencias import compilar_robot
+    from api.catalogo import SIMBOLO_XM
+    from api.licencias import ERROR_SIN_PRESETS, compilar_robot, faltan_presets, nombre_ex5
     from persistencia import licencias
 
     try:
         lid = int(datos.get("id") or 0)
     except ValueError:
         return 400, {"error": "id invalido"}
+    simbolo, temporalidad = datos.get("simbolo") or None, datos.get("temporalidad") or None
+    if faltan_presets(simbolo, temporalidad):  # un alumno no sabe reconfigurar el robot: sale listo o no sale
+        return 400, {"error": ERROR_SIN_PRESETS}
     lic = next((l for l in licencias.licencias_de_correo(alumno["correo"]) if l["id"] == lid), None)
     if lic is None:  # no existe o es de otro alumno: misma respuesta, no se revela cuál
         return 404, {"error": "licencia no encontrada"}
     if _estado(lic, datetime.now(timezone.utc)) != "activa":
         return 403, {"error": "tu licencia no esta vigente"}
-    return compilar_robot(lid)
+    status, ex5 = compilar_robot(lid, simbolo, temporalidad)  # valida catalogo; 503 si el VPS ignora presets
+    if status != 200:
+        return status, ex5
+    nombre = nombre_ex5(lid, lic["cuenta"], simbolo, temporalidad)
+    return 200, {"ex5": ex5, "nombre": nombre, "cabeceras": {
+        "X-MTB-Nombre": nombre, "X-MTB-Simbolo-XM": SIMBOLO_XM.get(simbolo) or ""}}
 
 
 MENSAJE_LIMITE = {
@@ -334,7 +349,7 @@ def demo() -> None:
 
     original = api_lic.compilar_robot
     original_pedir = api_lic._pedir_compilacion
-    api_lic.compilar_robot = lambda i: (compilados.append(i) or (200, b"EX5"))
+    api_lic.compilar_robot = lambda i, s=None, t=None: (compilados.append((i, s, t)) or (200, b"EX5"))
     previas_env = {k: os.environ.get(k) for k in ("COMPILADOR_URL", "COMPILADOR_KEY", "MTB_TOKEN_SECRET", "MTB_SERVICE_KEY", "MTB_TELEGRAM_BOT_TOKEN")}
     try:
         con = {"Cookie": "otra=1; mtb_token=ok"}
@@ -343,10 +358,28 @@ def demo() -> None:
         assert st == 200 and creadas == ["ana@x.com"], (st, body)
         assert [l["estado"] for l in body["licencias"]] == ["activa", "revocada"]
 
-        assert procesar_mi_robot({"id": "5"}, {})[0] == 401
-        assert procesar_mi_robot({"id": "99"}, con)[0] == 404          # no es suya
-        assert procesar_mi_robot({"id": "6"}, con)[0] == 403           # revocada
-        assert procesar_mi_robot({"id": "5"}, con) == (200, b"EX5") and compilados == [5]
+        # ── Mis robots: siempre con activo + temporalidad, nombre del servidor ──
+        oro = {"simbolo": "XAUUSD", "temporalidad": "Swing (S)"}
+        assert procesar_mi_robot({"id": "5", **oro}, {})[0] == 401
+        assert procesar_mi_robot({"id": "99", **oro}, con)[0] == 404          # no es suya
+        assert procesar_mi_robot({"id": "6", **oro}, con)[0] == 403           # revocada
+        for sin in ({}, {"simbolo": "XAUUSD"}, {"temporalidad": "Swing (S)"}, {"simbolo": "", "temporalidad": ""}):
+            st, body = procesar_mi_robot({"id": "5", **sin}, con)              # id pelon: ya no hay robot de fabrica
+            assert st == 400 and "activo y la temporalidad" in body["error"], (sin, st, body)
+        assert compilados == []
+        st, body = procesar_mi_robot({"id": "5", **oro}, con)
+        assert st == 200 and body == {"ex5": b"EX5", "nombre": "MTB_lic5_XAUUSD_SwingS.ex5", "cabeceras": {
+            "X-MTB-Nombre": "MTB_lic5_XAUUSD_SwingS.ex5", "X-MTB-Simbolo-XM": "GOLD"}}, body
+        assert compilados == [(5, "XAUUSD", "Swing (S)")], compilados
+        mia["cuenta"] = 318680674                                              # amarrada: el nombre lleva la cuenta
+        assert procesar_mi_robot({"id": "5", "simbolo": "US30", "temporalidad": "Intraday 4H"}, con)[1]["nombre"] \
+            == "MTB_318680674_US30_Intraday4H.ex5"
+        mia["cuenta"] = None
+        api_lic.compilar_robot = original                                      # el de verdad: catalogo cerrado
+        for malo in ({"simbolo": "GOLD"}, {"temporalidad": "Swing"}, {"simbolo": 'XAUUSD";'}):
+            os.environ.update(COMPILADOR_URL="https://c/compilar", COMPILADOR_KEY="ck")
+            assert procesar_mi_robot({"id": "5", **oro, **malo}, con)[0] == 400, malo
+        os.environ.pop("COMPILADOR_URL"), os.environ.pop("COMPILADOR_KEY")
 
         html = pagina_panel(con, "error=credenciales_invalidas")
         assert "var MTB_CLAVE = \"MXTB-CURSO-2026\";" in html
@@ -419,7 +452,11 @@ def demo() -> None:
 
         compilador_nuevo["si"] = False  # VPS sin actualizar: no se entrega un .ex5 sin presets
         assert procesar_mi_robot(real, con) == (503, {"error": "generador_actualizando"})
-        assert procesar_mi_robot({"id": "5"}, con) == (200, b"EX5")  # ?id=N sigue igual
+        pedidos.clear()                 # ...tampoco por "Mis robots" (?id=N): mismo candado
+        assert procesar_mi_robot({"id": "5", "simbolo": "EURUSD", "temporalidad": "Intraday 1H"}, con) == \
+            (503, {"error": "generador_actualizando"})
+        assert pedidos == [("MTB-TOKEN-5", {"simbolo": "EURUSD", "temporalidad": "Intraday 1H"})], pedidos
+        compilador_nuevo["si"] = True
 
         # ── Telegram: enlace firmado + vinculacion ──
         os.environ.pop("MTB_SERVICE_KEY", None)
@@ -487,6 +524,21 @@ def demo() -> None:
                 sys.modules.pop(k, None)
             else:
                 sys.modules[k] = v
+
+    # el selector de "Mis robots" ofrece exactamente el catalogo que acepta el compilador
+    import re
+
+    from compilador import SIMBOLOS, TF_POR_TEMPORALIDAD
+
+    panel = PLANTILLA.read_text(encoding="utf-8")
+    def _lista(nombre):
+        bloque = re.search(rf"var {nombre} = \[(.*?)\];", panel, re.S)
+        assert bloque, f"plantillas/panel-alumnos.html ya no define var {nombre}"
+        return re.findall(r"'([^']*)'", bloque.group(1))
+    assert _lista("MTB_SIMBOLOS") == list(SIMBOLOS), _lista("MTB_SIMBOLOS")
+    assert _lista("MTB_TEMPORALIDADES") == list(TF_POR_TEMPORALIDAD), _lista("MTB_TEMPORALIDADES")
+    assert "mi-robot?id=" in panel and "&simbolo=" in panel and "X-MTB-Nombre" in panel
+    assert "a.download = 'MexTradeBot_SeguidorSMC.ex5'" not in panel  # el nombre lo decide el servidor
     print("api.alumnos.demo() OK")
 
 

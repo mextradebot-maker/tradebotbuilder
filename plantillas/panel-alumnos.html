@@ -70,7 +70,27 @@ document.getElementById('mtbSidebarNav').addEventListener('click', function(ev){
   if (btn.dataset.page === 'misRobots') cargarMisRobots();
 });
 
-/* Mis robots: licencia del alumno + robot .ex5 personalizado (api/alumnos.py en mtb-api) */
+/* Mis robots: licencia del alumno + robot .ex5 personalizado (api/alumnos.py en mtb-api).
+   El alumno elige activo y temporalidad ANTES de descargar: el .ex5 sale con InpSimboloConsulta /
+   InpTemporalidad / InpTF ya grabados (un alumno no sabe reconfigurarlo) y el servidor rechaza
+   la descarga sin ellos. Catálogo = copia de compilador.SIMBOLOS / TF_POR_TEMPORALIDAD:
+   api.alumnos.demo() falla si estas listas se separan de las del servidor. */
+var MTB_SIMBOLOS = [
+  'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD',
+  'XAUUSD', 'XAGUSD', 'EURGBP', 'EURJPY', 'GBPJPY', 'AUDJPY', 'EURAUD',
+  'AUDCAD', 'NZDJPY', 'CADJPY', 'US30', 'US100', 'US500', 'GER40', 'UK100',
+  'JP225', 'XPTUSD', 'XPDUSD', 'WTIUSD', 'BRENTUSD', 'BTCUSD', 'ETHUSD',
+  'XRPUSD', 'GOOGL', 'NVDA', 'META', 'WMT'
+];
+var MTB_TEMPORALIDADES = [
+  'Scalping 15m', 'Scalping 30m', 'Intraday 1H', 'Intraday 4H', 'Intraday D', 'Swing (S)', 'Swing (M)'
+];
+/* periodo del grafico en MT5 que corresponde a cada temporalidad (el InpTF que graba el compilador) */
+var MTB_TF_MT5 = { 'Scalping 15m': 'M15', 'Scalping 30m': 'M30', 'Intraday 1H': 'H1', 'Intraday 4H': 'H4',
+                   'Intraday D': 'D1', 'Swing (S)': 'W1', 'Swing (M)': 'MN1' };
+function mtbOpciones(lista, rotulo){
+  return '<option value="">' + rotulo + '</option>' + lista.map(function(v){ return '<option value="' + mtbTexto(v) + '">' + mtbTexto(v) + '</option>'; }).join('');
+}
 function mtbTexto(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
 function mtbFechaCorta(v){ if(!v) return 'sin vencimiento'; var d = new Date(String(v).replace(' ','T')); return isNaN(d) ? mtbTexto(v) : d.toLocaleDateString('es-MX', {day:'numeric', month:'long', year:'numeric'}); }
 function cargarMisRobots(){
@@ -90,14 +110,19 @@ function cargarMisRobots(){
           '<div class="flex items-center justify-between gap-3 mb-2"><h3 class="font-bold text-slate-800">' + etiqueta + '</h3>' + estado + '</div>' +
           '<p class="text-sm text-slate-500 mb-1">' + cuenta + '</p>' +
           '<p class="text-xs text-slate-400 mb-4">Vigencia: ' + mtbFechaCorta(l.expira_en) + ' · Licencia ' + mtbTexto(l.prefijo) + '…</p>' +
-          (activa ? '<button type="button" class="mtb-btn w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2.5 rounded-lg" data-mi-robot="' + l.id + '">Descargar mi robot</button>'
+          (activa ? '<div class="grid grid-cols-2 gap-2 mb-3">' +
+              '<label class="text-xs font-semibold text-slate-600">Activo<select class="mt-1 w-full border border-slate-200 rounded-lg px-2 py-2 text-sm text-slate-800 bg-white" data-mi-simbolo="' + l.id + '">' + mtbOpciones(MTB_SIMBOLOS, '— elige —') + '</select></label>' +
+              '<label class="text-xs font-semibold text-slate-600">Temporalidad<select class="mt-1 w-full border border-slate-200 rounded-lg px-2 py-2 text-sm text-slate-800 bg-white" data-mi-temporalidad="' + l.id + '">' + mtbOpciones(MTB_TEMPORALIDADES, '— elige —') + '</select></label>' +
+            '</div>' +
+            '<button type="button" class="mtb-btn w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2.5 rounded-lg" data-mi-robot="' + l.id + '">Descargar mi robot</button>' +
+            '<p class="text-xs text-slate-500 mt-2 hidden" data-mi-listo="' + l.id + '" role="status"></p>'
                   : '<p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Esta licencia no esta vigente. Escribenos por Telegram para reactivarla.</p>') +
           '</div>';
       }).join('');
       var guia = '<div class="border border-slate-200 rounded-2xl p-5 mt-4"><h3 class="font-bold text-slate-800 mb-3">Instalalo en 3 pasos</h3><ol class="text-sm text-slate-600 space-y-2 list-decimal pl-5">' +
-        '<li>En MetaTrader 5: <strong>Archivo &rarr; Abrir carpeta de datos &rarr; MQL5 &rarr; Experts</strong> y copia ahi el archivo <span class="font-mono">MexTradeBot_SeguidorSMC.ex5</span>. Luego en el Navegador, clic derecho en <em>Asesores Expertos</em> &rarr; <strong>Actualizar</strong>.</li>' +
+        '<li>En MetaTrader 5: <strong>Archivo &rarr; Abrir carpeta de datos &rarr; MQL5 &rarr; Experts</strong> y copia ahi el archivo que descargaste (se llama <span class="font-mono">MTB_&lt;tu cuenta&gt;_&lt;ACTIVO&gt;_&lt;temporalidad&gt;.ex5</span>, por ejemplo <span class="font-mono">MTB_lic5_XAUUSD_Intraday1H.ex5</span>). Luego en el Navegador, clic derecho en <em>Asesores Expertos</em> &rarr; <strong>Actualizar</strong>.</li>' +
         '<li><strong>Herramientas &rarr; Opciones &rarr; Asesores Expertos</strong>: activa <em>Permitir trading algoritmico</em> y <em>Permitir WebRequest</em>, y agrega <span class="font-mono">https://mextradebot.com.mx</span>.</li>' +
-        '<li>Arrastra el robot al grafico del activo (por ejemplo GOLD en H1). Tu licencia ya viene dentro: no tienes que escribir nada.</li>' +
+        '<li>Arrastra el robot al grafico del activo que elegiste, en la temporalidad que elegiste (por ejemplo XAUUSD en Intraday 1H &rarr; grafico de GOLD en H1). Tu licencia, el activo y la temporalidad ya vienen dentro: no tienes que escribir ni cambiar nada.</li>' +
         '</ol><p class="text-xs text-slate-400 mt-3">El robot queda amarrado a la primera cuenta donde lo uses. Si cambias de cuenta, escribenos por Telegram.</p></div>';
       cont.innerHTML = '<div class="grid sm:grid-cols-2 gap-4">' + tarjetas + '</div>' + guia;
     })
@@ -109,10 +134,28 @@ function cargarMisRobots(){
 document.addEventListener('click', function(ev){
   var b = ev.target.closest('[data-mi-robot]');
   if (!b) return;
-  var texto = b.textContent; b.disabled = true; b.textContent = 'Preparando tu robot...';
-  fetch('/api/v1/mi-robot?id=' + encodeURIComponent(b.dataset.miRobot), { credentials: 'same-origin' })
-    .then(function(r){ if(!r.ok) return r.json().catch(function(){ return {}; }).then(function(j){ throw new Error(j.error || ('HTTP ' + r.status)); }); return r.blob(); })
-    .then(function(blob){ var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'MexTradeBot_SeguidorSMC.ex5'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(a.href); }, 5000); })
+  var id = b.dataset.miRobot;
+  var simbolo = document.querySelector('[data-mi-simbolo="' + id + '"]').value;
+  var temporalidad = document.querySelector('[data-mi-temporalidad="' + id + '"]').value;
+  var listo = document.querySelector('[data-mi-listo="' + id + '"]');
+  if (!simbolo || !temporalidad) { alert('Elige el activo y la temporalidad de tu robot: asi sale listo para arrastrar al grafico.'); return; }
+  var texto = b.textContent; b.disabled = true; b.textContent = 'Preparando tu robot...'; listo.classList.add('hidden');
+  var nombre = '', xm = '';
+  fetch('/api/v1/mi-robot?id=' + encodeURIComponent(id) + '&simbolo=' + encodeURIComponent(simbolo) + '&temporalidad=' + encodeURIComponent(temporalidad),
+        { credentials: 'same-origin', cache: 'no-store' })
+    .then(function(r){
+      if (!r.ok) return r.json().catch(function(){ return {}; }).then(function(j){
+        throw new Error(j.error === 'generador_actualizando' ? 'el generador de robots se esta actualizando, intenta en unos minutos.' : (j.error || ('HTTP ' + r.status)));
+      });
+      nombre = r.headers.get('X-MTB-Nombre') || ''; xm = r.headers.get('X-MTB-Simbolo-XM') || simbolo;
+      if (!nombre) throw new Error('respuesta inesperada del servidor, intenta de nuevo.');  // el nombre lo decide el servidor
+      return r.blob();
+    })
+    .then(function(blob){
+      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(a.href); }, 5000);
+      listo.innerHTML = 'Descargado <span class="font-mono">' + mtbTexto(nombre) + '</span>: arrastralo a un grafico de <strong>' + mtbTexto(xm) + '</strong> en <strong>' + mtbTexto(MTB_TF_MT5[temporalidad] || temporalidad) + '</strong>.';
+      listo.classList.remove('hidden');
+    })
     .catch(function(e){ alert('No se pudo preparar tu robot: ' + e.message); })
     .then(function(){ b.disabled = false; b.textContent = texto; });
 });
