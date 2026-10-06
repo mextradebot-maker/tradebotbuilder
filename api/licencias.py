@@ -129,7 +129,7 @@ def procesar_admin(metodo: str, datos: dict, headers: dict) -> tuple[int, dict]:
 
     try:
         if metodo == "GET":
-            return 200, licencias.estado_panel()
+            return 200, _con_robots(licencias.estado_panel())
 
         accion = datos.get("accion")
         dias = int(datos["vigencia_dias"]) if datos.get("vigencia_dias") else None
@@ -154,6 +154,30 @@ def procesar_admin(metodo: str, datos: dict, headers: dict) -> tuple[int, dict]:
         return 400, {"error": "accion debe ser emitir | revocar | reautorizar | liberar | kill_switch"}
     except (KeyError, TypeError, ValueError) as e:
         return 400, {"error": str(e)}
+
+
+def modo_de_tipo(tipo: str) -> str:
+    """La ficha registra descargas por modo: licencia demo → 'demo'; real / vip → 'real'."""
+    return "demo" if tipo == "demo" else "real"
+
+
+def _con_robots(estado: dict) -> dict:
+    """Cada licencia del panel admin lleva `robots`: lo que ese alumno ya bajó desde la ficha en su modo,
+    para que el boton Robot ofrezca "Oro (XAUUSD) · Swing (S)" en un clic en vez de volver a elegir."""
+    from api.catalogo import robot_legible
+
+    lics = estado.get("licencias") or []
+    try:
+        from persistencia import membresias
+
+        filas = membresias.robots_de_correos([l.get("correo") for l in lics])
+    except Exception:  # sin la tabla o BD caída: el panel sigue, el modal cae a los selectores
+        filas = []
+    for l in lics:
+        correo, modo = str(l.get("correo") or "").strip().lower(), modo_de_tipo(l.get("tipo"))
+        l["robots"] = [robot_legible(f["simbolo"], f["temporalidad"]) for f in filas
+                       if correo and f["correo"] == correo and f["modo"] == modo]
+    return estado
 
 
 def _pedir_compilacion(url: str, clave: str, token: str, presets: dict | None = None) -> tuple[bytes, bool]:
@@ -312,11 +336,31 @@ def demo() -> None:
             liberar=lambda i: llamadas.append(("liberar", i)),
             emitir=lambda c, cu, t, r, d: (llamadas.append(("emitir", cu)) or ("MTB-T", {"id": 1})),
         )
-        previos = {k: _s.modules.get(k) for k in ("persistencia", "persistencia.licencias")}
+        previos = {k: _s.modules.get(k) for k in ("persistencia", "persistencia.licencias", "persistencia.membresias")}
         _s.modules["persistencia"] = _t.SimpleNamespace(licencias=falso)
         _s.modules["persistencia.licencias"] = falso
         try:
             h = {"X-Admin-Key": "adm"}
+            # listado admin: cada licencia trae los robots que su alumno ya bajó (en el modo de la licencia)
+            falso.estado_panel = lambda: {"licencias": [
+                {"id": 1, "tipo": "demo", "correo": "Ana@x.com"}, {"id": 2, "tipo": "vip", "correo": "ana@x.com"},
+                {"id": 3, "tipo": "real", "correo": None}], "eventos": []}
+            bajadas = [{"correo": "ana@x.com", "modo": "demo", "simbolo": "XAUUSD", "temporalidad": "Swing (S)"},
+                       {"correo": "ana@x.com", "modo": "real", "simbolo": "US30", "temporalidad": "Intraday 4H"},
+                       {"correo": "otro@x.com", "modo": "demo", "simbolo": "EURUSD", "temporalidad": "Intraday 1H"}]
+            pedidos_correos = []
+            _s.modules["persistencia"].membresias = _t.SimpleNamespace(
+                robots_de_correos=lambda cs: (pedidos_correos.append(sorted(c for c in cs if c)), bajadas)[1])
+            _s.modules["persistencia.membresias"] = _s.modules["persistencia"].membresias
+            st, est = procesar_admin("GET", {}, h)
+            r = {l["id"]: l["robots"] for l in est["licencias"]}
+            assert st == 200 and [x["etiqueta"] for x in r[1]] == ["Oro (XAUUSD) · Swing (S)"], r
+            assert [x["etiqueta"] for x in r[2]] == ["Dow Jones 30 (US30) · Intraday 4H"] and r[3] == [], r
+            assert pedidos_correos == [["Ana@x.com", "ana@x.com"]], pedidos_correos  # una sola consulta
+            _s.modules["persistencia"].membresias = _t.SimpleNamespace(
+                robots_de_correos=lambda cs: (_ for _ in ()).throw(RuntimeError("BD caída")))
+            _s.modules["persistencia.membresias"] = _s.modules["persistencia"].membresias
+            assert all(l["robots"] == [] for l in procesar_admin("GET", {}, h)[1]["licencias"])  # el panel no se cae
             assert procesar_admin("POST", {"accion": "liberar", "id": 7}, h) == (200, {"ok": True})
             assert procesar_admin("POST", {"accion": "emitir", "cliente": "x", "cuenta": "", "tipo": "demo", "robot": "r"}, h)[0] == 200
             assert llamadas == [("liberar", 7), ("emitir", None)], llamadas
@@ -409,6 +453,8 @@ def demo() -> None:
         return _re.findall(r"'([^']*)'", bloque.group(1))
     assert _lista("MTB_SIMBOLOS") == list(SIMBOLOS), _lista("MTB_SIMBOLOS")
     assert _lista("MTB_TEMPORALIDADES") == list(TF_POR_TEMPORALIDAD), _lista("MTB_TEMPORALIDADES")
+    # el modal Robot ofrece primero los robots ya grabados (un clic) y deja los selectores tras "Otro activo"
+    assert "lic.robots" in html and "data-grabado" in html and ">Otro activo<" in html and "robotSin" not in html
     print("api.licencias.demo() OK")
 
 

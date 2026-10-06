@@ -315,12 +315,14 @@ function mtbDescargarRobot(boton, id, simbolo, temporalidad) {
     .then(function() { boton.disabled = false; boton.textContent = texto; });
 }
 
-/* Antes de compilar se elige par y temporalidad: el robot sale listo para arrastrar al gráfico
-   (el capital se queda en 0 = balance real de la cuenta). Ya no hay descarga "sin configurar":
-   un robot con los valores de fábrica (XAUUSD / Intraday 1H) en otro gráfico opera mal. */
+/* Robot listo para arrastrar (el capital se queda en 0 = balance real de la cuenta). Si el alumno ya
+   bajó robots desde la ficha (lic.robots, del listado admin), se ofrecen en un clic con esos mismos
+   valores ("Oro (XAUUSD) · Swing (S)"); los selectores de par/temporalidad quedan detrás de "Otro activo"
+   y solo se abren directo si no hay nada grabado. Nunca hay descarga "sin configurar". */
 function mtbElegirRobot(boton) {
   var id = boton.dataset.robot;
   var lic = (window.mtbMaster.estado.licencias || []).filter(function(l) { return String(l.id) === String(id); })[0] || {};
+  var grabados = lic.robots || [];
   var ops = function(lista) {
     return lista.map(function(v) { return '<option value="' + mtbEsc(v) + '">' + mtbEsc(v) + '</option>'; }).join('');
   };
@@ -330,20 +332,35 @@ function mtbElegirRobot(boton) {
     '<p class="font-bold text-white mb-1">Robot listo para arrastrar</p>' +
     '<p class="text-[11px] text-slate-400 mb-4">' + mtbEsc(lic.cliente || '') +
       (lic.cuenta ? ' · cuenta <span class="font-mono">' + mtbEsc(lic.cuenta) + '</span>' : ' · cuenta sin amarrar') + '</p>' +
-    '<label class="block text-slate-300 font-medium mb-1" for="robotSimbolo">Par</label>' +
-    '<select id="robotSimbolo" class="w-full mb-3 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200">' + ops(MTB_SIMBOLOS) + '</select>' +
-    '<label class="block text-slate-300 font-medium mb-1" for="robotTemporalidad">Temporalidad</label>' +
-    '<select id="robotTemporalidad" class="w-full mb-4 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200">' +
-      '<option value="">— elige la temporalidad —</option>' + ops(MTB_TEMPORALIDADES) + '</select>' +
-    '<button type="button" id="robotOk" class="mtb-btn w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs">Compilar y descargar</button>' +
+    (grabados.length
+      ? '<p class="text-[11px] text-slate-400 mb-2">Robots que ya bajó este alumno:</p><div class="space-y-2 mb-3">' +
+          grabados.map(function(r, i) {
+            return '<button type="button" class="mtb-btn w-full text-left px-3 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs" data-grabado="' + i + '">' + mtbEsc(r.etiqueta) + '</button>';
+          }).join('') + '</div>' +
+        '<button type="button" id="robotOtro" class="text-[11px] text-slate-400 hover:text-slate-200 underline mb-3">Otro activo</button>'
+      : '') +
+    '<div id="robotSelectores"' + (grabados.length ? ' hidden' : '') + '>' +
+      '<label class="block text-slate-300 font-medium mb-1" for="robotSimbolo">Par</label>' +
+      '<select id="robotSimbolo" class="w-full mb-3 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200">' + ops(MTB_SIMBOLOS) + '</select>' +
+      '<label class="block text-slate-300 font-medium mb-1" for="robotTemporalidad">Temporalidad</label>' +
+      '<select id="robotTemporalidad" class="w-full mb-4 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200">' +
+        '<option value="">— elige la temporalidad —</option>' + ops(MTB_TEMPORALIDADES) + '</select>' +
+      '<button type="button" id="robotOk" class="mtb-btn w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs">Compilar y descargar</button>' +
+    '</div>' +
     '<div class="flex justify-end mt-3 text-[11px]">' +
       '<button type="button" id="robotCancelar" class="text-slate-400 hover:text-slate-200">Cancelar</button>' +
     '</div></div>';
   document.body.appendChild(fondo);
   fondo.querySelector('#robotSimbolo').value = 'XAUUSD';
   var cerrar = function() { fondo.remove(); };
-  fondo.addEventListener('click', function(e) { if (e.target === fondo) cerrar(); });
+  fondo.addEventListener('click', function(e) {
+    if (e.target === fondo) return cerrar();
+    var g = e.target.closest('[data-grabado]');
+    if (g) { var r = grabados[Number(g.dataset.grabado)]; cerrar(); mtbDescargarRobot(boton, id, r.simbolo, r.temporalidad); }
+  });
   fondo.querySelector('#robotCancelar').addEventListener('click', cerrar);
+  var otro = fondo.querySelector('#robotOtro');
+  if (otro) otro.addEventListener('click', function() { otro.remove(); fondo.querySelector('#robotSelectores').hidden = false; });
   fondo.querySelector('#robotOk').addEventListener('click', function() {
     var s = fondo.querySelector('#robotSimbolo').value, t = fondo.querySelector('#robotTemporalidad').value;
     if (!s || !t) { alert('Elige el par y la temporalidad con los que va a operar este robot.'); return; }
