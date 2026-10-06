@@ -40,6 +40,11 @@
 //| MONTO A OPERAR (v1.18, ficha de descarga 3 oct 2026): InpCapital  |
 //| > 0 limita el capital al menor entre ese monto y el balance (lote,|
 //| cierre forzado -3% y R de Swing). 0 = balance de la cuenta.       |
+//| CONSULTA DIARIA EN SWING (v1.19, regla de Ricardo 6 oct 2026):    |
+//| Swing (S)/(M) consultan /api/setups en cada vela D1, no solo al    |
+//| abrir la semanal/mensual. Si el domingo habia una posicion abierta |
+//| o la consulta fallo, la entrada vigente se toma al dia siguiente.  |
+//| El analisis, la expiracion y el trailing siguen en InpTF.          |
 //| REINTENTO (v1.16): si /api/setups falla por red o HTTP 5xx, se    |
 //| reintenta cada 60s dentro de la misma vela.                       |
 //|                                                                    |
@@ -62,7 +67,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.18"
+#property version   "1.19"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -172,7 +177,8 @@ void OnTick()
    // Solo procesar en vela nueva -- evita golpear la API en cada tick
    // Si la API fallo (502, timeout) se reintenta cada 60s en la misma vela: sin esto un
    // solo 502 al abrir la vela pierde la vela entera (en Swing W1, una semana).
-   datetime vela_actual = iTime(_Symbol, InpTF, 0);
+   // Swing (S)/(M): se consulta cada dia (v1.19); el resto, en cada vela de InpTF
+   datetime vela_actual = iTime(_Symbol, EsSwingSM() ? PERIOD_D1 : InpTF, 0);
    bool reintento = (g_reintento_en > 0 && vela_actual == g_ultima_vela);
    if(vela_actual == g_ultima_vela && !reintento) return;
    if(reintento && TimeCurrent() < g_reintento_en) return;
