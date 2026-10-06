@@ -266,6 +266,28 @@ def fijar_kill_switch(activo: bool, motivo: str | None) -> None:
         _evento_admin(conn, None, None, "kill_switch_on" if activo else "kill_switch_off", motivo)
 
 
+def robots_de_cuentas(cuentas) -> list[dict | None]:
+    """Par y temporalidad con que opera cada cuenta según cuentas_demo (la del coordinador), para que
+    el botón Robot del panel master descargue sin preguntar. {simbolo, temporalidad} o None por cuenta.
+    cuentas_demo guarda el símbolo de XM (GOLD, US30Cash): se traduce al de la API (XAUUSD, US30)."""
+    try:
+        from api.catalogo import SIMBOLO_XM
+        a_api = {xm: api for api, xm in SIMBOLO_XM.items()}
+        logins = sorted({int(c) for c in cuentas if c})
+        filas = {}
+        if logins:
+            with get_conn() as conn:
+                filas = {r[0]: (r[1], r[2]) for r in conn.execute(
+                    "SELECT login, simbolo, temporalidad FROM cuentas_demo WHERE login = ANY(%s)", (logins,)).fetchall()}
+    except Exception:  # el panel nunca se cae por esto: sin dato, el modal pregunta
+        return [None for _ in cuentas]
+    salida = []
+    for c in cuentas:
+        f = filas.get(int(c)) if c else None
+        salida.append({"simbolo": a_api.get(f[0], f[0]), "temporalidad": f[1]} if f else None)
+    return salida
+
+
 def estado_panel(limite_eventos: int = 50) -> dict:
     with get_conn() as conn:
         lics = [_fila(r) for r in conn.execute(f"SELECT {_COLS} FROM licencias ORDER BY creada_en DESC").fetchall()]
@@ -277,6 +299,8 @@ def estado_panel(limite_eventos: int = 50) -> dict:
             (limite_eventos,),
         ).fetchall()
     cols_ev = "registrado_en, resultado, motivo, cuenta, ip, cliente, token_prefijo"
+    for lic, robot in zip(lics, robots_de_cuentas([l.get("cuenta") for l in lics])):
+        lic["robot_config"] = robot
     return {
         "licencias": lics,
         "kill_switch": {"activo": bool(ks[0]), "motivo": ks[1], "cambiado_en": ks[2]} if ks else {"activo": False},
