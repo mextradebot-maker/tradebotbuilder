@@ -318,9 +318,35 @@ function mtbDescargarRobot(boton, id, simbolo, temporalidad) {
 
 /* Antes de compilar se elige par y temporalidad: el robot sale listo para arrastrar al gráfico
    (el capital se queda en 0 = balance real de la cuenta). "Sin configurar" deja el flujo de antes. */
+/* Par y temporalidad: primero los de la cuenta en cuentas_demo (robot_config); si no, el nombre
+   de la licencia ya los dice ("Master Trader - PETROLEO CRUDO SWING"):
+   si se leen los dos, el robot se descarga directo, sin preguntar nada. */
+var MTB_ALIAS_SIMBOLO = [
+  [/PETROLEO|CRUDO|\bWTI\b|\bOIL\b/, 'WTIUSD'], [/\bORO\b|\bGOLD\b/, 'XAUUSD'], [/\bPLATA\b|\bSILVER\b/, 'XAGUSD']
+];
+function mtbInferirRobot(nombre) {
+  var n = String(nombre || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  var compacto = n.replace(/[^A-Z0-9]/g, '');
+  var simbolo = null;
+  MTB_ALIAS_SIMBOLO.forEach(function(a) { if (!simbolo && a[0].test(n)) simbolo = a[1]; });
+  if (!simbolo) simbolo = MTB_SIMBOLOS.filter(function(s) { return compacto.indexOf(s) >= 0; })[0] || null;
+  var temporalidad = null;
+  if (/SCALPING/.test(n)) temporalidad = /30/.test(n) ? 'Scalping 30m' : 'Scalping 15m';
+  else if (/INTRADAY/.test(n)) temporalidad = /4H/.test(n) ? 'Intraday 4H' : (/\bD\b|DIARI/.test(n) ? 'Intraday D' : 'Intraday 1H');
+  else if (/SWING/.test(n)) temporalidad = /\(M\)|MENSUAL/.test(n) ? 'Swing (M)' : 'Swing (S)';
+  return { simbolo: simbolo, temporalidad: temporalidad };
+}
+
 function mtbElegirRobot(boton) {
   var id = boton.dataset.robot;
   var lic = (window.mtbMaster.estado.licencias || []).filter(function(l) { return String(l.id) === String(id); })[0] || {};
+  var cfg = lic.robot_config || {};  // cuentas_demo: con qué par y temporalidad opera esa cuenta
+  var nombre = mtbInferirRobot(lic.cliente);
+  var inferido = {
+    simbolo: MTB_SIMBOLOS.indexOf(cfg.simbolo) >= 0 ? cfg.simbolo : nombre.simbolo,
+    temporalidad: MTB_TEMPORALIDADES.indexOf(cfg.temporalidad) >= 0 ? cfg.temporalidad : nombre.temporalidad
+  };
+  if (inferido.simbolo && inferido.temporalidad) { mtbDescargarRobot(boton, id, inferido.simbolo, inferido.temporalidad); return; }
   var ops = function(lista) {
     return lista.map(function(v) { return '<option value="' + mtbEsc(v) + '">' + mtbEsc(v) + '</option>'; }).join('');
   };
@@ -341,7 +367,8 @@ function mtbElegirRobot(boton) {
       '<button type="button" id="robotCancelar" class="text-slate-400 hover:text-slate-200">Cancelar</button>' +
     '</div></div>';
   document.body.appendChild(fondo);
-  fondo.querySelector('#robotSimbolo').value = 'XAUUSD';
+  fondo.querySelector('#robotSimbolo').value = inferido.simbolo || 'XAUUSD';
+  if (inferido.temporalidad) fondo.querySelector('#robotTemporalidad').value = inferido.temporalidad;
   var cerrar = function() { fondo.remove(); };
   fondo.addEventListener('click', function(e) { if (e.target === fondo) cerrar(); });
   fondo.querySelector('#robotCancelar').addEventListener('click', cerrar);
