@@ -32,7 +32,7 @@ from backtesting.backtest import backtest_v2, simular_v2
 from conectividad import SIMBOLOS, TEMPORALIDADES, TEMPORALIDAD_A_INTERVALO, obtener_velas, resolver_temporalidad
 from motor_smc import analizar, detectar_setups, obtener_tendencia
 from motor_smc.reglas import DURACION_VELA
-from motor_smc.setups_v2 import detectar_setups_v2, embudo
+from motor_smc.setups_v2 import detectar_setups_v2, embudo, reglas_informativas
 
 # Cache Postgres (Fase 1 BD SMC persistente). Si DATABASE_URL no esta disponible
 # o Postgres esta caido, _persistencia queda None y se cae al compute fresco.
@@ -134,7 +134,7 @@ def motor_v2(simbolo: str, temporalidad: str, ohlc, inicio, fin) -> dict:
             if motivo:
                 sin["error"] = motivo
             return sin
-        setups = detectar_setups_v2(ohlc, ohlc_mayor, vela, vela_mayor)
+        setups = detectar_setups_v2(ohlc, ohlc_mayor, vela, vela_mayor, reglas_informativas(simbolo, temporalidad))
         # jsonb no acepta NaN: celdas vacías -> None
         registros = setups.astype(object).where(setups.notna(), None).to_dict(orient="records")
         simulados = simular_v2(ohlc, setups)
