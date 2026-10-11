@@ -3,7 +3,7 @@
 Lee del almacen la ventana larga de cada temporalidad, corre detectar_setups_v2 + backtest_v2 y guarda
 {"backtests", "embudo"} en `backtest_largo` (Postgres). Es informacion extra (/api/setups.backtest_largo y
 /api/backtest); no gatea nada. Un hilo (prioridad baja): combos sin fila apenas su historia esta completa;
-recalculo de los viejos (> 6 dias) solo en domingo UTC. Una combinacion a la vez, con pausa entre ellas, y
+recalculo diario de los que tienen mas de HORAS_RECALCULO. Una combinacion a la vez, con pausa entre ellas, y
 sin competir con el refresco mientras el mercado esta abierto y hay trabajo urgente.
 Variable: BACKTEST_LARGO_ACTIVO=0 lo apaga (app.py).
 """
@@ -23,7 +23,7 @@ ANIO = timedelta(days=365)
 VENTANA = {"Scalping 15m": 3 * ANIO, "Scalping 30m": 3 * ANIO, "Intraday 1H": 8 * ANIO, "Intraday 4H": 15 * ANIO,
            "Intraday D": 15 * ANIO, "Swing (S)": None, "Swing (M)": None}
 SERIE_BASE = {"15m": "15m", "30m": "15m", "1H": "1H", "4H": "1H", "D": "D", "S": "D", "M": "D"}  # vela -> serie guardada
-DIAS_RECALCULO = 5  # < 7: una fila de un domingo tardio no se salta el domingo siguiente
+HORAS_RECALCULO = 20  # < 24: una fila calculada tarde no se salta el dia siguiente (una vuelta completa tarda ~14 h)
 PAUSA_COMBO_S = 30
 CICLO_TRABAJO = 2  # pausa tras un combo >= 2 x lo que tardo: el hilo usa como mucho ~33% de CPU
 PAUSA_OCIOSA_S = 600
@@ -137,11 +137,11 @@ def ultimos() -> dict:
 
 def siguiente(disponibles: list, ultimo: dict, ahora: datetime, urgentes, mercado_abierto,
               vetados=frozenset()) -> tuple[str, str] | None:
-    """Combo a calcular ahora o None. Sin fila: cualquier dia. Con fila mas vieja que DIAS_RECALCULO: solo domingo UTC.
+    """Combo a calcular ahora o None. Sin fila primero; luego las filas con mas de HORAS_RECALCULO, la mas vieja primero.
     Con el mercado del simbolo abierto no se calcula si hay trabajo urgente del refresco (`urgentes()`, lazy)."""
     sin_fila = [c for c in disponibles if c not in ultimo]
-    viejos = sorted((c for c in disponibles if c in ultimo and ahora - ultimo[c] > timedelta(days=DIAS_RECALCULO)),
-                    key=lambda c: ultimo[c]) if ahora.weekday() == 6 else []
+    viejos = sorted((c for c in disponibles if c in ultimo and ahora - ultimo[c] > timedelta(hours=HORAS_RECALCULO)),
+                    key=lambda c: ultimo[c])
     hay_urgentes = None
     for c in sin_fila + viejos:
         if c in vetados:
@@ -224,17 +224,16 @@ def demo() -> None:
         except ValueError:
             pass
 
-    # decisiones del hilo (domingo 2026-09-27; lunes 2026-09-28)
-    dom, lun = datetime(2026, 9, 27, 3, tzinfo=timezone.utc), datetime(2026, 9, 28, 15, tzinfo=timezone.utc)
+    # decisiones del hilo (lunes 2026-09-28)
+    lun = datetime(2026, 9, 28, 15, tzinfo=timezone.utc)
     A, B = ("XAUUSD", "Intraday 1H"), ("EURUSD", "Intraday 1H")
-    viejo, fresco = dom - timedelta(days=6), dom - timedelta(days=4)  # 6 dias (domingo tardio): se recalcula; 4: no
+    viejo, fresco = lun - timedelta(hours=21), lun - timedelta(hours=19)  # 21 h: se recalcula; 19 h: todavia no
     cerrado, abierto = (lambda s, t: False), (lambda s, t: True)
     no_urg, si_urg = (lambda: False), (lambda: True)
     assert siguiente([A, B], {A: viejo}, lun, no_urg, abierto) == B  # sin fila: cualquier dia
-    assert siguiente([A], {A: viejo}, lun, no_urg, abierto) is None  # viejo: solo domingo
-    assert siguiente([A], {A: viejo}, dom, no_urg, abierto) == A
-    assert siguiente([A], {A: fresco}, dom, no_urg, abierto) is None  # reciente (< 6 dias): no se recalcula
-    assert siguiente([A, B], {A: viejo, B: viejo - timedelta(days=1)}, dom, no_urg, abierto) == B  # el mas viejo primero
+    assert siguiente([A], {A: viejo}, lun, no_urg, abierto) == A  # diario: cualquier dia, no solo domingo
+    assert siguiente([A], {A: fresco}, lun, no_urg, abierto) is None  # reciente (< 20 h): no se recalcula
+    assert siguiente([A, B], {A: viejo, B: viejo - timedelta(days=1)}, lun, no_urg, abierto) == B  # el mas viejo primero
     assert siguiente([A], {}, lun, si_urg, abierto) is None  # mercado abierto y refresco urgente: cede
     assert siguiente([A], {}, lun, si_urg, cerrado) == A  # mercado cerrado: no compite con el refresco
     assert siguiente([A], {}, lun, no_urg, abierto) == A
