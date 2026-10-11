@@ -8,7 +8,7 @@
 
 Además arranca el refresco de snapshots SMC en segundo plano (refresco.py).
 Variables: PORT (8000), N8N_URL, REFRESCO_ACTIVO=0 para apagarlo, ALMACEN_CARGA_ACTIVA=0 apaga la carga
-historica de velas (carga_historica.py), BACKTEST_LARGO_ACTIVO=0 apaga el backtest largo diario (backtest_largo.py), REFRESCO_HILOS (hilos del
+historica de velas (carga_historica.py), BACKTEST_LARGO_ACTIVO=0 apaga el backtest largo incremental (backtest_largo.py), REFRESCO_HILOS (hilos del
 refresco, I/O-bound; por defecto 6, 1 = en serie; REFRESCO_WORKERS es alias obsoleto), más las de la API
 (DATABASE_URL, MTB_ADMIN_KEY, MTB_SERVICE_KEY).
 """
@@ -120,7 +120,7 @@ def main() -> None:
         import backtest_largo
 
         backtest_largo.iniciar_en_segundo_plano()
-        logging.info("backtest largo diario activo")
+        logging.info("backtest largo incremental activo")
     puerto = int(os.environ.get("PORT", 8000))
     logging.info("MexTradeBot escuchando en :%d", puerto)
     ThreadingHTTPServer(("0.0.0.0", puerto), Handler).serve_forever()
