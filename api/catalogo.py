@@ -75,7 +75,7 @@ def fila(simbolo, temporalidad, tendencia, refrescado_en, bt_snapshot, bt_largo,
         "r_total": rep.get("r_total") if n else None, "n_setups": n,
         "viable": viable, "veredicto": veredicto, "descripcion_larga": desc,
         "fuente": fuente if n else None,
-        # actualizado_en = último análisis en vivo (smc_snapshot); el backtest largo es diario y va aparte
+        # actualizado_en = último análisis en vivo (smc_snapshot); el backtest largo va aparte
         "actualizado_en": _iso(refrescado_en), "backtest_en": _iso(largo_en if usar_largo else refrescado_en),
     }
 
