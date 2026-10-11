@@ -67,7 +67,7 @@ def calcular(simbolo: str, temporalidad: str, ahora: datetime | None = None, obt
     from backtesting.backtest import backtest_v2
     from conectividad import TEMPORALIDADES, almacen, obtener_velas
     from motor_smc.reglas import DURACION_VELA
-    from motor_smc.setups_v2 import detectar_setups_v2, embudo
+    from motor_smc.setups_v2 import detectar_setups_v2, embudo, reglas_informativas
     obtener = obtener or (lambda s, a, b, iv: obtener_velas(s, a, b, iv, solo_almacen=True))  # nunca descarga directa de anios
     ahora = ahora or datetime.now(timezone.utc)
     t = TEMPORALIDADES[temporalidad]
@@ -88,7 +88,7 @@ def calcular(simbolo: str, temporalidad: str, ahora: datetime | None = None, obt
         ohlc_mayor = obtener(simbolo, max(ini, inicio_de(SERIE_BASE[mayor])), ahora, iv_mayor)
     if ohlc.empty or ohlc_mayor.empty:
         raise ValueError("sin velas para el backtest largo")
-    setups = detectar_setups_v2(ohlc, ohlc_mayor, vela, mayor)
+    setups = detectar_setups_v2(ohlc, ohlc_mayor, vela, mayor, reglas_informativas(simbolo, temporalidad))
     resultado = a_json_estricto({"backtests": backtest_v2(ohlc, setups), "embudo": embudo(setups)})
     return {"desde": ohlc.index[0].to_pydatetime(), "hasta": ohlc.index[-1].to_pydatetime(),
             "velas": len(ohlc), "resultado": resultado}

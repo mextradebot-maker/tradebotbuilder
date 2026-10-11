@@ -74,7 +74,9 @@ def fila(simbolo, temporalidad, tendencia, refrescado_en, bt_snapshot, bt_largo,
         "winrate": rep.get("winrate") if n else None, "expectativa_r": exp,
         "r_total": rep.get("r_total") if n else None, "n_setups": n,
         "viable": viable, "veredicto": veredicto, "descripcion_larga": desc,
-        "fuente": fuente if n else None, "actualizado_en": _iso(largo_en if usar_largo else refrescado_en),
+        "fuente": fuente if n else None,
+        # actualizado_en = último análisis en vivo (smc_snapshot); el backtest largo es semanal y va aparte
+        "actualizado_en": _iso(refrescado_en), "backtest_en": _iso(largo_en if usar_largo else refrescado_en),
     }
 
 
@@ -109,7 +111,7 @@ def demo() -> None:
     ])
     f = {x["simbolo"]: x for x in filas}
     assert f["EURUSD"]["veredicto"] == "INSUFICIENTE" and not f["EURUSD"]["viable"]
-    assert f["XAUUSD"]["viable"] and f["XAUUSD"]["n_setups"] == 40 and f["XAUUSD"]["actualizado_en"] == "t3"
+    assert f["XAUUSD"]["viable"] and f["XAUUSD"]["n_setups"] == 40 and f["XAUUSD"]["actualizado_en"] == "t2" and f["XAUUSD"]["backtest_en"] == "t3"
     assert f["XAUUSD"]["rank"] == 1 and filas[0]["simbolo"] == "XAUUSD"
     assert f["GBPUSD"]["direccion"] == "compra" and not f["GBPUSD"]["viable"]  # swing bajista: no se recomienda
     assert f["GBPUSD"]["veredicto"] == "NO RECOMENDABLE"

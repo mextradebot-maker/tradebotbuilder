@@ -155,10 +155,32 @@ def _precalculo(ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela_mayor: str) -
             "mayor": R.ContextoMayor(ohlc_mayor, vela_mayor), "swings": {}}
 
 
+# Reglas que se calculan y se muestran pero ya no descartan (backtest por regla del 7 oct 2026: quitarlas
+# no empeora esperanza ni drawdown). Sin R6 el TP sigue en la liquidez más cercana aunque esté a menos de
+# 2R; si no hay liquidez sin buscar, TP de respaldo a RR_MINIMO (el mismo respaldo InpTakeProfitR del EA).
+REGLAS_INFORMATIVAS = frozenset({"R1", "R2", "R6"})
+# Excepciones por símbolo y temporalidad: en Oro 1H quitar R5 subió la esperanza de +0.04R a +0.29R.
+INFORMATIVAS_EXTRA = {("XAUUSD", "Intraday 1H"): frozenset({"R5"})}
+
+
+def reglas_informativas(simbolo: str | None = None, temporalidad: str | None = None) -> frozenset:
+    return REGLAS_INFORMATIVAS | INFORMATIVAS_EXTRA.get((simbolo, temporalidad), frozenset())
+
+
+def _tp(r6: dict, entrada: float, stop: float, direccion: str, informativa: bool) -> float | None:
+    if isinstance(r6["dato"], dict):
+        return r6["dato"]["tp"]
+    if not informativa or r6["razon"].startswith("riesgo nulo"):
+        return None
+    riesgo = abs(entrada - stop) * R.RR_MINIMO
+    return float(entrada + riesgo if direccion == "long" else entrada - riesgo)
+
+
 def evaluar(c: dict, ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, vela_mayor: str,
-            res: dict, swing_length: int, pre: dict | None = None) -> dict:
+            res: dict, swing_length: int, pre: dict | None = None,
+            informativas: frozenset = REGLAS_INFORMATIVAS) -> dict:
     """`pre` = _precalculo(ohlc, ohlc_mayor, vela_mayor) compartido entre candidatos; sin él se calcula
-    para este candidato."""
+    para este candidato. `informativas`: reglas que se reportan pero no descartan."""
     pre = _precalculo(ohlc, ohlc_mayor, vela_mayor) if pre is None else pre
     d, k, conocido = c["direccion"], c["indice_confirmacion"], c["indice_conocido"]
     mayor = R.cortar_mayor(ohlc_mayor, ohlc.index[conocido] + R.DURACION_VELA[vela], vela_mayor)
@@ -181,7 +203,11 @@ def evaluar(c: dict, ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, ve
         "R5": R.r5_descuento_premium(mayor, c["entrada"], d, vela_mayor, ctx),
         "R6": R.r6_tp_liquidez(ohlc, swings, conocido, c["entrada"], c["stop"], d, swing_length),
     }
-    fallas = [f"{nombre}: {r['razon']}" for nombre, r in reglas.items() if r["cumple"] is False]
+    fallas = [f"{nombre}: {r['razon']}" for nombre, r in reglas.items()
+              if r["cumple"] is False and nombre not in informativas]
+    tp = _tp(reglas["R6"], c["entrada"], c["stop"], d, "R6" in informativas)
+    if tp is None and "R6" in informativas:  # riesgo nulo o stop del lado incorrecto: nunca se opera
+        fallas.append(f"R6: {reglas['R6']['razon']}")
     # la zona existe desde j+2 (el FVG en j se completa en j+1) o, en continuación, desde la vela que rompe
     desde = c["indice_zona"] + 2 if es_reversion else k + 1
     usada = R.zona_usada(ohlc, desde, conocido, c["entrada"], c["zona_extremo"], d)
@@ -194,7 +220,7 @@ def evaluar(c: dict, ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, ve
     liq = liq[liq["Swept"] <= conocido]  # sin barridos posteriores a indice_conocido
     return {
         **{col: c[col] for col in COLUMNAS if col in c},
-        "tp": reglas["R6"]["dato"]["tp"] if isinstance(reglas["R6"]["dato"], dict) else None,
+        "tp": tp,
         "valido": not fallas,
         "razon_descarte": "; ".join(fallas),
         "reglas": reglas,
@@ -209,7 +235,8 @@ def evaluar(c: dict, ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, ve
     }
 
 
-def detectar_setups_v2(ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, vela_mayor: str) -> pd.DataFrame:
+def detectar_setups_v2(ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, vela_mayor: str,
+                       informativas: frozenset = REGLAS_INFORMATIVAS) -> pd.DataFrame:
     swing_length = R.SWING_LENGTH_POR_VELA[vela]
     res = analizar(ohlc, swing_length=swing_length)
     pre = _precalculo(ohlc, ohlc_mayor, vela_mayor)
@@ -218,7 +245,7 @@ def detectar_setups_v2(ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, 
     filas = [None] * len(candidatos)
     # en orden de indice_conocido para que el memo de swings sirva; las filas vuelven a su orden original
     for i in sorted(range(len(candidatos)), key=lambda i: candidatos[i]["indice_conocido"]):
-        filas[i] = evaluar(candidatos[i], ohlc, ohlc_mayor, vela, vela_mayor, res, swing_length, pre)
+        filas[i] = evaluar(candidatos[i], ohlc, ohlc_mayor, vela, vela_mayor, res, swing_length, pre, informativas)
     return pd.DataFrame(filas, columns=COLUMNAS).sort_values("indice_conocido", ignore_index=True)
 
 
@@ -259,6 +286,19 @@ def _res_prueba(n: int = 40) -> tuple:
 
 
 def demo() -> None:
+    # Reglas informativas: R1/R2/R6 siempre; R5 solo en Oro 1H
+    assert reglas_informativas() == {"R1", "R2", "R6"}
+    assert reglas_informativas("XAUUSD", "Intraday 1H") == {"R1", "R2", "R5", "R6"}
+    assert reglas_informativas("EURUSD", "Intraday 1H") == {"R1", "R2", "R6"}
+    # TP: liquidez aunque esté a menos de 2R; sin liquidez, respaldo a 2R; stop mal puesto, sin TP
+    cerca = {"cumple": False, "dato": {"tp": 101.0, "rr": 0.5}, "razon": "TP en liquidez a 0.50R"}
+    sin_liq = {"cumple": False, "dato": None, "razon": "no hay liquidez sin buscar en la dirección del trade"}
+    mal = {"cumple": False, "dato": None, "razon": "riesgo nulo o stop del lado incorrecto"}
+    assert _tp(cerca, 100.0, 98.0, "long", True) == 101.0
+    assert _tp(sin_liq, 100.0, 98.0, "long", True) == 104.0
+    assert _tp(sin_liq, 100.0, 102.0, "short", True) == 96.0
+    assert _tp(sin_liq, 100.0, 98.0, "long", False) is None
+    assert _tp(mal, 100.0, 100.0, "long", True) is None
     # Reversión: CHoCH alcista marcado en el máximo roto i=16, barrido s=20, t=26, ruptura en 24
     # (sl=3 -> conocido = max(24, 26 + 3) = 29)
     ohlc, res = _res_prueba()
