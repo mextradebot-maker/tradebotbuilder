@@ -124,11 +124,17 @@ MENSAJE_LIMITE = {
 }
 
 
+# correos del dueño: sin límites de descarga (MTB_CORREOS_ADMIN, separados por coma, los sustituye)
+CORREOS_ADMIN = {c.strip().lower() for c in os.environ.get("MTB_CORREOS_ADMIN", "rpenacovarrubias@gmail.com").split(",") if c.strip()}
+
+
 def _nivel(correo: str, ahora: datetime) -> str | None:
     """Nivel que fija los límites: la membresía de Hotmart; una licencia real/vip emitida a mano
     (admin) no tiene límites, como antes de las membresías."""
     from persistencia import licencias, membresias
 
+    if correo.strip().lower() in CORREOS_ADMIN:
+        return "vip"
     nivel = membresias.nivel_de(correo)
     if nivel:
         return nivel
@@ -411,6 +417,10 @@ def demo() -> None:
         st, body = bajar("GBPUSD")
         assert st == 402 and body["error"] == "limite_descargas" and body["limite"] == 3 and "Trader" in body["mensaje"]
         assert bajar("XAUUSD", "Intraday 1H")[0] == 200                     # repetir uno ya bajado no gasta cupo
+        CORREOS_ADMIN.add("ana@x.com")
+        assert bajar("GBPUSD")[0] == 200                                    # correo del dueño: sin límite
+        CORREOS_ADMIN.discard("ana@x.com")
+        mem["bajadas"][("ana@x.com", "demo")].discard(("GBPUSD", "Intraday 4H"))
         assert bajar("GBPUSD", modo="real") == (402, {"error": "membresia_requerida"})
         mem["nivel"] = "trader"
         estado["extra"] = [{**mia, "id": 10, "tipo": "real", "origen": "hotmart"}]
