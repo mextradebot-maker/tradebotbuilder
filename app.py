@@ -15,8 +15,10 @@ refresco, I/O-bound; por defecto 6, 1 = en serie; REFRESCO_WORKERS es alias obso
 
 import http.client
 import logging
+import multiprocessing
 import os
 import sys
+import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
@@ -102,10 +104,14 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(datos)
 
 
-def main() -> None:
+def _segundo_plano() -> None:
+    """Proceso hijo: refresco, carga historica y backtest largo. Fuera del proceso HTTP para que su CPU no le quite el
+    GIL a /salud (healthcheck de 4 s → Swarm reinicia el contenedor → 502 de Cloudflare). nice 10: el kernel prefiere
+    al servidor web cuando compiten por el CPU del contenedor."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    # el detector del backtest largo retiene el GIL por segundos: con 1 ms los hilos HTTP retoman la CPU antes
-    sys.setswitchinterval(0.001)
+    if hasattr(os, "nice"):  # Linux (contenedor); no existe en Windows
+        os.nice(10)
+    sys.setswitchinterval(0.001)  # entre los hilos del hijo (el refresco cede al backtest largo)
     if os.environ.get("REFRESCO_ACTIVO", "1") != "0":
         import refresco
 
@@ -121,6 +127,13 @@ def main() -> None:
 
         backtest_largo.iniciar_en_segundo_plano()
         logging.info("backtest largo incremental activo")
+    threading.Event().wait()  # los hilos son daemon: el hijo vive mientras ellos trabajan
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    # ponytail: si el hijo muere (p. ej. OOM) nadie lo relanza; el sitio sigue y el siguiente deploy lo revive.
+    multiprocessing.get_context("spawn").Process(target=_segundo_plano, name="segundo-plano", daemon=True).start()
     puerto = int(os.environ.get("PORT", 8000))
     logging.info("MexTradeBot escuchando en :%d", puerto)
     ThreadingHTTPServer(("0.0.0.0", puerto), Handler).serve_forever()
