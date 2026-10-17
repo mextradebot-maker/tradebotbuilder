@@ -56,6 +56,7 @@
         '<div><h4>Legal</h4><ul>' +
           enlace('/aviso-de-privacidad.html', 'Aviso de privacidad') +
           enlace('/politica-de-cookies.html', 'Política de cookies') +
+          (window.MTB_AVISO_PROPIO ? '<li><a href="#" onclick="return mtbPreferenciasCookies()">Preferencias de cookies</a></li>' : '') +
           enlace('/aviso-de-riesgo.html', 'Aviso de riesgo y deslinde') +
         '</ul></div>' +
         '<div><h4>Contacto</h4><ul>' +
@@ -100,7 +101,7 @@
       document.body.style.alignItems = 'stretch';
     }
     document.body.appendChild(pie());
-    avisoCookies();
+    if (!window.MTB_AVISO_PROPIO) avisoCookies();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
