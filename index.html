@@ -564,7 +564,7 @@ function renderQuantConnectLeanBacktester(containerId) {
   var q = st.q.toUpperCase().trim();
   var lista = filas.filter(function(f){
     return (!q || String(f.simbolo).toUpperCase().indexOf(q) !== -1) && (st.ver === 'todos' || f.veredicto === st.ver);
-  }).sort(function(a, b){ return (b.n_setups || 0) - (a.n_setups || 0); });
+  }).sort(function(a, b){ var o = { 'RECOMENDABLE': 0, 'NO RECOMENDABLE': 1, 'INSUFICIENTE': 2 }; var d = (o[a.veredicto] || 0) - (o[b.veredicto] || 0); if (d) return d; return a.veredicto === 'RECOMENDABLE' ? (b.expectativa_r || 0) - (a.expectativa_r || 0) : (b.n_setups || 0) - (a.n_setups || 0); });
   var pct = function(x){ return x == null ? '—' : Math.round(x * 100) + '%'; };
   var r2 = function(x){ return x == null ? '—' : (x > 0 ? '+' : '') + Number(x).toFixed(2) + 'R'; };
   var color = { 'RECOMENDABLE': 'text-emerald-400', 'NO RECOMENDABLE': 'text-rose-400', 'INSUFICIENTE': 'text-slate-400' };
