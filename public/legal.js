@@ -58,6 +58,8 @@
           enlace('/politica-de-cookies.html', 'Política de cookies') +
           (window.MTB_AVISO_PROPIO ? '<li><a href="#" onclick="return mtbPreferenciasCookies()">Preferencias de cookies</a></li>' : '') +
           enlace('/aviso-de-riesgo.html', 'Aviso de riesgo y deslinde') +
+          enlace('/terminos-y-condiciones.html', 'Términos y condiciones') +
+          enlace('/reglas-del-afiliado.html', 'Reglas del afiliado') +
         '</ul></div>' +
         '<div><h4>Contacto</h4><ul>' +
           '<li><a href="https://t.me/ricardopenac" target="_blank" rel="noopener">Telegram</a></li>' +
