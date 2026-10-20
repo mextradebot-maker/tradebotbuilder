@@ -10,7 +10,7 @@ Que toda descarga de robot desde el panel `/` (y desde Telegram) pase por una so
 
 | Tema | Decisión |
 |---|---|
-| Combinaciones | Cualquier activo (36) × temporalidad (7). Si `viable=false` o no hay datos: aviso rojo con sus números reales y casilla obligatoria "Entiendo el riesgo". |
+| Combinaciones | Cualquier activo (34) × temporalidad (7). Si `viable=false` o no hay datos: aviso rojo con sus números reales y casilla obligatoria "Entiendo el riesgo". |
 | REAL sin membresía | Bloqueo: "Necesitas una membresía activa para operar en real" + botón de compra + "Descargar en DEMO". URL de compra = constante `MTB_URL_MEMBRESIA` (**dato pendiente de Ricardo**); vacía → se muestra "Contacta a MexTradeBot para activar tu membresía" sin botón. |
 | Monto a operar | Siempre se pregunta. Mínimo $300, sin máximo. DEMO precargado $10,000 (lo que da XM); REAL vacío. Se graba en el `.ex5` (`InpCapital`). El EA opera sobre el **menor** entre monto y balance (lote, freno -3%, R de Swing). |
 | Saldo demo de XM | Fuera de alcance: MQL5 no puede cambiar el balance (XM: "balance management has been disabled - demo account"). No hace falta: el EA usa el menor. |
@@ -21,7 +21,7 @@ Que toda descarga de robot desde el panel `/` (y desde Telegram) pase por una so
 ## 1. Experiencia del alumno (panel `/`)
 
 1. Los 4 orígenes (Catálogo en Bots en operación, Activos analizados, "Descarga rápida" de Tarjetas, pestaña Personalizado) abren la misma ficha `abrirFicha(simbolo, temporalidad)` con lo que traían preseleccionado.
-2. **Paso 1 — qué operar (editable):** Activo (36, con nombre); Temporalidad (7, cada una con tendencia ↗/↘, acierto, expectativa, setups y veredicto de las filas reales del catálogo; "Sin datos" si no hay muestra); Modo DEMO/REAL; Monto a operar.
+2. **Paso 1 — qué operar (editable):** Activo (34, con nombre); Temporalidad (7, cada una con tendencia ↗/↘, acierto, expectativa, setups y veredicto de las filas reales del catálogo; "Sin datos" si no hay muestra); Modo DEMO/REAL; Monto a operar.
 3. Si no es recomendable: aviso rojo con sus números reales + casilla "Entiendo el riesgo" (obligatoria).
 4. Si la licencia DEMO ya está amarrada a una cuenta: "Tu licencia DEMO está amarrada a la cuenta N; el robot solo operará ahí".
 5. **Paso 2 — cómo va a operar (solo lectura)**, con el monto M del alumno:
@@ -54,7 +54,7 @@ Que toda descarga de robot desde el panel `/` (y desde Telegram) pase por una so
 
 ### 2.2 Compilador (`compilador.py` + `servidor_local.py`, VPS)
 - `POST /compilar {"token", "simbolo"?, "temporalidad"?, "capital"?}`. Sin presets = comportamiento actual (solo token).
-- Con presets: `simbolo` en la lista cerrada de 36, `temporalidad` en las 7, `capital` numérico ≥ 300. Reemplaza por línea exacta (como el token) `InpSimboloConsulta`, `InpTemporalidad`, `InpTF` (PERIOD_M15/M30/H1/H4/D1/W1/MN1 derivado) e `InpCapital`; cada línea debe existir exactamente una vez o falla. Nada fuera de las listas llega al código fuente (anti-inyección).
+- Con presets: `simbolo` en la lista cerrada de 34, `temporalidad` en las 7, `capital` numérico ≥ 300. Reemplaza por línea exacta (como el token) `InpSimboloConsulta`, `InpTemporalidad`, `InpTF` (PERIOD_M15/M30/H1/H4/D1/W1/MN1 derivado) e `InpCapital`; cada línea debe existir exactamente una vez o falla. Nada fuera de las listas llega al código fuente (anti-inyección).
 - Toda respuesta del compilador nuevo lleva `X-Compilador-Presets: 1`.
 
 ### 2.3 API (mtb-api)
