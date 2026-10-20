@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Programa de afiliados · MexTradeBot</title>
-<meta name="description" content="Recomienda MexTradeBot y recibe 40% de comisión en cada pago y cada renovación. Kit de material, reglas claras y aprobación manual.">
+<meta name="description" content="Recomienda MexTradeBot y recibe 40% de comisión en la primera compra y 25% en cada renovación. Kit de material, reglas claras y aprobación manual.">
 <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
 <link rel="apple-touch-icon" href="img/icono-180.png">
 <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;600;700&display=swap" rel="stylesheet">
@@ -49,7 +49,9 @@ section+section{border-top:0}
 .timeline .bar{width:100%;border-radius:10px 10px 4px 4px;background:linear-gradient(180deg,var(--accent),rgba(50,199,223,.35))}
 .timeline .col:nth-child(1) .bar{height:52%}.timeline .col:nth-child(n+2) .bar{height:52%;opacity:.85}
 .timeline .bar{display:flex;align-items:center;justify-content:center;color:var(--accent-ink);font-weight:700;font-size:clamp(13px,1.6vw,18px)}
-.timeline .bar::after{content:"40 %"}
+.timeline .bar::after{content:"25 %"}
+.timeline .col:first-child .bar{height:78%}.timeline .col:first-child .bar::after{content:"40 %"}
+.timeline .col:nth-child(n+2) .bar{height:48%}
 .timeline .col span{font-size:12px;color:var(--muted);text-align:center;line-height:1.3}
 .timeline .col:first-child span{color:var(--text);font-weight:600}
 .rec small{display:block;margin-top:12px;font-size:12px;color:var(--muted)}
@@ -107,7 +109,7 @@ section+section{border-top:0}
     <div>
       <span class="chip"><i></i>Programa de afiliados</span>
       <h1>Recomienda MexTradeBot y recibe comisión en <em>cada renovación</em></h1>
-      <p class="lead">Ganas el 40&nbsp;% de cada pago de quienes se suscriban con tu enlace: la primera compra y cada renovación mientras sigan suscritos.</p>
+      <p class="lead">Ganas el 40&nbsp;% de la primera compra y el 25&nbsp;% de cada renovación de quienes se suscriban con tu enlace, mientras sigan suscritos.</p>
       <div class="acciones">
         <a class="btn" href="#solicitar">Solicitar afiliación</a>
         <a class="btn sec" href="#kit">Ver el material</a>
@@ -122,7 +124,7 @@ section+section{border-top:0}
       <img class="a" src="afiliados/kit/banner-demo-sq.png" alt="" width="1080" height="1080">
       <img class="b" src="afiliados/kit/banner-planes-st.png" alt="" width="1080" height="1920">
       <img class="c" src="afiliados/kit/banner-backtest-ln.png" alt="" width="1200" height="628">
-      <div class="sello"><b>40&nbsp;%</b><span>EN CADA PAGO Y RENOVACIÓN</span></div>
+      <div class="sello"><b>40&nbsp;%</b><span>1.ª COMPRA · 25&nbsp;% EN CADA RENOVACIÓN</span></div>
     </div>
   </div>
 </div></div>
@@ -131,11 +133,11 @@ section+section{border-top:0}
   <div class="rec">
     <div>
       <div class="cifra">40&nbsp;%</div>
-      <p class="k">Comisión recurrente</p>
-      <p style="margin:0;font-size:15px">No solo la primera venta: cada mes o año que el cliente renueve, tu comisión se repite.</p>
+      <p class="k">Comisión inicial, y 25&nbsp;% recurrente</p>
+      <p style="margin:0;font-size:15px">No solo la primera venta: cada mes o año que el cliente renueve, recibes el 25&nbsp;%.</p>
     </div>
     <div>
-      <div class="timeline" aria-label="Ilustración: la comisión del 40 % se repite en cada pago">
+      <div class="timeline" aria-label="Ilustración: 40 % en el primer pago y 25 % en cada renovación">
         <div class="col"><div class="bar"></div><span>1.er pago</span></div>
         <div class="col"><div class="bar"></div><span>Renovación 1</span></div>
         <div class="col"><div class="bar"></div><span>Renovación 2</span></div>
@@ -201,7 +203,7 @@ section+section{border-top:0}
 <section><div class="wrap">
   <p class="eyebrow">Preguntas frecuentes</p>
   <h2>Antes de afiliarte</h2>
-  <details><summary>¿Cuánto cobro por cada venta?</summary><p>El 40 % de cada pago del plan (Trader o VIP), incluida la primera compra y cada renovación mientras el cliente siga suscrito. El monto exacto lo calcula Hotmart y lo ves en tu panel de afiliado.</p></details>
+  <details><summary>¿Cuánto cobro por cada venta?</summary><p>El 40 % de la primera compra y el 25 % de cada renovación del plan (Trader o VIP), mientras el cliente siga suscrito. El porcentaje se aplica sobre el valor del plan antes de IVA y Hotmart calcula el monto final, que ves en tu panel de afiliado.</p></details>
   <details><summary>¿Cuánto dura mi atribución?</summary><p>90 días, con el modelo de último clic. La compra debe hacerse en el mismo navegador y dispositivo desde el que se hizo clic en tu enlace.</p></details>
   <details><summary>¿Cuándo me pagan?</summary><p>Los pagos los gestiona Hotmart según sus reglas y plazos. Si hay reembolso o contracargo, la comisión de esa venta se ajusta.</p></details>
   <details><summary>¿Puedo prometer que la gente va a ganar dinero?</summary><p>No. Es una regla de Hotmart y de MexTradeBot. El trading conlleva riesgo de pérdida de capital y nadie puede garantizar resultados.</p></details>
