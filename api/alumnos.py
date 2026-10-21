@@ -190,6 +190,8 @@ def _robot_ficha(datos: dict, headers: dict) -> tuple[int, dict]:
     if status != 200:
         return status, ex5
     membresias.registrar_descarga(alumno["correo"], modo, simbolo, temporalidad)
+    from slack_avisos import avisar
+    avisar(f"Descarga de robot — {simbolo} {temporalidad} ({modo})")  # sin datos del alumno
     tf = TF_POR_TEMPORALIDAD[temporalidad].removeprefix("PERIOD_")
     nombre = f"MexTradeBot_{simbolo}_{tf}.ex5"
     return 200, {"ex5": ex5, "nombre": nombre, "cabeceras": {

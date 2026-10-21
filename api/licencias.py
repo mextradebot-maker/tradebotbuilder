@@ -77,6 +77,9 @@ def procesar_auth(datos: dict, headers: dict) -> tuple[int, dict]:
     try:
         ok, motivo, lic = _verificar(token, cuenta, modo, robot, _ip(headers), detalle)
     except Exception as e:  # BD caída o sin DATABASE_URL → falla cerrado
+        from slack_avisos import avisar
+        avisar(f"Cerebro de licencias no disponible ({type(e).__name__}): los robots no pueden autorizarse.",
+               clave="cerebro_503", cada_s=900)
         return 503, {"autorizado": False, "motivo": f"cerebro_no_disponible: {type(e).__name__}"}
     if not ok:
         return 403, {"autorizado": False, "motivo": motivo}
@@ -137,19 +140,25 @@ def procesar_admin(metodo: str, datos: dict, headers: dict) -> tuple[int, dict]:
             cuenta = int(datos["cuenta"]) if str(datos.get("cuenta") or "").strip() else None
             token, lic = licencias.emitir(str(datos.get("cliente", "")), cuenta,
                                           str(datos.get("tipo", "")).lower(), str(datos.get("robot", "")), dias)
+            _avisar_admin(f"Licencia emitida (id {lic.get('id')}, tipo {str(datos.get('tipo', '')).lower()})")
             return 200, {"token": token, "licencia": lic,
                          "aviso": "Guarda el token ahora: no se puede volver a mostrar."}
         if accion == "liberar":
             licencias.liberar(int(datos["id"]))
+            _avisar_admin(f"Licencia liberada (id {int(datos['id'])})")
             return 200, {"ok": True}
         if accion == "revocar":
             licencias.revocar(int(datos["id"]))
+            _avisar_admin(f"Licencia revocada (id {int(datos['id'])})")
             return 200, {"ok": True}
         if accion == "reautorizar":
             licencias.reautorizar(int(datos["id"]), dias)
+            _avisar_admin(f"Licencia reautorizada (id {int(datos['id'])})")
             return 200, {"ok": True}
         if accion == "kill_switch":
             licencias.fijar_kill_switch(bool(datos.get("activo")), datos.get("motivo"))
+            _avisar_admin(("KILL SWITCH ACTIVADO: ningun robot opera" if datos.get("activo") else "Kill switch desactivado")
+                          + (f" — motivo: {str(datos.get('motivo'))[:120]}" if datos.get("motivo") else ""))
             return 200, {"ok": True}
         return 400, {"error": "accion debe ser emitir | revocar | reautorizar | liberar | kill_switch"}
     except (KeyError, TypeError, ValueError) as e:
@@ -219,12 +228,25 @@ def compilar_token(token: str, presets: dict | None = None) -> tuple[int, bytes 
     try:
         ex5, con_presets = _pedir_compilacion(url, clave, token, presets)
     except urllib.error.HTTPError as e:
+        _avisar_compilador(f"el compilador respondió {e.code}")
         return 502, {"error": f"compilador respondió {e.code}: {e.read()[:200].decode(errors='replace')}"}
     except OSError as e:
+        _avisar_compilador("el compilador del VPS no está disponible")
         return 502, {"error": f"compilador no disponible: {e}"}
     if presets and not con_presets:  # VPS con el compilador viejo: ignoró los presets
+        _avisar_compilador("el compilador del VPS es una versión vieja (ignora los presets)")
         return 503, {"error": "generador_actualizando"}
     return 200, ex5
+
+
+def _avisar_compilador(motivo: str) -> None:
+    from slack_avisos import avisar
+    avisar(f"Falla al generar un robot: {motivo}.", clave="compilador", cada_s=900)
+
+
+def _avisar_admin(texto: str) -> None:
+    from slack_avisos import avisar
+    avisar(texto)  # acciones del administrador: sin nombres ni correos de clientes
 
 
 ERROR_SIN_PRESETS = ("elige el activo y la temporalidad del robot: sin ellos el .ex5 saldria con los valores "
