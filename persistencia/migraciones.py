@@ -234,6 +234,16 @@ _SQL = [
     """
     ALTER TABLE IF EXISTS alumnos ADD COLUMN IF NOT EXISTS telegram_chat_id bigint
     """,
+    # recuperacion de contrasena (api/auth_alumnos.py): solo se guarda el hash del enlace, vence en 1 h
+    """
+    ALTER TABLE IF EXISTS alumnos ADD COLUMN IF NOT EXISTS reset_token_hash text
+    """,
+    """
+    ALTER TABLE IF EXISTS alumnos ADD COLUMN IF NOT EXISTS reset_expira timestamptz
+    """,
+    """
+    ALTER TABLE IF EXISTS alumnos ADD COLUMN IF NOT EXISTS reset_pedido_en timestamptz
+    """,
     # ── Membresías Hotmart (persistencia/membresias.py, api/hotmart.py) ──
     # una fila por correo: el nivel que pagó y si sigue vigente; las licencias real/vip
     # de la membresía viven en `licencias` con origen 'hotmart'

@@ -14,13 +14,14 @@ refresco, I/O-bound; por defecto 6, 1 = en serie; REFRESCO_WORKERS es alias obso
 """
 
 import http.client
+import json
 import logging
 import multiprocessing
 import os
 import sys
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from api.analizar import handler as ApiHandler
 
@@ -49,6 +50,13 @@ class Handler(SimpleHTTPRequestHandler):
         ruta = self._ruta()
         if ruta.startswith("/api/"):
             return ApiHandler.do_GET(self)
+        if ruta.rstrip("/") == "/restablecer":  # enlace del correo de recuperacion de contrasena
+            self.path = "/restablecer.html" + (f"?{urlsplit(self.path).query}" if urlsplit(self.path).query else "")
+            return super().do_GET()
+        from api import auth_alumnos
+
+        if auth_alumnos.maneja(ruta, "GET"):  # logout
+            return self._auth({})
         if ruta.rstrip("/") in RUTAS_PANEL:
             return self._panel()
         if self._es_n8n():
@@ -63,9 +71,36 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_HEAD()
 
     def do_POST(self):
+        from api import auth_alumnos
+
+        if auth_alumnos.maneja(self._ruta(), "POST"):  # registro, login, recuperacion de contrasena
+            largo = int(self.headers.get("Content-Length", 0) or 0)
+            crudo = self.rfile.read(min(largo, 20000)).decode("utf-8", "replace")
+            if "json" in (self.headers.get("Content-Type") or "").lower():
+                try:
+                    datos = json.loads(crudo or "{}")
+                except ValueError:
+                    datos = {}
+            else:
+                datos = {k: v[0] for k, v in parse_qs(crudo, keep_blank_values=True).items()}
+            return self._auth(datos if isinstance(datos, dict) else {})
         if self._es_n8n():
             return self._a_n8n("POST")
         return ApiHandler.do_POST(self)
+
+    def _auth(self, datos: dict) -> None:
+        from api import auth_alumnos
+
+        ip = (self.headers.get("CF-Connecting-IP") or self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+              or self.client_address[0])
+        status, destino, cookie = auth_alumnos.procesar(self._ruta(), datos, ip)
+        self.send_response(status)
+        self.send_header("Location", destino)
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def _panel(self) -> None:
         from api.alumnos import pagina_panel

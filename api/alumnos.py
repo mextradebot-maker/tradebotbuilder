@@ -12,8 +12,8 @@
   POST /api/v1/telegram/enviar  (X-MTB-Service-Key) {chat_id, text, parse_mode?, reply_markup?} → sendMessage del bot
       (para mensajes con teclado dinamico que el nodo Telegram de n8n no sabe armar; el token vive en MTB_TELEGRAM_BOT_TOKEN)
 
-La sesión es la cookie `mtb_token` que pone n8n al registrarse / iniciar sesión (tabla alumnos);
-registro, login y logout siguen en n8n.
+La sesión es la cookie `mtb_token` que pone api/auth_alumnos.py al registrarse / iniciar sesión (tabla alumnos);
+registro, login, logout y recuperación de contraseña viven ahí (antes en n8n).
 """
 
 import hashlib
@@ -31,6 +31,11 @@ MENSAJES = {
     "correo_duplicado": "Ese correo ya esta registrado. Si ya tienes cuenta, inicia sesion.",
     "credenciales_invalidas": "Correo o contrasena incorrectos.",
     "datos_invalidos": "Faltan datos o son invalidos. Intenta de nuevo.",
+    "contrasena_corta": "La contrasena debe tener al menos 8 caracteres.",
+}
+AVISOS = {
+    "revisa_correo": "Si el correo tiene cuenta, te enviamos un enlace para crear una contrasena nueva. Revisa tu bandeja y el spam.",
+    "contrasena_actualizada": "Listo: tu contrasena se actualizo. Inicia sesion con la nueva.",
 }
 
 
@@ -56,6 +61,7 @@ def _js(valor) -> str:
 
 def pagina_panel(headers: dict, query: str) -> str:
     error = (parse_qs(query).get("error") or [""])[0]
+    aviso = (parse_qs(query).get("aviso") or [""])[0]
     try:
         alumno = _alumno(headers)
     except Exception:  # BD caída: se muestra el registro/login en vez de romper la página
@@ -65,6 +71,7 @@ def pagina_panel(headers: dict, query: str) -> str:
         "__MTB_NOMBREINICIAL__": alumno["nombre"] if alumno else "",
         "__MTB_ERRORTIPO__": error if error in MENSAJES else "",
         "__MTB_MENSAJEERROR__": MENSAJES.get(error, ""),
+        "__MTB_AVISO__": AVISOS.get(aviso, ""),
     }
     html = PLANTILLA.read_text(encoding="utf-8")
     for marcador, valor in valores.items():
