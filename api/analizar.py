@@ -19,6 +19,7 @@ despacha por path hacia la lógica de cada endpoint:
   GET /api/v1/estado-carga (X-MTB-Service-Key) — avance de la carga historica y del backtest largo — ver api/estado_carga.py
   GET /api/v1/master/trading (X-Admin-Key) — posiciones e historial de las cuentas demo del Master Trader — ver api/master_trading.py
   GET /api/v1/operacion-en-vivo (cookie del alumno) — lo mismo sin número de cuenta ni servidor
+  GET /api/v1/grafica — velas + capas SMC para la pantalla Análisis técnico (sesión de alumno), ver api/grafica.py
   POST /api/v1/velas-xm — velas cerradas 15m/1H del MT5 de XM desde el colector del VPS (X-MTB-Service-Key), ver api/velas_xm.py
   GET /api/v1/reporte-setups — setups vigentes de todos los activos para T-01 (X-MTB-Service-Key), ver api/reporte.py
   POST /api/v1/hotmart (X-HOTMART-HOTTOK) — webhook de Hotmart: activa/pausa membresías, ver api/hotmart.py
@@ -54,6 +55,7 @@ RUTA_MASTER_TRADING = "/api/v1/master/trading"
 RUTA_OPERACION_EN_VIVO = "/api/v1/operacion-en-vivo"
 RUTA_HOTMART = "/api/v1/hotmart"
 RUTA_VELAS_XM = "/api/v1/velas-xm"
+RUTA_GRAFICA = "/api/v1/grafica"
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -81,6 +83,10 @@ class handler(BaseHTTPRequestHandler):
             from api.setups import procesar as procesar_setups
 
             status, body = gate_setups(qs, dict(self.headers)) or procesar_setups(qs)
+        elif ruta == RUTA_GRAFICA:
+            from api.grafica import procesar as procesar_grafica
+
+            status, body = procesar_grafica(qs, dict(self.headers))
         elif ruta == RUTA_REPORTE:
             from api.reporte import procesar_reporte
 

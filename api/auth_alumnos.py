@@ -26,7 +26,7 @@ from html import escape
 
 log = logging.getLogger(__name__)
 
-BASE = "https://mextradebot.com.mx"
+BASE = os.environ.get("MTB_BASE_URL", "https://mextradebot.com.mx")  # en la previsualizacion apunta a su propia URL
 PANEL = f"{BASE}/webhook/panel-alumnos"
 COOKIE = "mtb_token={}; Max-Age=604800; Path=/; SameSite=Lax; Secure; HttpOnly"
 COOKIE_BORRAR = "mtb_token=; Max-Age=0; Path=/; Secure; HttpOnly"
@@ -187,6 +187,8 @@ def registrar(d: dict, repo, enviar=_en_segundo_plano) -> tuple[int, str, str | 
     tel, password = (d.get("telefono_recuperacion") or "").strip(), d.get("password") or ""
     if not (nombre and correo and tel and password) or "@" not in correo or str(d.get("acepta_terminos") or "") != "1":
         return 303, f"{PANEL}?error=datos_invalidos", None
+    if str(d.get("mayor_18") or "") != "1":  # casilla «Soy mayor de 18 años»: sin ella no se registra nadie
+        return 303, f"{PANEL}?error=mayor_18", None
     if len(password) < MIN_PASSWORD:
         return 303, f"{PANEL}?error=contrasena_corta", None
     if repo.por_correo(correo):
@@ -308,7 +310,7 @@ def demo() -> None:
     repo, enviados = RepoMemoria(), []
     sin_hilo = lambda f, *a: enviados.append(a)  # captura (correo, asunto, html) sin enviar
     reg = lambda **k: registrar({"nombre_completo": "Ana Prueba", "correo": "Ana@Example.com", "telefono_recuperacion": "55",
-                                 "password": "secreta-123", "acepta_terminos": "1", **k}, repo, sin_hilo)
+                                 "password": "secreta-123", "acepta_terminos": "1", "mayor_18": "1", **k}, repo, sin_hilo)
     # hash: scrypt verifica; sha256 anterior verifica y pide actualizar; nada coincide con otra contrasena
     h = hashear("clave-larga-1")
     assert h.startswith("scrypt$") and verificar("clave-larga-1", h, "-") == (True, False) and verificar("otra", h, "-") == (False, False)
@@ -317,6 +319,8 @@ def demo() -> None:
     assert verificar("Prueba-Legacy-123", viejo, "131b1a1ee3e1f8d2") == (True, True) and verificar("x", viejo, "131b1a1ee3e1f8d2") == (False, False)
     assert verificar("x", "basura", "s") == (False, False) and verificar("x", "scrypt$1$2", "") == (False, False)
     # registro
+    assert reg(mayor_18="0")[1].endswith("error=mayor_18") and reg(mayor_18="")[1].endswith("error=mayor_18")  # sin la casilla no entra
+    assert registrar({"nombre_completo": "A", "correo": "a@b.co", "telefono_recuperacion": "5", "password": "secreta-123", "acepta_terminos": "1"}, repo, sin_hilo)[1].endswith("error=mayor_18")  # ni siquiera viene el campo
     assert reg(password="corta")[1].endswith("error=contrasena_corta") and reg(acepta_terminos="0")[1].endswith("error=datos_invalidos")
     assert reg(correo="sin-arroba")[1].endswith("error=datos_invalidos") and not repo.f
     st, loc, cookie = reg()
