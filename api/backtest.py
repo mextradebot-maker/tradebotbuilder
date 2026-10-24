@@ -1,6 +1,5 @@
 """Lógica de GET/POST /api/backtest?simbolo=XAUUSD&direccion=compra&dias=365&temporalidad=Intraday
-— invocado desde el router en api/analizar.py (mismo motivo que api/setups.py:
-Vercel en modo single-entrypoint no auto-descubre este archivo).
+— invocado desde el router en api/analizar.py.
 
 Backtest bajo demanda para una dirección específica ('compra'/'venta', mismo
 vocabulario que devuelve /api/tendencia) — usado por T-04 (Telegram) para

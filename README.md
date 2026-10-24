@@ -45,7 +45,7 @@ Solo lectura por ahora (conexión, info de cuenta, velas en vivo) — **envío d
 órdenes no está implementado todavía**, queda para un paso aparte con sus
 propias salvaguardas. Requiere una terminal MT5 de XM corriendo/logueada en
 esta máquina (`MetaTrader5` es un puente IPC local, Windows-only — **no
-funciona en Vercel**, por eso está marcado `sys_platform == 'win32'` en las
+funciona en contenedores Linux**, por eso está marcado `sys_platform == 'win32'` en las
 dependencias y no se importa desde `conectividad/__init__.py`).
 
 ```
@@ -110,13 +110,11 @@ algo más sólido de lo que es:
   (pierde) — no hay forma de saber el orden intrabar con velas ya cerradas.
 - Sin comisiones, spread ni slippage.
 
-## API (Vercel)
+## API
 
 Sin auth ni rate limit — endpoints mínimos para probar el motor desde afuera
-(ej. n8n). **Importante:** Vercel corre Python en modo single-entrypoint
-(`[tool.vercel] entrypoint` en pyproject.toml) — a diferencia de Next.js/Node,
-NO auto-descubre cada archivo de `api/` como su propia función. `api/analizar.py`
-es el único entrypoint real; hace de router por `path` hacia la lógica de
+(ej. n8n). **Importante:** `api/analizar.py` es el único entrypoint real (no cada
+archivo de `api/` es un endpoint propio); hace de router por `path` hacia la lógica de
 `api/setups.py`. Si se agrega un endpoint nuevo, hay que sumarlo al router,
 no basta con crear el archivo.
 
@@ -173,13 +171,12 @@ Autoverificación: `python -m conectividad.riesgo`.
 
 ## Servidor en el VPS (EasyPanel)
 
-Desde 2026-09-26 MexTradeBot corre en EasyPanel en vez de Vercel (Vercel bloqueó la cuenta
-por exceso de cómputo del refresco cada 30 min). `app.py` es el servidor único:
+MexTradeBot corre en EasyPanel (VPS propio). `app.py` es el servidor único:
 
 | Ruta | Qué |
 |---|---|
 | `/api/*` | router de siempre (`api/analizar.py`) |
-| `/alumnos`, `/webhook/*` | proxy a n8n (antes rewrites de `vercel.json`) |
+| `/alumnos`, `/webhook/*` | proxy a n8n |
 | `/salud` | healthcheck |
 | resto | estáticos de `public/` |
 

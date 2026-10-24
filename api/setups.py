@@ -1,6 +1,5 @@
 """Lógica de GET/POST /api/setups?simbolo=XAUUSD&dias=90[&temporalidad=Intraday]
-— invocado desde el router en api/analizar.py (mismo motivo que api/backtest.py:
-Vercel en modo single-entrypoint no auto-descubre este archivo como su propia función).
+— invocado desde el router en api/analizar.py.
 
 A diferencia de /api/analizar (que solo analiza OHLC ya provisto), esto trae
 los datos históricos él mismo (dukascopy) y corre el motor completo —

@@ -1,6 +1,5 @@
 """Lógica de GET/POST /api/mejor-indicador?simbolo=XAUUSD&direccion=compra&temporalidad=Intraday
-— invocado desde el router en api/analizar.py (mismo motivo que api/setups.py:
-Vercel en modo single-entrypoint no auto-descubre este archivo).
+— invocado desde el router en api/analizar.py.
 
 Corre `backtesting.comparar_indicadores` — compara los 4 indicadores de
 confluencia (RSI, Medias Moviles, MACD, Fibonacci) contra no usar ninguno,

@@ -1,6 +1,5 @@
 """Lógica de GET/POST /api/tendencia?simbolo=XAUUSD&dias=90&temporalidad=Intraday
-— invocado desde el router en api/analizar.py (mismo motivo que api/setups.py:
-Vercel en modo single-entrypoint no auto-descubre este archivo).
+— invocado desde el router en api/analizar.py.
 
 Trae los datos históricos y determina el sesgo actual (compra/venta) del
 símbolo — usado por T-04 (Telegram, entrega de robots) para avisarle al

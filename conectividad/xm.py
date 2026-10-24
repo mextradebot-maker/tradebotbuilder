@@ -1,7 +1,7 @@
 """Conector XM (MT5) — lectura + envío de órdenes.
 
 Requiere una terminal MT5 de XM corriendo/logueada en esta máquina (el
-paquete MetaTrader5 es un puente IPC local, no funciona en Vercel/serverless
+paquete MetaTrader5 es un puente IPC local, no funciona en serverless
 — ver README). Credenciales via variables de entorno, nunca hardcodeadas:
 XM_LOGIN, XM_PASSWORD, XM_SERVER, y opcional XM_MT5_PATH si la terminal no
 está en la ruta por defecto. Copia .env.example a .env y llénalo ahí.

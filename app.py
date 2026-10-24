@@ -1,8 +1,8 @@
-"""Servidor único de MexTradeBot en el VPS (EasyPanel) — reemplaza a Vercel.
+"""Servidor único de MexTradeBot en el VPS (EasyPanel).
 
   /api/*                 → router de siempre (api/analizar.py), sin cambios de lógica
   GET /alumnos, GET /webhook/panel-alumnos → Panel de Alumnos (plantillas/panel-alumnos.html, api/alumnos.py)
-  /webhook/*             → n8n: registro, login, logout y demás webhooks (antes rewrites de vercel.json)
+  /webhook/*             → n8n: registro, login, logout y demás webhooks
   /salud                 → healthcheck para EasyPanel
   todo lo demás          → archivos estáticos de public/ (panel, master.html, manuales)
 

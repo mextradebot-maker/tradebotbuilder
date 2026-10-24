@@ -19,9 +19,9 @@ from pathlib import Path
 import requests
 
 URL_SEMANA_ACTUAL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-# tempfile.gettempdir() en vez de junto al codigo: en Vercel el filesystem del
-# paquete es de solo lectura, solo /tmp es escribible (aunque efimero entre
-# cold starts). Localmente sigue siendo un directorio temporal normal.
+# tempfile.gettempdir() en vez de junto al codigo: el directorio del
+# codigo puede ser de solo lectura (contenedor/serverless); el temporal siempre es
+# escribible.
 CACHE_PATH = Path(tempfile.gettempdir()) / "mextradebot_cache_calendario.json"
 REFRESCO = timedelta(hours=24)  # se refresca 1 vez al dia
 MARGEN_ANTES_DE_DESACTIVAR = timedelta(hours=48)  # tolera 1 refresco fallido antes de rendirse

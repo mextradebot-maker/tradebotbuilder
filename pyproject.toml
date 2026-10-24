@@ -12,6 +12,3 @@ dependencies = [
     "psycopg[binary]",
     "MetaTrader5; sys_platform == 'win32'",
 ]
-
-[tool.vercel]
-entrypoint = "api.analizar:handler"

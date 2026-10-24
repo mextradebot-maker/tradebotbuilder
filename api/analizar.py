@@ -1,10 +1,7 @@
-"""API — router único para todo /api/* (Vercel Python en modo single-entrypoint).
+"""API — router único para todo /api/*.
 
-Con `[tool.vercel] entrypoint` declarado en pyproject.toml, Vercel invoca UN
-solo handler para TODAS las rutas bajo /api/* — a diferencia de Next.js/Node,
-NO auto-descubre cada archivo de api/ como su propia función serverless
-(esto se confirmó en vivo: /api/setups devolvía la respuesta de /api/analizar
-hasta que se agregó el router de abajo — ver bitácora). Por eso este módulo
+Un solo handler atiende TODAS las rutas bajo /api/* (lo monta app.py en el VPS);
+no se descubre cada archivo de api/ como endpoint propio. Por eso este módulo
 despacha por path hacia la lógica de cada endpoint:
 
   POST /api/analizar          — analiza OHLC ya provisto (esta misma vela abajo)

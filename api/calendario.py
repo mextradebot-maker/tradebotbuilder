@@ -1,6 +1,5 @@
 """Lógica de GET/POST /api/calendario?simbolo=XAUUSD&horas=24 — invocado desde
-el router en api/analizar.py (mismo motivo que api/setups.py: Vercel en modo
-single-entrypoint no auto-descubre este archivo).
+el router en api/analizar.py.
 
 Traduce un símbolo (XAUUSD, EURUSD, ...) a las divisas que le afectan y revisa
 si hay un evento de calendario de impacto Alto próximo — para aplicar la

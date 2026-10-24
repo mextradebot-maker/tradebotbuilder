@@ -17,7 +17,7 @@
        {"accion": "kill_switch", "activo": true|false, "motivo"?}
 
   /api/setups — ver gate_setups(): con Bearer valida la licencia; sin Bearer
-  exige X-MTB-Service-Key (n8n, panel) una vez que MTB_SERVICE_KEY existe en Vercel.
+  exige X-MTB-Service-Key (n8n, panel) una vez que MTB_SERVICE_KEY existe en el entorno (EasyPanel).
 
 Todo falla cerrado: sin BD, sin MTB_ADMIN_KEY o con datos incompletos → no se autoriza.
 """
@@ -113,7 +113,7 @@ def gate_setups(datos: dict, headers: dict) -> tuple[int, dict] | None:
             return 503, {"error": f"cerebro_no_disponible: {type(e).__name__}"}
         return None if ok else (403, {"error": "licencia_rechazada", "motivo": motivo})
 
-    # ponytail: mientras MTB_SERVICE_KEY no exista en Vercel, /api/setups sigue abierto
+    # ponytail: mientras MTB_SERVICE_KEY no exista en el entorno (EasyPanel), /api/setups sigue abierto
     # (n8n T-01 y EAs viejos). Al crearla, todo cliente sin licencia ni clave queda fuera.
     if not os.environ.get("MTB_SERVICE_KEY"):
         return None
