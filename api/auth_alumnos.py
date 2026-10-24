@@ -135,11 +135,13 @@ def _marco(titulo: str, cuerpo: str) -> str:
 
 
 def correo_recuperacion(nombre: str, enlace: str) -> tuple[str, str]:
+    # El enlace va como TEXTO, no como <a>: el SMTP de Brevo reescribe los <a> con un rastreador de clics y el enlace
+    # de recuperacion (con su token) pasaria por ese redireccionador. Gmail y los demas lo vuelven clicable solos.
     primero = escape((nombre or "").split(" ")[0] or "hola")
     cuerpo = (f"<p>Hola {primero}, recibimos una solicitud para restablecer la contraseña de tu panel de alumnos.</p>"
-              f"<p><a href=\"{escape(enlace)}\" style=\"display:inline-block;background:#16a34a;color:#fff;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px\">Crear una contraseña nueva</a></p>"
-              "<p>El enlace funciona una sola vez y vence en 1 hora. Si no fuiste tú, ignora este mensaje: tu contraseña actual no cambia.</p>"
-              f"<p style=\"font-size:12px;color:#6b7280\">Si el botón no abre, copia este enlace en tu navegador:<br>{escape(enlace)}</p>")
+              "<p>Abre este enlace para crear una contraseña nueva (si no se abre al tocarlo, cópialo y pégalo en tu navegador):</p>"
+              f"<p style=\"background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:12px 14px;word-break:break-all;font-family:monospace;font-size:13px\">{escape(enlace)}</p>"
+              "<p>El enlace funciona una sola vez y vence en 1 hora. Si no fuiste tú, ignora este mensaje: tu contraseña actual no cambia.</p>")
     return "Restablece tu contraseña | MexTradeBot", _marco("Restablece tu contraseña", cuerpo)
 
 
@@ -343,6 +345,7 @@ def demo() -> None:
     assert r1 == (303, f"{PANEL}?aviso=revisa_correo", None) and not enviados
     assert pedir_recuperacion({"correo": "ana@example.com"}, repo, sin_hilo) == r1 and len(enviados) == 1
     assert "/restablecer?token=" in enviados[0][2] and escape("Ana") in enviados[0][2]
+    assert 'href="' + BASE + '/restablecer' not in enviados[0][2]  # el enlace con token no va en un <a> (rastreador de Brevo)
     pedir_recuperacion({"correo": "ana@example.com"}, repo, sin_hilo)
     assert len(enviados) == 1  # segundo pedido inmediato: ignorado
     token = enviados[0][2].split("/restablecer?token=")[1].split("\"")[0]
