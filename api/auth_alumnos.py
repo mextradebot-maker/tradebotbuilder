@@ -348,7 +348,7 @@ def demo() -> None:
     assert 'href="' + BASE + '/restablecer' not in enviados[0][2]  # el enlace con token no va en un <a> (rastreador de Brevo)
     pedir_recuperacion({"correo": "ana@example.com"}, repo, sin_hilo)
     assert len(enviados) == 1  # segundo pedido inmediato: ignorado
-    token = enviados[0][2].split("/restablecer?token=")[1].split("\"")[0]
+    token = enviados[0][2].split("/restablecer?token=")[1].split("<")[0]
     assert repo.f[1]["rth"] == _hash_token(token) and token not in json.dumps({k: v for k, v in repo.f[1].items() if k != "rth"}, default=str)
     # restablecer: contrasena corta, enlace malo, vencido, bueno (un solo uso) y cierra sesiones
     assert restablecer({"token": token, "password": "corta"}, repo)[1].endswith("error=contrasena_corta")
