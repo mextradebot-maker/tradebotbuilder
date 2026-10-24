@@ -24,7 +24,7 @@ from conectividad.historico import ALIAS_TEMPORALIDAD, TEMPORALIDADES, resolver_
 CRIPTO = {"BTCUSD", "ETHUSD", "XRPUSD"}
 MARGEN_DATOS = timedelta(minutes=2)
 REINTENTO_VACIO = timedelta(hours=1)  # el proveedor publica la vela cerrada con un poco de retraso
-PAUSA_CICLO_S = 10  # entre ciclos; antes 60 s (sumaba hasta 1 min de latencia a cada vela cerrada)
+PAUSA_CICLO_S = 5  # entre ciclos; antes 60 s (sumaba hasta 1 min de latencia a cada vela cerrada)
 # Las temporalidades `diaria` (Intraday D, Swing S/M) se recalculan al cerrar la vela diaria (00:00 UTC =
 # 18:00 México; México no tiene horario de verano desde 2022, así que la hora UTC es fija) y otra vez a las
 # 02:00 y 14:00 UTC por si el proveedor publicó tarde o corrigió la vela (antes solo 14:00 UTC = 08:00 México,
@@ -73,8 +73,23 @@ def mercado_abierto(simbolo: str, ahora: datetime) -> bool:
     return True
 
 
+def serie_base(temporalidad: str) -> str | None:
+    """Serie base del almacen de una temporalidad por vela (15m/30m -> 15m, 1H/4H -> 1H); None si es diaria."""
+    return {"15m": "15m", "30m": "15m", "1H": "1H", "4H": "1H"}.get(TEMPORALIDADES[resolver_temporalidad(temporalidad)]["vela"])
+
+
+def _sincronizadas() -> dict:
+    """{(simbolo, serie base): ultima sincronizacion del almacen}; vacio si no se puede leer (se usa el margen normal)."""
+    try:
+        from conectividad import almacen
+        return almacen.sincronizadas()
+    except Exception as e:
+        logging.warning("refresco: no se pudo leer la sincronizacion del almacen (%s); se usa el margen normal", e)
+        return {}
+
+
 def necesita_refresco(simbolo: str, temporalidad: str, refrescado_en: datetime | None, ahora: datetime,
-                      vacio: bool = False) -> bool:
+                      vacio: bool = False, sincronizado: datetime | None = None) -> bool:
     if refrescado_en is not None and refrescado_en.tzinfo is None:
         refrescado_en = refrescado_en.replace(tzinfo=timezone.utc)
     if vacio and refrescado_en is not None:  # descarga fallida antes: reintentar aunque sea fin de semana
@@ -87,13 +102,19 @@ def necesita_refresco(simbolo: str, temporalidad: str, refrescado_en: datetime |
                      for h in HORAS_REFRESCO_DIARIO if d + timedelta(hours=h) <= ahora)
     else:
         cierre = inicio_vela(ahora, temporalidad)
-    if ahora < cierre + MARGEN_DATOS:  # vela recién cerrada: esperar a que el proveedor la publique
+    margen = MARGEN_DATOS
+    if sincronizado is not None and not TEMPORALIDADES[resolver_temporalidad(temporalidad)]["diaria"]:
+        if sincronizado.tzinfo is None:
+            sincronizado = sincronizado.replace(tzinfo=timezone.utc)
+        if sincronizado >= cierre:  # el almacen ya trae la vela recien cerrada (p. ej. la mando el colector de XM)
+            margen = timedelta(0)
+    if ahora < cierre + margen:  # vela recién cerrada: esperar a que el proveedor la publique
         return False
     if refrescado_en is None:
         return True
     if refrescado_en.tzinfo is None:
         refrescado_en = refrescado_en.replace(tzinfo=timezone.utc)
-    return refrescado_en < cierre + MARGEN_DATOS
+    return refrescado_en < cierre + margen
 
 
 def ordenar(combos: list[tuple[str, str]]) -> list[tuple[str, str]]:
@@ -118,6 +139,7 @@ def pendientes(ahora: datetime, solo: tuple | None = None, resumen: dict | None 
     if grupo is not None:
         indice, total = grupo
         mios = {s for i, s in enumerate(sorted({c["simbolo"] for c in catalogo})) if i % total == indice}
+    sinc = _sincronizadas()
     salida = []
     for c in catalogo:
         if mios is not None and c["simbolo"] not in mios:
@@ -137,7 +159,9 @@ def pendientes(ahora: datetime, solo: tuple | None = None, resumen: dict | None 
                 r = (snap or {}).get("respuesta") or {}
                 # vacío (descarga fallida) o calculado con otro swing_length (recalibración): rehacer, máx 1/hora
                 vacio = bool(snap) and (not r.get("velas") or r.get("motor") != "v2" or r.get("swing_length") != swing)
-            if necesita_refresco(c["simbolo"], canon, snap and snap["refrescado_en"], ahora, vacio):
+            base = serie_base(canon)
+            if necesita_refresco(c["simbolo"], canon, snap and snap["refrescado_en"], ahora, vacio,
+                                 sinc.get((c["simbolo"], base)) if base else None):
                 salida.append((c["simbolo"], canon))
         except ValueError as e:
             logging.warning("refresco: fila de catálogo omitida %s %s: %s", c["simbolo"], c["temporalidad"], e)
@@ -298,6 +322,19 @@ def demo() -> None:
     assert necesita_refresco("EURUSD", "Swing (M)", None, ahora)
     # vela de 15m recién cerrada (14:31, dentro del margen de 2 min) → esperar
     assert not necesita_refresco("EURUSD", "Scalping 15m", datetime(2026, 9, 23, 14, 10, tzinfo=u), datetime(2026, 9, 23, 14, 31, tzinfo=u))
+
+    # el almacen ya trae la vela recien cerrada (colector de XM): sin esperar el margen de publicacion
+    cerro, viejo15 = datetime(2026, 9, 23, 14, 30, 4, tzinfo=u), datetime(2026, 9, 23, 14, 10, tzinfo=u)
+    assert not necesita_refresco("EURUSD", "Scalping 15m", viejo15, cerro)
+    assert not necesita_refresco("EURUSD", "Scalping 15m", viejo15, cerro, sincronizado=datetime(2026, 9, 23, 14, 29, tzinfo=u))  # sincronizado antes del cierre
+    assert necesita_refresco("EURUSD", "Scalping 15m", viejo15, cerro, sincronizado=datetime(2026, 9, 23, 14, 32, tzinfo=u))
+    assert not necesita_refresco("EURUSD", "Scalping 15m", datetime(2026, 9, 23, 14, 30, 2, tzinfo=u), cerro,
+                                 sincronizado=datetime(2026, 9, 23, 14, 32, tzinfo=u))  # ya refrescada tras el cierre
+    assert necesita_refresco("EURUSD", "Intraday 4H", datetime(2026, 9, 23, 11, tzinfo=u), datetime(2026, 9, 23, 16, 0, 3, tzinfo=u),
+                             sincronizado=datetime(2026, 9, 23, 16, 2, tzinfo=u))  # 4H sale de la serie 1H
+    assert not necesita_refresco("EURUSD", "Intraday D", datetime(2026, 9, 23, 14, 10, tzinfo=u), ahora,
+                                 sincronizado=datetime(2026, 9, 23, 14, 36, tzinfo=u))  # D/S/M no usan el atajo
+    assert [serie_base(t) for t in ("Scalping 15m", "Scalping 30m", "Intraday 1H", "Intraday 4H", "Intraday D", "Swing (M)")] ==         ["15m", "15m", "1H", "1H", None, None]
 
     sabado = datetime(2026, 9, 26, 12, 5, tzinfo=u)
     assert not mercado_abierto("EURUSD", sabado) and mercado_abierto("BTCUSD", sabado)

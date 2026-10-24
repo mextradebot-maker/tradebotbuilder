@@ -128,6 +128,15 @@ def registrar_vacios(simbolo: str, serie: str, n: int, cuando=None) -> None:
                      (n, None if cuando is None else _utc(cuando), simbolo, serie))
 
 
+def sincronizadas(series=("15m", "1H")) -> dict:
+    """{(simbolo, serie): ultima sincronizacion} de las series base dadas, en una sola consulta (la usa el
+    refresco para saltarse la espera de publicacion cuando el almacen ya trae la vela recien cerrada)."""
+    with get_conn() as conn:
+        filas = conn.execute("SELECT simbolo, serie, actualizado_en FROM velas_carga WHERE serie = ANY(%s)",
+                             (list(series),)).fetchall()
+    return {(s, se): _utc(t) for s, se, t in filas if t is not None}
+
+
 def completas() -> set:
     """{(simbolo, serie)} con la carga historica terminada."""
     with get_conn() as conn:
