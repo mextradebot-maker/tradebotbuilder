@@ -24,11 +24,12 @@ from conectividad.historico import ALIAS_TEMPORALIDAD, TEMPORALIDADES, resolver_
 CRIPTO = {"BTCUSD", "ETHUSD", "XRPUSD"}
 MARGEN_DATOS = timedelta(minutes=2)
 REINTENTO_VACIO = timedelta(hours=1)  # el proveedor publica la vela cerrada con un poco de retraso
-PAUSA_CICLO_S = 60
-# Las temporalidades `diaria` (Intraday D, Swing S/M) se recalculan una vez al día, no al cerrar su
-# vela, para detectar un cambio de tendencia a tiempo: 14:00 UTC = 08:00 México (México no tiene
-# horario de verano desde 2022, así que la hora UTC es fija), con la vela diaria ya publicada.
-HORA_REFRESCO_DIARIO = 14
+PAUSA_CICLO_S = 10  # entre ciclos; antes 60 s (sumaba hasta 1 min de latencia a cada vela cerrada)
+# Las temporalidades `diaria` (Intraday D, Swing S/M) se recalculan al cerrar la vela diaria (00:00 UTC =
+# 18:00 México; México no tiene horario de verano desde 2022, así que la hora UTC es fija) y otra vez a las
+# 02:00 y 14:00 UTC por si el proveedor publicó tarde o corrigió la vela (antes solo 14:00 UTC = 08:00 México,
+# hasta 14 h después del cierre).
+HORAS_REFRESCO_DIARIO = (0, 2, 14)
 # Tope de tiempo por ciclo: no se inicia un cálculo nuevo pasado este presupuesto (nunca se interrumpe
 # uno en curso); lo pendiente queda para el siguiente ciclo, donde lo de mayor prioridad va primero.
 PRESUPUESTO_CICLO_S = 300
@@ -81,8 +82,9 @@ def necesita_refresco(simbolo: str, temporalidad: str, refrescado_en: datetime |
     if not mercado_abierto(simbolo, ahora) and refrescado_en is not None:
         return False
     if TEMPORALIDADES[resolver_temporalidad(temporalidad)]["diaria"]:  # la vela D/S/M en curso cambia cada día
-        hoy = ahora.astimezone(timezone.utc).replace(hour=HORA_REFRESCO_DIARIO, minute=0, second=0, microsecond=0)
-        cierre = hoy if ahora >= hoy else hoy - timedelta(days=1)
+        hoy = ahora.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        cierre = max(d + timedelta(hours=h) for d in (hoy - timedelta(days=1), hoy)
+                     for h in HORAS_REFRESCO_DIARIO if d + timedelta(hours=h) <= ahora)
     else:
         cierre = inicio_vela(ahora, temporalidad)
     if ahora < cierre + MARGEN_DATOS:  # vela recién cerrada: esperar a que el proveedor la publique
@@ -103,14 +105,22 @@ def ordenar(combos: list[tuple[str, str]]) -> list[tuple[str, str]]:
 URGENTES = ("Scalping 15m", "Scalping 30m", "Intraday 1H")
 
 
-def pendientes(ahora: datetime, solo: tuple | None = None, resumen: dict | None = None) -> list[tuple[str, str]]:
+def pendientes(ahora: datetime, solo: tuple | None = None, resumen: dict | None = None,
+               grupo: tuple[int, int] | None = None) -> list[tuple[str, str]]:
     """Combinaciones a refrescar; `solo` limita a esas temporalidades (canonicas). `resumen` =
-    persistencia.resumen_snapshots(...): decide con ese dict en vez de leer un snapshot completo por combo."""
+    persistencia.resumen_snapshots(...): decide con ese dict en vez de leer un snapshot completo por combo.
+    `grupo` = (indice, total): este proceso solo atiende los activos cuyo lugar en la lista ordenada del
+    catalogo cae en su indice (reparto parejo entre procesos paralelos); None = todos."""
     import persistencia
 
+    catalogo = [c for c in persistencia.listar_catalogo() if c["activo"]]
+    mios = None
+    if grupo is not None:
+        indice, total = grupo
+        mios = {s for i, s in enumerate(sorted({c["simbolo"] for c in catalogo})) if i % total == indice}
     salida = []
-    for c in persistencia.listar_catalogo():
-        if not c["activo"]:
+    for c in catalogo:
+        if mios is not None and c["simbolo"] not in mios:
             continue
         if solo is not None and ALIAS_TEMPORALIDAD.get(c["temporalidad"], c["temporalidad"]) not in solo:
             continue
@@ -224,10 +234,10 @@ def refrescar_todos(combos: list[tuple[str, str]], hilos: int, funcion=None,
     return [f.result() for f in enviados]
 
 
-def ciclo(presupuesto: float = PRESUPUESTO_CICLO_S) -> int:
+def ciclo(presupuesto: float = PRESUPUESTO_CICLO_S, grupo: tuple[int, int] | None = None) -> int:
     """Refresca lo pendiente por prioridad hasta agotar el presupuesto. Devuelve cuántos refrescó."""
     hechos = 0
-    pend = pendientes(datetime.now(timezone.utc))
+    pend = pendientes(datetime.now(timezone.utc)) if grupo is None else pendientes(datetime.now(timezone.utc), grupo=grupo)
     for simbolo, temporalidad, status, error in refrescar_todos(pend, _hilos(), limite=time.monotonic() + presupuesto):
         if status is None:
             logging.error("refresco %s %s falló: %s", simbolo, temporalidad, error)
@@ -238,10 +248,10 @@ def ciclo(presupuesto: float = PRESUPUESTO_CICLO_S) -> int:
     return hechos
 
 
-def _bucle() -> None:
+def _bucle(grupo: tuple[int, int] | None = None) -> None:
     while True:
         try:
-            n = ciclo()
+            n = ciclo(grupo=grupo) if grupo is not None else ciclo()
             if n:
                 logging.info("refresco: %d snapshots actualizados", n)
         except Exception:
@@ -249,8 +259,8 @@ def _bucle() -> None:
         time.sleep(PAUSA_CICLO_S)
 
 
-def iniciar_en_segundo_plano() -> threading.Thread:
-    hilo = threading.Thread(target=_bucle, name="refresco-smc", daemon=True)
+def iniciar_en_segundo_plano(grupo: tuple[int, int] | None = None) -> threading.Thread:
+    hilo = threading.Thread(target=_bucle, args=(grupo,) if grupo is not None else (), name="refresco-smc", daemon=True)
     hilo.start()
     return hilo
 
@@ -273,14 +283,17 @@ def demo() -> None:
     # snapshot de antes del cierre de la vela 14:30 → refrescar; de después → no
     assert necesita_refresco("EURUSD", "Scalping 15m", datetime(2026, 9, 23, 14, 20, tzinfo=u), ahora)
     assert not necesita_refresco("EURUSD", "Scalping 15m", datetime(2026, 9, 23, 14, 33, tzinfo=u), ahora)
-    # Intraday D / Swing S/M: una vez al día, pasadas las 14:00 UTC (08:00 México)
+    # Intraday D / Swing S/M: al cierre de la vela diaria (00:00 UTC) y repasos a las 02:00 y 14:00 UTC
     assert necesita_refresco("EURUSD", "Swing (M)", datetime(2026, 9, 22, 15, tzinfo=u), ahora)
     assert necesita_refresco("EURUSD", "Intraday D", datetime(2026, 9, 22, 15, tzinfo=u), ahora)
     assert not necesita_refresco("EURUSD", "Intraday D", datetime(2026, 9, 23, 14, 10, tzinfo=u), ahora)
-    antes, despues = datetime(2026, 9, 23, 13, 59, tzinfo=u), datetime(2026, 9, 23, 14, 3, tzinfo=u)
     ayer = datetime(2026, 9, 22, 14, 10, tzinfo=u)  # refrescado ayer tras las 14:00
-    assert not necesita_refresco("EURUSD", "Swing (S)", ayer, antes)
-    assert necesita_refresco("EURUSD", "Swing (S)", ayer, despues)
+    assert not necesita_refresco("EURUSD", "Swing (S)", ayer, datetime(2026, 9, 22, 23, 59, tzinfo=u))
+    assert not necesita_refresco("EURUSD", "Swing (S)", ayer, datetime(2026, 9, 23, 0, 1, tzinfo=u))  # margen de 2 min
+    assert necesita_refresco("EURUSD", "Swing (S)", ayer, datetime(2026, 9, 23, 0, 3, tzinfo=u))  # cierra la vela D
+    assert necesita_refresco("EURUSD", "Swing (S)", datetime(2026, 9, 23, 0, 5, tzinfo=u), datetime(2026, 9, 23, 2, 3, tzinfo=u))
+    assert not necesita_refresco("EURUSD", "Swing (S)", datetime(2026, 9, 23, 2, 5, tzinfo=u), datetime(2026, 9, 23, 13, 59, tzinfo=u))
+    assert necesita_refresco("EURUSD", "Swing (S)", datetime(2026, 9, 23, 2, 5, tzinfo=u), datetime(2026, 9, 23, 14, 3, tzinfo=u))
     assert not necesita_refresco("EURUSD", "Swing (S)", datetime(2026, 9, 23, 14, 10, tzinfo=u), datetime(2026, 9, 23, 15, tzinfo=u))
     assert necesita_refresco("EURUSD", "Swing (M)", None, ahora)
     # vela de 15m recién cerrada (14:31, dentro del margen de 2 min) → esperar
@@ -431,6 +444,21 @@ def demo() -> None:
         snaps[("EURUSD", "Scalping 15m")]["respuesta"]["velas"] = [1]
         snaps[("EURUSD", "Scalping 15m")]["refrescado_en"] = viejo
         assert not hay_pendientes_urgentes(datetime(2026, 9, 26, 12, 5, tzinfo=u))  # sabado: nada (no cripto)
+    finally:
+        if previo is None:
+            del sys.modules["persistencia"]
+        else:
+            sys.modules["persistencia"] = previo
+    # grupos paralelos: reparto parejo y disjunto de los activos entre procesos; None = todos
+    falso.listar_catalogo = lambda: [{"simbolo": x, "temporalidad": "Scalping 15m", "activo": True} for x in "ABCDEFG"]
+    snaps.clear()
+    sys.modules["persistencia"] = falso
+    try:
+        todos = pendientes(ahora2, None, {})
+        partes = [pendientes(ahora2, None, {}, (i, 3)) for i in range(3)]
+        assert len(todos) == 7 and sorted(sum(partes, [])) == sorted(todos), partes
+        assert sorted(len(p) for p in partes) == [2, 2, 3]
+        assert partes[0] == [("A", "Scalping 15m"), ("D", "Scalping 15m"), ("G", "Scalping 15m")]
     finally:
         if previo is None:
             del sys.modules["persistencia"]

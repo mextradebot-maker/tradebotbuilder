@@ -7,7 +7,7 @@
   todo lo demás          → archivos estáticos de public/ (panel, master.html, manuales)
 
 Además arranca el refresco de snapshots SMC en segundo plano (refresco.py).
-Variables: PORT (8000), N8N_URL, REFRESCO_ACTIVO=0 para apagarlo, ALMACEN_CARGA_ACTIVA=0 apaga la carga
+Variables: PORT (8000), N8N_URL, REFRESCO_ACTIVO=0 para apagarlo, REFRESCO_PROCESOS=N (por defecto 1) reparte el refresco entre N procesos en paralelo (pide CPU >= N), ALMACEN_CARGA_ACTIVA=0 apaga la carga
 historica de velas (carga_historica.py), BACKTEST_LARGO_ACTIVO=0 apaga el backtest largo incremental (backtest_largo.py), REFRESCO_HILOS (hilos del
 refresco, I/O-bound; por defecto 6, 1 = en serie; REFRESCO_WORKERS es alias obsoleto), más las de la API
 (DATABASE_URL, MTB_ADMIN_KEY, MTB_SERVICE_KEY).
@@ -104,19 +104,21 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(datos)
 
 
-def _segundo_plano() -> None:
-    """Proceso hijo: refresco, carga historica y backtest largo. Fuera del proceso HTTP para que su CPU no le quite el
+def _segundo_plano(grupo: tuple[int, int] | None = None, solo_refresco: bool = False, sin_refresco: bool = False) -> None:
+    """Proceso hijo: refresco, carga historica y backtest largo (o solo el refresco de un grupo de activos). Fuera del proceso HTTP para que su CPU no le quite el
     GIL a /salud (healthcheck de 4 s → Swarm reinicia el contenedor → 502 de Cloudflare). nice 10: el kernel prefiere
     al servidor web cuando compiten por el CPU del contenedor."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     if hasattr(os, "nice"):  # Linux (contenedor); no existe en Windows
         os.nice(10)
     sys.setswitchinterval(0.001)  # entre los hilos del hijo (el refresco cede al backtest largo)
-    if os.environ.get("REFRESCO_ACTIVO", "1") != "0":
+    if os.environ.get("REFRESCO_ACTIVO", "1") != "0" and not sin_refresco:
         import refresco
 
-        refresco.iniciar_en_segundo_plano()
-        logging.info("refresco de snapshots SMC activo")
+        refresco.iniciar_en_segundo_plano(grupo) if grupo else refresco.iniciar_en_segundo_plano()
+        logging.info("refresco de snapshots SMC activo%s", f" (grupo {grupo[0] + 1}/{grupo[1]})" if grupo else "")
+    if solo_refresco:
+        threading.Event().wait()
     if os.environ.get("ALMACEN_CARGA_ACTIVA", "1") != "0" and os.environ.get("DATABASE_URL"):
         import carga_historica
 
@@ -133,7 +135,20 @@ def _segundo_plano() -> None:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     # ponytail: si el hijo muere (p. ej. OOM) nadie lo relanza; el sitio sigue y el siguiente deploy lo revive.
-    multiprocessing.get_context("spawn").Process(target=_segundo_plano, name="segundo-plano", daemon=True).start()
+    ctx = multiprocessing.get_context("spawn")
+    try:
+        n = max(1, int(os.environ.get("REFRESCO_PROCESOS", "1")))
+    except ValueError:
+        n = 1
+    if n == 1 or os.environ.get("REFRESCO_ACTIVO", "1") == "0":
+        ctx.Process(target=_segundo_plano, name="segundo-plano", daemon=True).start()
+    else:
+        # n procesos de refresco, cada uno con su reparto de activos (el calculo es CPU: los hilos de un solo
+        # proceso comparten GIL y solo solapan la espera de red), mas el hijo de carga historica y backtest largo.
+        # Necesita CPU >= n en el contenedor.
+        for i in range(n):
+            ctx.Process(target=_segundo_plano, args=((i, n), True), name=f"refresco-{i}", daemon=True).start()
+        ctx.Process(target=_segundo_plano, kwargs={"sin_refresco": True}, name="segundo-plano", daemon=True).start()
     puerto = int(os.environ.get("PORT", 8000))
     logging.info("MexTradeBot escuchando en :%d", puerto)
     ThreadingHTTPServer(("0.0.0.0", puerto), Handler).serve_forever()
