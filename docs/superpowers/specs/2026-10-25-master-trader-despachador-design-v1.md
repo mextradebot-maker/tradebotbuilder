@@ -1,4 +1,6 @@
-# Master Trader — Despachador de oportunidades (diseño v2, para revisión)
+# Master Trader — Despachador de oportunidades · VERSIÓN 1 (congelada, 25 oct 2026)
+
+> **Esta es la Versión 1** (seguía el razonamiento de Ricardo). Se conserva como referencia. La propuesta evolucionada está en `...-design-v2.md`.
 
 **Fecha:** 2026-10-25 · **Versión:** 2 (incorpora las respuestas de Ricardo del 25 oct) · **Estado:** PROPUESTA, nada construido
 **Skills usadas:** mtb-trader, mtb-analyst, mtb-mt5-expert, statistical-analyst, ux-copy, brainstorming.
