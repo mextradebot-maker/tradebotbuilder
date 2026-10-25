@@ -49,3 +49,13 @@
   .at-legend{max-width:calc(100% - 20px)}
 }
 @media(prefers-reduced-motion:reduce){.at-btn{transition:none}.at-spin{animation-duration:2s}}
+/* Modo TradingView: activos que no son de MexTradeBot (sin SMC ni herramientas propias) */
+.at-tv{position:absolute;inset:0;display:none;flex-direction:column;background:var(--mt-panel)}
+.at-modo-tv .at-tv{display:flex}
+.at-modo-tv .at-chart,.at-modo-tv .at-legend,.at-modo-tv .at-float,.at-modo-tv .at-hint,.at-modo-tv .at-estado,.at-modo-tv .at-tools,.at-modo-tv .at-tf,.at-modo-tv .at-menu,.at-modo-tv .at-top .at-btn,.at-modo-tv .at-top .at-sep,.at-modo-tv .at-bottom{display:none!important}
+.at-tv-card{margin:auto;max-width:460px;padding:24px;text-align:center;color:var(--mt-muted);font-size:13px;line-height:1.55}
+.at-tv-card b{display:block;margin-bottom:8px;color:var(--mt-text);font-size:16px}
+.at-tv-card p{margin:0 0 10px}
+.at-tv-go{margin-top:6px;min-height:44px;padding:0 18px;border:1px solid var(--mt-accent);color:var(--mt-accent);font-weight:600}
+.at-tv-nota{padding:6px 12px;font-size:11px;color:var(--mt-muted);border-bottom:1px solid var(--mt-line)}
+.at-tv-w{flex:1;min-height:0}

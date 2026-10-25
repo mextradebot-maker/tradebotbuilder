@@ -17,6 +17,17 @@
     ['BRENTUSD', 'Petróleo Brent', 'Energía'], ['BTCUSD', 'Bitcoin', 'Cripto'], ['ETHUSD', 'Ethereum', 'Cripto'], ['XRPUSD', 'XRP', 'Cripto'],
     ['GOOGL', 'Alphabet / Google', 'Acciones'], ['NVDA', 'NVIDIA', 'Acciones'], ['META', 'Meta Platforms', 'Acciones'], ['WMT', 'Walmart', 'Acciones']
   ];
+  /* Activos extra que se muestran con el widget gratuito de TradingView (sin SMC). El widget trae su propio buscador para cualquier otro símbolo. */
+  var TVACT = [
+    ['FX:GBPCHF', 'Libra / Franco suizo', 'Forex'], ['FX:GBPAUD', 'Libra / Dólar australiano', 'Forex'], ['FX:GBPCAD', 'Libra / Dólar canadiense', 'Forex'], ['FX:AUDNZD', 'Dólar australiano / Neozelandés', 'Forex'],
+    ['FX:AUDCHF', 'Dólar australiano / Franco suizo', 'Forex'], ['FX:CADCHF', 'Dólar canadiense / Franco suizo', 'Forex'], ['FX:CHFJPY', 'Franco suizo / Yen', 'Forex'], ['FX:NZDCAD', 'Dólar neozelandés / Canadiense', 'Forex'],
+    ['FX:EURCAD', 'Euro / Dólar canadiense', 'Forex'], ['FX:EURNZD', 'Euro / Dólar neozelandés', 'Forex'], ['FX:EURCHF', 'Euro / Franco suizo', 'Forex'], ['FX:USDMXN', 'Dólar / Peso mexicano', 'Forex'],
+    ['TVC:DXY', 'Índice del dólar', 'Índices'], ['TVC:VIX', 'Volatilidad VIX', 'Índices'], ['TVC:CAC40', 'CAC 40', 'Índices'], ['TVC:IBEX35', 'IBEX 35', 'Índices'], ['TVC:HSI', 'Hang Seng', 'Índices'],
+    ['NYMEX:NG1!', 'Gas natural', 'Materias primas'], ['COMEX:HG1!', 'Cobre', 'Materias primas'], ['CBOT:ZW1!', 'Trigo', 'Materias primas'],
+    ['BINANCE:SOLUSDT', 'Solana', 'Cripto'], ['BINANCE:BNBUSDT', 'BNB', 'Cripto'], ['BINANCE:ADAUSDT', 'Cardano', 'Cripto'], ['BINANCE:DOGEUSDT', 'Dogecoin', 'Cripto'], ['BINANCE:LTCUSDT', 'Litecoin', 'Cripto'],
+    ['NASDAQ:AAPL', 'Apple', 'Acciones'], ['NASDAQ:MSFT', 'Microsoft', 'Acciones'], ['NASDAQ:AMZN', 'Amazon', 'Acciones'], ['NASDAQ:TSLA', 'Tesla', 'Acciones'], ['NASDAQ:NFLX', 'Netflix', 'Acciones'],
+    ['NASDAQ:AMD', 'AMD', 'Acciones'], ['NYSE:KO', 'Coca-Cola', 'Acciones'], ['NYSE:JPM', 'JPMorgan', 'Acciones'], ['NYSE:V', 'Visa', 'Acciones'], ['NYSE:DIS', 'Disney', 'Acciones']
+  ];
   var TFS = [['Scalping 15m', '15m', 900], ['Intraday 1H', '1H', 3600], ['Intraday 4H', '4H', 14400], ['Intraday D', '1D', 86400], ['Swing (S)', '1S', 604800], ['Swing (M)', '1M', 2592000]];
   var RANGOS = [['1D', 86400], ['5D', 432000], ['1M', 2592000], ['3M', 7776000], ['6M', 15552000], ['1A', 31536000], ['Todo', 0]];
   var ICONOS = {
@@ -174,6 +185,7 @@
     el.hidden = false; el.innerHTML = (spinner ? '<div class="at-spin" role="status" aria-label="Cargando"></div>' : '') + '<div>' + esc(msg) + '</div>' + (reintento ? '<button type="button" class="at-btn" data-ac="reintentar" style="border-color:var(--mt-line)">Reintentar</button>' : '');
   }
   function cargar() {
+    modoTV(); if (esTV()) return;
     var n = ++E.reqId; estado('Cargando velas de ' + E.simbolo + '…', true);
     fetch('/api/v1/grafica?simbolo=' + encodeURIComponent(E.simbolo) + '&temporalidad=' + encodeURIComponent(TFS[E.tf][0]) + '&limite=2000', { credentials: 'same-origin' })
       .then(function (r) { if (r.status === 401) throw new Error('Inicia sesión para ver la gráfica.'); if (!r.ok) throw new Error('No se pudieron cargar las velas (' + r.status + ').'); return r.json(); })
@@ -334,6 +346,7 @@
   }
   function aplicarTema() {
     if (!E || !E.chart) return;
+    if (E.tvCargado) cargarTV();
     var bg = tok('--mt-panel', '#101b2b'), tx = tok('--mt-muted', '#a6b6cc'), ln = tok('--mt-line', '#2a3a50');
     E.chart.applyOptions({ layout: { background: { type: 'solid', color: bg }, textColor: tx, fontFamily: 'Lexend, Segoe UI, sans-serif' }, grid: { vertLines: { color: ln + '66' }, horzLines: { color: ln + '66' } }, rightPriceScale: { borderColor: ln }, timeScale: { borderColor: ln }, crosshair: { vertLine: { color: tx, labelBackgroundColor: tok('--mt-raised', '#162337') }, horzLine: { color: tx, labelBackgroundColor: tok('--mt-raised', '#162337') } } });
     if (E.data && E.data.length) aplicar();
@@ -344,12 +357,35 @@
   function captura() { try { var c = E.chart.takeScreenshot(); c.toBlob(function (b) { var a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'mextradebot-' + E.simbolo + '-' + TFS[E.tf][1] + '.png'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000); }); } catch (e) { } }
   function rango(seg) { var n = E.times.length; if (!n) return; if (!seg) { E.chart.timeScale().fitContent(); return; } E.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, tiempoALogico(E.times[n - 1] - seg)), to: n + 6 }); }
 
+  /* ── modo TradingView (activos que no son nuestros) ── */
+  function esTV() { return String(E.simbolo).indexOf('tv:') === 0; }
+  function tvInfo() { var s = E.simbolo.slice(3); return TVACT.filter(function (a) { return a[0] === s; })[0] || [s, s, '']; }
+  function modoTV() {
+    var tv = esTV(); E.root.classList.toggle('at-modo-tv', tv); E.tvCargado = false;
+    if (!tv) { $('.at-tv', E.root).innerHTML = ''; return; }
+    E.reqId++; estado('');
+    var a = tvInfo();
+    $('.at-tv', E.root).innerHTML = '<div class="at-tv-card"><b>' + esc(a[0].split(':')[1] || a[0]) + ' — ' + esc(a[1]) + '</b>' +
+      '<p>Este activo no es de MexTradeBot: la gráfica, los datos y las herramientas son de TradingView. No incluye nuestro análisis SMC ni coincide con los datos de los robots, y es solo informativa.</p>' +
+      '<p>Al cargarla se conecta con los servidores de TradingView (sus propias cookies y condiciones).</p>' +
+      '<button type="button" class="at-btn at-tv-go" data-ac="tvcargar">Cargar gráfica de TradingView</button></div>';
+  }
+  function cargarTV() {
+    var a = tvInfo(), box = $('.at-tv', E.root), claro = document.documentElement.getAttribute('data-theme') === 'light';
+    box.innerHTML = '<div class="at-tv-nota">Gráfica de TradingView · sin análisis SMC · ' + esc(a[1]) + '. Usa el buscador de la gráfica para cambiar de símbolo.</div><div class="tradingview-widget-container at-tv-w"><div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div></div>';
+    var sc = document.createElement('script'); sc.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js'; sc.async = true;
+    sc.text = JSON.stringify({ autosize: true, symbol: a[0], interval: '60', timezone: 'America/Mexico_City', theme: claro ? 'light' : 'dark', style: '1', locale: 'es', allow_symbol_change: true, calendar: false, support_host: 'https://www.tradingview.com' });
+    $('.at-tv-w', box).appendChild(sc); E.tvCargado = true;
+  }
+
   function construir(cont, sim) {
     var cfg = cfgInicial(sim);
     cont.innerHTML = '';
     var root = h('div', { 'class': 'at-wrap', id: 'atWrap' });
     var grupos = {}; ACTIVOS.forEach(function (a) { (grupos[a[2]] = grupos[a[2]] || []).push(a); });
     var opts = Object.keys(grupos).map(function (g) { return '<optgroup label="' + g + '">' + grupos[g].map(function (a) { return '<option value="' + a[0] + '">' + a[0] + ' — ' + esc(a[1]) + '</option>'; }).join('') + '</optgroup>'; }).join('');
+    var gtv = {}; TVACT.forEach(function (a) { (gtv[a[2]] = gtv[a[2]] || []).push(a); });
+    opts += Object.keys(gtv).map(function (g) { return '<optgroup label="TradingView · ' + g + ' (sin SMC)">' + gtv[g].map(function (a) { return '<option value="tv:' + esc(a[0]) + '">' + esc(a[0].split(':')[1]) + ' — ' + esc(a[1]) + '</option>'; }).join('') + '</optgroup>'; }).join('');
     root.innerHTML =
       '<div class="at-top" role="toolbar" aria-label="Controles de la gráfica">' +
       '<label class="sr-only" for="atSim" style="position:absolute;left:-9999px">Activo</label><select class="at-sel" id="atSim" aria-label="Activo">' + opts + '</select><span class="at-sep"></span>' +
@@ -367,7 +403,7 @@
       '<button type="button" class="at-btn" data-ac="borrartodo" title="Borrar todos los dibujos" aria-label="Borrar todos los dibujos">' + svg('borrar') + '</button></div>' +
       '<div class="at-stage"><div class="at-chart" id="atChart"></div><div class="at-legend" aria-live="off"></div><div class="at-hint" hidden></div>' +
       '<div class="at-float" role="toolbar" aria-label="Estilo del dibujo seleccionado">' + PALETA.map(function (c) { return '<button type="button" class="at-sw" data-c="' + c + '" aria-pressed="false" aria-label="Color" style="background:' + (c === 'texto' ? 'var(--mt-text)' : c) + '"></button>'; }).join('') + '<button type="button" class="at-btn" data-ac="borrarsel" title="Eliminar dibujo" aria-label="Eliminar dibujo">' + svg('borrar') + '</button></div>' +
-      '<div class="at-estado" hidden></div></div></div>' +
+      '<div class="at-estado" hidden></div><div class="at-tv"></div></div></div>' +
       '<div class="at-bottom">' + RANGOS.map(function (r) { return '<button type="button" class="at-btn" data-rango="' + r[1] + '">' + r[0] + '</button>'; }).join('') + '<span style="margin-left:auto">Velas cerradas · hora UTC · datos Dukascopy</span></div>';
     cont.appendChild(root);
     E = { root: root, chartEl: $('#atChart', root), leyendaEl: $('.at-legend', root), estadoEl: $('.at-estado', root), pistaEl: $('.at-hint', root), flotante: $('.at-float', root), selSim: $('#atSim', root),
@@ -390,6 +426,7 @@
       else if (b.hasAttribute('data-rango')) rango(+b.getAttribute('data-rango'));
       else if (b.hasAttribute('data-c')) { var d = E.dibujos.filter(function (x) { return x.id === E.sel; })[0]; if (d) { d.color = b.getAttribute('data-c'); guardarDibujos(); actualizarFlotante(); dibujar(); } E.color = b.getAttribute('data-c'); }
       else switch (b.getAttribute('data-ac')) {
+        case 'tvcargar': cargarTV(); break;
         case 'iman': E.iman = !E.iman; E.chart.applyOptions({ crosshair: { mode: E.iman ? LW.CrosshairMode.Magnet : LW.CrosshairMode.Normal } }); persistirCfg(); pintarTop(); break;
         case 'log': E.log = !E.log; persistirCfg(); E.chart.priceScale('right').applyOptions({ mode: E.log ? LW.PriceScaleMode.Logarithmic : LW.PriceScaleMode.Normal }); pintarTop(); dibujar(); break;
         case 'ult': E.chart.timeScale().scrollToRealTime(); ajustarRangoInicial(); break;
@@ -402,7 +439,7 @@
     });
     root.addEventListener('change', function (ev) {
       var t = ev.target;
-      if (t.id === 'atSim') { E.simbolo = t.value; persistirCfg(); cargar(); }
+      if (t.id === 'atSim') { E.simbolo = t.value; persistirCfg(); modoTV(); if (!esTV()) cargar(); }
       else if (t.hasAttribute('data-tipo')) { E.tipo = t.getAttribute('data-tipo'); persistirCfg(); aplicar(); }
       else if (t.hasAttribute('data-ind')) { var k = t.getAttribute('data-ind'), i = E.inds.indexOf(k); if (t.checked && i < 0) E.inds.push(k); if (!t.checked && i >= 0) E.inds.splice(i, 1); persistirCfg(); indicadores(); }
       else if (t.hasAttribute('data-capa')) { var c = t.getAttribute('data-capa'), j = E.capas.indexOf(c); if (t.checked && j < 0) E.capas.push(c); if (!t.checked && j >= 0) E.capas.splice(j, 1); persistirCfg(); dibujar(); }
