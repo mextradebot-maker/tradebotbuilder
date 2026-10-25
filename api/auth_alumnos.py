@@ -176,6 +176,13 @@ def _ahora() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _fuera_del_laboratorio(correo: str) -> bool:
+    """Laboratorio (mtb-api-preview): con PREVIEW_SOLO_CORREO definido, solo ese correo puede registrarse o entrar.
+    En produccion la variable no existe y esto no hace nada."""
+    solo = (os.environ.get("PREVIEW_SOLO_CORREO") or "").strip().lower()
+    return bool(solo) and correo.strip().lower() != solo
+
+
 def _frenado(ip: str, correo: str, t: float) -> bool:
     lista = [x for x in _fallos.get((ip, correo), []) if t - x < VENTANA_LOGIN_S]
     _fallos[(ip, correo)] = lista
@@ -187,6 +194,8 @@ def registrar(d: dict, repo, enviar=_en_segundo_plano) -> tuple[int, str, str | 
     tel, password = (d.get("telefono_recuperacion") or "").strip(), d.get("password") or ""
     if not (nombre and correo and tel and password) or "@" not in correo or str(d.get("acepta_terminos") or "") != "1":
         return 303, f"{PANEL}?error=datos_invalidos", None
+    if _fuera_del_laboratorio(correo):
+        return 303, f"{PANEL}?error=laboratorio", None
     if str(d.get("mayor_18") or "") != "1":  # casilla «Soy mayor de 18 años»: sin ella no se registra nadie
         return 303, f"{PANEL}?error=mayor_18", None
     if len(password) < MIN_PASSWORD:
@@ -205,6 +214,8 @@ def entrar(d: dict, repo, ip: str = "", t: float | None = None) -> tuple[int, st
     correo, password = (d.get("correo") or "").strip().lower(), d.get("password") or ""
     t = time.time() if t is None else t
     malo = (303, f"{PANEL}?error=credenciales_invalidas", None)
+    if _fuera_del_laboratorio(correo):
+        return 303, f"{PANEL}?error=laboratorio", None
     if not correo or not password or _frenado(ip, correo, t):
         return malo
     a = repo.por_correo(correo)
@@ -323,6 +334,16 @@ def demo() -> None:
     assert registrar({"nombre_completo": "A", "correo": "a@b.co", "telefono_recuperacion": "5", "password": "secreta-123", "acepta_terminos": "1"}, repo, sin_hilo)[1].endswith("error=mayor_18")  # ni siquiera viene el campo
     assert reg(password="corta")[1].endswith("error=contrasena_corta") and reg(acepta_terminos="0")[1].endswith("error=datos_invalidos")
     assert reg(correo="sin-arroba")[1].endswith("error=datos_invalidos") and not repo.f
+    # laboratorio: con PREVIEW_SOLO_CORREO solo entra ese correo (registro y login); sin la variable no cambia nada
+    os.environ["PREVIEW_SOLO_CORREO"] = "Dueno@Example.com"
+    lab = RepoMemoria()
+    ok_lab = lambda c: registrar({"nombre_completo": "D", "correo": c, "telefono_recuperacion": "5", "password": "secreta-123",
+                                  "acepta_terminos": "1", "mayor_18": "1"}, lab, lambda f, *x: None)
+    assert ok_lab("ana@example.com")[1].endswith("error=laboratorio") and not lab.f
+    assert entrar({"correo": "ana@example.com", "password": "secreta-123"}, lab, "9.9.9.9")[1].endswith("error=laboratorio")
+    assert ok_lab("dueno@example.com")[1] == PANEL and len(lab.f) == 1
+    assert entrar({"correo": "DUENO@example.com", "password": "secreta-123"}, lab, "9.9.9.9")[2].startswith("mtb_token=")
+    del os.environ["PREVIEW_SOLO_CORREO"]
     st, loc, cookie = reg()
     assert (st, loc) == (303, PANEL) and cookie.startswith("mtb_token=") and "HttpOnly" in cookie and repo.f[1]["correo"] == "ana@example.com"
     assert repo.f[1]["hash"].startswith("scrypt$") and enviados and enviados[0][0] == "ana@example.com" and "Password" not in enviados[0][2]

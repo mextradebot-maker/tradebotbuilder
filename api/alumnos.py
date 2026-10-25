@@ -33,6 +33,7 @@ MENSAJES = {
     "datos_invalidos": "Faltan datos o son invalidos. Intenta de nuevo.",
     "contrasena_corta": "La contrasena debe tener al menos 8 caracteres.",
     "mayor_18": "Debes confirmar que eres mayor de 18 anos.",
+    "laboratorio": "Este es un entorno de pruebas privado.",
 }
 AVISOS = {
     "revisa_correo": "Si el correo tiene cuenta, te enviamos un enlace para crear una contrasena nueva. Revisa tu bandeja y el spam.",
