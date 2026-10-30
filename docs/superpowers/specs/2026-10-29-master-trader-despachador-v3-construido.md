@@ -56,3 +56,14 @@ python -m master.despachador   # recepción, entrega, idempotencia, expiración,
 python -m api.master           # endpoints (auth, interruptor, admin)
 ```
 Verificadas junto con `api.licencias`, `compilador`, `refresco` y `conectividad.riesgo` (sin regresiones). Falta ejecutar las migraciones contra Postgres real (primer arranque del laboratorio).
+
+
+## Actualización 30 oct 2026 (v1.21): cierre ordenado, aceptación y panel
+
+| Pieza | Qué hace |
+|---|---|
+| **Cierre ordenado** | `master_cierres` + acción admin `cerrar`: el robot recibe `"cierre":{...}` en su pulso, cierra a mercado lo suyo (posiciones y pendientes), y confirma. Tiene prioridad sobre cualquier orden nueva y nunca pasa por la compuerta. Con `MASTER_CIERRE_AUTO=1` (apagado por defecto), un freno duro de la cuenta (drawdown 15 % o 5 pérdidas seguidas) pide cerrar lo abierto. El cierre por *expectativa de ganancia* (objetivo del análisis) sigue pendiente: hace falta que el robot reporte el estado de cada posición. |
+| **Aceptación del alumno** | `master/aceptacion.py`: acción admin `solicitar` manda por Telegram "Activar / Ahora no" con enlaces firmados (HMAC, 7 días, un solo fin). El enlace abre una página con botón "Confirmar" (el POST lo activa: un previsualizador de enlaces no activa nada). No toca el bot ni n8n. Lenguaje neutro (sin la palabra "señal"). |
+| **Panel de despacho** | `/despacho.html` (solo administrador; pide `MTB_ADMIN_KEY`, queda en `sessionStorage`): robots vivos y su estado, activar/desactivar, cerrar todo, pedir aceptación, frenos con "levantar freno", órdenes recientes. Se actualiza cada 5 s. |
+| **EA v1.21** | Procesa `cierre` y manda `pendientes` en el estado. Compila 0 errores / 0 advertencias. |
+| **Preset `master`** | `GET /api/v1/licencias/robot?id=N&simbolo=…&temporalidad=…&master=1` entrega el robot ya con `InpModoMaster = true` (no hace falta tocar Inputs). |
