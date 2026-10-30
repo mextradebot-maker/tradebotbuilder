@@ -204,8 +204,8 @@ def _con_robots(estado: dict) -> dict:
     return estado
 
 
-def _pedir_compilacion(url: str, clave: str, token: str, presets: dict | None = None) -> tuple[bytes, bool]:
-    """(ex5, el compilador entiende presets) — la marca es la cabecera X-Compilador-Presets: 1."""
+def _pedir_compilacion(url: str, clave: str, token: str, presets: dict | None = None) -> tuple[bytes, bool, bool]:
+    """(ex5, entiende presets, entiende "master") — marcas: X-Compilador-Presets: 1 y X-Compilador-Master: 1."""
     import json
     import urllib.request
 
@@ -215,7 +215,7 @@ def _pedir_compilacion(url: str, clave: str, token: str, presets: dict | None = 
         headers={"Content-Type": "application/json", "X-Compilador-Key": clave, "User-Agent": "MexTradeBot-API/1.0"},
     )
     with urllib.request.urlopen(req, timeout=150) as r:
-        return r.read(), r.headers.get("X-Compilador-Presets") == "1"
+        return r.read(), r.headers.get("X-Compilador-Presets") == "1", r.headers.get("X-Compilador-Master") == "1"
 
 
 def compilar_token(token: str, presets: dict | None = None) -> tuple[int, bytes | dict]:
@@ -226,13 +226,17 @@ def compilar_token(token: str, presets: dict | None = None) -> tuple[int, bytes 
     if not url or not clave:
         return 503, {"error": "compilador no configurado (COMPILADOR_URL / COMPILADOR_KEY)"}
     try:
-        ex5, con_presets = _pedir_compilacion(url, clave, token, presets)
+        ex5, con_presets, *resto = _pedir_compilacion(url, clave, token, presets)
+        con_master = resto[0] if resto else True
     except urllib.error.HTTPError as e:
         _avisar_compilador(f"el compilador respondió {e.code}")
         return 502, {"error": f"compilador respondió {e.code}: {e.read()[:200].decode(errors='replace')}"}
     except OSError as e:
         _avisar_compilador("el compilador del VPS no está disponible")
         return 502, {"error": f"compilador no disponible: {e}"}
+    if presets and presets.get("master") and not con_master:  # VPS sin reiniciar: ignoró master y el robot saldría apagado
+        _avisar_compilador("el compilador del VPS no conoce el preset master (falta reiniciar MTB-ServidorLocal)")
+        return 503, {"error": "generador_actualizando"}
     if presets and not con_presets:  # VPS con el compilador viejo: ignoró los presets
         _avisar_compilador("el compilador del VPS es una versión vieja (ignora los presets)")
         return 503, {"error": "generador_actualizando"}
@@ -453,6 +457,15 @@ def demo() -> None:
 
                 _pedir_compilacion = lambda url, clave, token, presets=None: (enviados.append(presets) or (b"EX5P", True))
                 assert compilar_token("MTB-T", p) == (200, b"EX5P")
+                # preset master: un compilador que no lo conoce (sin la marca X-Compilador-Master) no entrega nada
+                pm = {**p, "master": True}
+                _pedir_compilacion = lambda url, clave, token, presets=None: (b"EX5M", True, False)
+                assert compilar_token("MTB-T", pm) == (503, {"error": "generador_actualizando"})
+                _pedir_compilacion = lambda url, clave, token, presets=None: (b"EX5M", True, True)
+                assert compilar_token("MTB-T", pm) == (200, b"EX5M")
+                _pedir_compilacion = lambda url, clave, token, presets=None: (b"EX5N", True, False)
+                assert compilar_token("MTB-T", p) == (200, b"EX5N")  # sin master pedido, la marca no importa
+                _pedir_compilacion = lambda url, clave, token, presets=None: (enviados.append(presets) or (b"EX5P", True))
 
                 # listo para arrastrar: simbolo + temporalidad viajan al compilador, capital NO
                 # (InpCapital se queda en 0 = balance de la cuenta) y el nombre identifica el terminal

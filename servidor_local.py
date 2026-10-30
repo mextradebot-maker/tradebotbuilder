@@ -365,6 +365,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", tipo)
         self.send_header("Content-Length", str(len(datos)))
         self.send_header("X-Compilador-Presets", "1")  # mtb-api exige esta marca para entregar robots con presets
+        self.send_header("X-Compilador-Master", "1")   # este compilador entiende el preset "master" (InpModoMaster = true)
         self.end_headers()
         self.wfile.write(datos)
 
