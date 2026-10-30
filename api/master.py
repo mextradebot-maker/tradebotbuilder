@@ -98,13 +98,16 @@ def procesar_admin(metodo: str, datos: dict, headers: dict, repo=None) -> tuple[
                                str(datos.get("motivo") or "cierre pedido por el administrador"))
             return (200, {"ok": True, "cierre_id": c["cierre_id"]}) if c else (409, {"error": "ya hay un cierre pendiente"})
         if accion == "solicitar":
-            return solicitar_activacion(int(datos["licencia_id"]), str(datos["simbolo"]), str(datos["temporalidad"]))
+            dest = datos.get("destino_licencia_id")
+            return solicitar_activacion(int(datos["licencia_id"]), str(datos["simbolo"]), str(datos["temporalidad"]),
+                                        destino_licencia_id=int(dest) if dest else None)
     except (KeyError, TypeError, ValueError) as e:
         return 400, {"error": f"datos invalidos: {e}"}
     return 400, {"error": "accion debe ser activar | desactivar | reanudar"}
 
 
-def solicitar_activacion(licencia_id: int, simbolo: str, temporalidad: str, chat_de=None, enviar=None) -> tuple[int, dict]:
+def solicitar_activacion(licencia_id: int, simbolo: str, temporalidad: str, chat_de=None, enviar=None,
+                         destino_licencia_id: int | None = None, datos_de=None) -> tuple[int, dict]:
     """Manda al alumno el mensaje de Telegram con los botones Activar / Ahora no (enlaces firmados)."""
     from master import aceptacion
 
@@ -112,7 +115,12 @@ def solicitar_activacion(licencia_id: int, simbolo: str, temporalidad: str, chat
         from persistencia.licencias import chat_de_licencia as chat_de
     if enviar is None:
         from api.alumnos import _enviar_tg as enviar
-    chat = chat_de(licencia_id)
+    if datos_de is None:
+        try:
+            from persistencia.licencias import datos_licencia as datos_de
+        except Exception:
+            datos_de = lambda _l: None
+    chat = chat_de(destino_licencia_id or licencia_id)  # destino_licencia_id: pedir la autorizacion al dueno de OTRA licencia
     if not chat:
         return 409, {"error": "el alumno de esa licencia no tiene Telegram vinculado"}
     token = os.environ.get("MTB_TELEGRAM_BOT_TOKEN", "")
@@ -120,7 +128,9 @@ def solicitar_activacion(licencia_id: int, simbolo: str, temporalidad: str, chat
         return 503, {"error": "MTB_TELEGRAM_BOT_TOKEN no configurado en el servidor"}
     try:
         base = os.environ.get("MTB_BASE_URL", "https://mextradebot.com.mx")
-        st, resp = enviar(token, {"chat_id": chat, **aceptacion.mensaje(base, licencia_id, simbolo, temporalidad)})
+        d = datos_de(licencia_id) or {}
+        st, resp = enviar(token, {"chat_id": chat, **aceptacion.mensaje(
+            base, licencia_id, simbolo, temporalidad, detalle={"nombre": d.get("cliente"), "cuenta": d.get("cuenta"), "tipo": d.get("tipo")})})
     except (OSError, RuntimeError) as e:
         return 502, {"error": f"no se pudo enviar: {e}"}
     return (200, {"ok": True}) if st == 200 else (502, {"error": "Telegram rechazo el mensaje", "detalle": resp.get("description")})
@@ -194,6 +204,12 @@ def demo() -> None:
     assert st == 409, (st, b)
     st, b = solicitar_activacion(7, "EURUSD", "Scalping 15m", chat_de=lambda l: 555, enviar=lambda t, c: (enviados.append(c) or (200, {})))
     assert st == 200 and enviados[0]["chat_id"] == 555 and "inline_keyboard" in enviados[0]["reply_markup"], (st, b)
+    # pedir la autorizacion al dueno de OTRA licencia (el chat sale de la licencia destino; el texto, de la licencia del robot)
+    pedidos = []
+    st, b = solicitar_activacion(3, "WTIUSD", "Swing (S)", chat_de=lambda l: (pedidos.append(l) or 777),
+                                 enviar=lambda t, c: (enviados.append(c) or (200, {})), destino_licencia_id=9,
+                                 datos_de=lambda l: {"cliente": "Master Trader - PETROLEO", "cuenta": 318680674, "tipo": "demo"})
+    assert st == 200 and pedidos == [9] and enviados[-1]["chat_id"] == 777 and "PETROLEO" in enviados[-1]["text"] and "318680674" in enviados[-1]["text"]
     url = enviados[0]["reply_markup"]["inline_keyboard"][0][0]["url"]
     token = url.split("t=", 1)[1]
     st, html = procesar_aceptar_get({"t": token})

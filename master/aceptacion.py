@@ -54,14 +54,42 @@ def verificar(token: str, ahora: float | None = None) -> dict | None:
         return None
 
 
-def mensaje(base_url: str, licencia_id: int, simbolo: str, temporalidad: str, ahora: float | None = None) -> dict:
-    """Cuerpo para sendMessage (sin chat_id)."""
+def _texto(simbolo: str, temporalidad: str, detalle: dict | None) -> str:
+    """Mensaje HTML de Telegram: que se autoriza, que sigue protegiendo al robot y como se apaga."""
+    from html import escape as e
+
+    d = detalle or {}
+    nombre = str(d.get("nombre") or f"{simbolo} {temporalidad}").replace("Master Trader - ", "")
+    cuenta = d.get("cuenta")
+    modo = "demo" if str(d.get("tipo") or "demo") == "demo" else str(d.get("tipo"))
+    swing = temporalidad.startswith("Swing")
+    cabecera = f"<b>Autorizacion del Master Trader</b>\n\nRobot: <b>{e(nombre)}</b>\n"
+    cabecera += f"Cuenta {e(modo)}{' ' + str(cuenta) if cuenta else ''} · {e(simbolo)} · {e(temporalidad)}\n\n"
+    cuerpo = (
+        "<b>Que estas autorizando</b>\n"
+        f"• El Master Trader revisa el analisis de {e(simbolo)} en {e(temporalidad)} y, cuando hay una oportunidad confirmada, "
+        "le avisa a tu robot en segundos con el precio de entrada, el stop y el objetivo.\n"
+        f"• Los lotes los calcula el servidor con tu regla de riesgo: maximo {'1' if swing else '2'} % del balance por operacion.\n"
+        "• Tu robot conserva sus protecciones propias: cierre forzado al -3 %, breakeven escalonado y trailing"
+        + ("; en Swing no coloca un stop fijo en el broker y gestiona la salida con sus reglas de swing" if swing else "") + ".\n"
+        "• El Master se frena solo en la cuenta si pierde 3 % en un dia, si cae 15 % desde su maximo o tras 5 perdidas seguidas, "
+        "y reduce el riesgo a la mitad desde 3 perdidas seguidas.\n\n"
+        "<b>Que cambia</b>\n"
+        "Al activarlo, tu robot deja de consultar el analisis por su cuenta: solo opera lo que le indica el Master.\n\n"
+        "<b>Como lo apagas</b>\n"
+        "Quitando el robot del grafico en MetaTrader, o pidiendo que lo desactive desde el panel de despacho.\n\n"
+        "Si no pulsas nada, no pasa nada. ¿Lo activamos?")
+    return cabecera + cuerpo
+
+
+def mensaje(base_url: str, licencia_id: int, simbolo: str, temporalidad: str, ahora: float | None = None,
+            detalle: dict | None = None) -> dict:
+    """Cuerpo para sendMessage (sin chat_id). `detalle` = {nombre, cuenta, tipo} para explicar que se autoriza."""
     def enlace(accion):
         return f"{base_url.rstrip('/')}/api/v1/master/aceptar?t={firmar(licencia_id, simbolo, temporalidad, accion, ahora)}"
     return {
-        "text": (f"Tu robot {simbolo} ({temporalidad}) puede recibir las oportunidades del Master Trader: "
-                 "el Master las revisa, comprueba tu riesgo y le avisa a tu robot. Tu robot sigue operando con sus mismas "
-                 "reglas de proteccion y tu puedes apagarlo cuando quieras. ¿Lo activamos?"),
+        "text": _texto(simbolo, temporalidad, detalle),
+        "parse_mode": "HTML",
         "reply_markup": {"inline_keyboard": [[{"text": "Activar", "url": enlace("activar")},
                                               {"text": "Ahora no", "url": enlace("no_activar")}]]},
         "disable_web_page_preview": True,
@@ -98,6 +126,11 @@ def demo() -> None:
     botones = m["reply_markup"]["inline_keyboard"][0]
     assert [b["text"] for b in botones] == ["Activar", "Ahora no"] and all(b["url"].startswith("https://x.test/api/v1/master/aceptar?t=") for b in botones)
     assert "senal" not in m["text"].lower() and "señal" not in m["text"].lower()   # lenguaje neutro (politica de Ricardo)
+    r = mensaje("https://x.test", 7, "XAUUSD", "Swing (M)", t0, {"nombre": "Master Trader - ORO SWING", "cuenta": 108460538, "tipo": "demo"})
+    assert r["parse_mode"] == "HTML" and "ORO SWING" in r["text"] and "108460538" in r["text"] and "maximo 1 %" in r["text"], r["text"]
+    assert "Master Trader - " not in r["text"] and "no coloca un stop fijo" in r["text"]
+    r2 = mensaje("https://x.test", 4, "EURUSD", "Scalping 15m", t0, {"nombre": "Master Trader - EUR/USD <x>", "cuenta": 1, "tipo": "demo"})
+    assert "maximo 2 %" in r2["text"] and "&lt;x&gt;" in r2["text"] and "<x>" not in r2["text"]  # escapa HTML
     assert "Confirmar" in pagina("T", "x", t) and "Confirmar" not in pagina("T", "x")
     print("master.aceptacion.demo() OK")
 

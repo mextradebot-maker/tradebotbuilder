@@ -224,6 +224,13 @@ def robots_de_licencias(ids) -> list[dict]:
     return [{"licencia_id": r[0], "simbolo": r[1], "temporalidad": r[2], "creada_en": r[3]} for r in rows]
 
 
+def datos_licencia(licencia_id: int) -> dict | None:
+    """{cliente, cuenta, tipo} de una licencia (para explicarle al alumno que esta autorizando)."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT cliente, cuenta, tipo FROM licencias WHERE id = %s", (licencia_id,)).fetchone()
+    return {"cliente": row[0], "cuenta": row[1], "tipo": row[2]} if row else None
+
+
 def chat_de_licencia(licencia_id: int) -> int | None:
     """Telegram del alumno dueno de la licencia (por correo); None si no tiene alumno o no vinculo Telegram."""
     with get_conn() as conn:
