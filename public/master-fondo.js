@@ -1,7 +1,7 @@
 // Fondo 3D del Master Trader: velas flotantes e indicadores simulados (solo decoracion; no lee datos del mercado).
 // Lo carga master-menu.js; si Three.js no carga, la pagina funciona igual con el fondo de color.
 (()=>{
-  const $=id=>document.getElementById(id), root=document.documentElement, T=()=>root.dataset.theme;
+  const $=id=>document.getElementById(id), root=document.documentElement, T=()=>{const t=root.dataset.theme;return t==='night'||t==='dark'?'night':t==='day'||t==='light'?'day':(matchMedia('(prefers-color-scheme: light)').matches?'day':'night')};
   const reducir=matchMedia('(prefers-reduced-motion: reduce)').matches;
   /* ---------- escena 3D: velas flotantes formando patrones ---------- */
   const lienzo=$('fondo');
@@ -85,5 +85,6 @@
     window.__pintar=pintar; pintar(); medir(); if(!reducir)bucle();
   }
 
+  new MutationObserver(()=>{if(window.__pintar)window.__pintar()}).observe(root,{attributes:true,attributeFilter:['data-theme']});
   if(window.__fondoOn){let p='1';try{p=localStorage.getItem('mtb_fondo')||'1'}catch(e){}window.__fondoOn(p!=='0')}
 })();
