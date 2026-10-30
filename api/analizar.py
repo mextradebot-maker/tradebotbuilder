@@ -202,7 +202,7 @@ class handler(BaseHTTPRequestHandler):
         elif ruta == RUTA_MASTER_ACEPTAR:
             from api.master import procesar_aceptar_post
 
-            status, body = procesar_aceptar_post(payload)
+            status, body = procesar_aceptar_post(payload, headers=dict(self.headers))
         elif ruta == RUTA_MASTER_OPORTUNIDAD:
             from api.master import procesar_oportunidad
 

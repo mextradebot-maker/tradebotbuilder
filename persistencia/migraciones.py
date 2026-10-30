@@ -358,6 +358,24 @@ _SQL = [
         expira_en    timestamptz NOT NULL
     )
     """,
+    # evidencia de la autorizacion del alumno: cada solicitud enviada y cada respuesta, con la huella del texto mostrado
+    """
+    CREATE TABLE IF NOT EXISTS master_autorizaciones (
+        id           bigserial   PRIMARY KEY,
+        licencia_id  bigint      NOT NULL REFERENCES licencias(id) ON DELETE CASCADE,
+        simbolo      text        NOT NULL,
+        temporalidad text        NOT NULL,
+        evento       text        NOT NULL CHECK (evento IN ('solicitada', 'aceptada', 'rechazada')),
+        chat_id      bigint,
+        texto_huella text,
+        ip           text,
+        user_agent   text,
+        registrada_en timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_master_autorizaciones_lic ON master_autorizaciones (licencia_id, registrada_en DESC)
+    """,
     # ── Etapa 2: temporalidades canonicas (idempotente: se corre en cada arranque) ──
     # 1) catalogo: 7 canonicas por simbolo con filas viejas, heredando fecha_inicio
     #    (Scalping 30m entra inactiva); sin filas viejas no hace nada.

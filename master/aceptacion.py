@@ -31,11 +31,22 @@ def _unb64(s: str) -> bytes:
     return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
 
-def firmar(licencia_id: int, simbolo: str, temporalidad: str, accion: str, ahora: float | None = None) -> str:
+def huella(texto: str) -> str:
+    """Huella corta del texto exacto que se le mostro al alumno (prueba de que version autorizo)."""
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()[:16]
+
+
+def firmar(licencia_id: int, simbolo: str, temporalidad: str, accion: str, ahora: float | None = None,
+           chat: int | None = None, th: str | None = None) -> str:
     if accion not in ACCIONES:
         raise ValueError("accion invalida")
-    cuerpo = json.dumps({"l": int(licencia_id), "s": simbolo, "t": temporalidad, "a": accion,
-                         "e": int((ahora if ahora is not None else time.time()) + VIGENCIA_S)}, separators=(",", ":")).encode()
+    datos = {"l": int(licencia_id), "s": simbolo, "t": temporalidad, "a": accion,
+             "e": int((ahora if ahora is not None else time.time()) + VIGENCIA_S)}
+    if chat:
+        datos["c"] = int(chat)   # el enlace solo existe en ese chat: quien lo abre es quien lo recibio
+    if th:
+        datos["h"] = th          # huella del texto que acompanaba al enlace
+    cuerpo = json.dumps(datos, separators=(",", ":")).encode()
     return _b64(cuerpo) + "." + _b64(hmac.new(_secreto(), cuerpo, hashlib.sha256).digest())
 
 
@@ -49,7 +60,8 @@ def verificar(token: str, ahora: float | None = None) -> dict | None:
         d = json.loads(cuerpo)
         if d["e"] <= (ahora if ahora is not None else time.time()) or d["a"] not in ACCIONES:
             return None
-        return {"licencia_id": int(d["l"]), "simbolo": str(d["s"]), "temporalidad": str(d["t"]), "accion": d["a"]}
+        return {"licencia_id": int(d["l"]), "simbolo": str(d["s"]), "temporalidad": str(d["t"]), "accion": d["a"],
+                "chat": d.get("c"), "texto_huella": d.get("h")}
     except (ValueError, KeyError, TypeError, json.JSONDecodeError):
         return None
 
@@ -83,12 +95,16 @@ def _texto(simbolo: str, temporalidad: str, detalle: dict | None) -> str:
 
 
 def mensaje(base_url: str, licencia_id: int, simbolo: str, temporalidad: str, ahora: float | None = None,
-            detalle: dict | None = None) -> dict:
-    """Cuerpo para sendMessage (sin chat_id). `detalle` = {nombre, cuenta, tipo} para explicar que se autoriza."""
+            detalle: dict | None = None, chat: int | None = None) -> dict:
+    """Cuerpo para sendMessage (sin chat_id). `detalle` = {nombre, cuenta, tipo} para explicar que se autoriza.
+    `chat` y la huella del texto quedan firmados dentro de los enlaces (evidencia de la autorizacion)."""
+    texto = _texto(simbolo, temporalidad, detalle)
+    th = huella(texto)
+
     def enlace(accion):
-        return f"{base_url.rstrip('/')}/api/v1/master/aceptar?t={firmar(licencia_id, simbolo, temporalidad, accion, ahora)}"
+        return f"{base_url.rstrip('/')}/api/v1/master/aceptar?t={firmar(licencia_id, simbolo, temporalidad, accion, ahora, chat, th)}"
     return {
-        "text": _texto(simbolo, temporalidad, detalle),
+        "text": texto,
         "parse_mode": "HTML",
         "reply_markup": {"inline_keyboard": [[{"text": "Activar", "url": enlace("activar")},
                                               {"text": "Ahora no", "url": enlace("no_activar")}]]},
@@ -115,7 +131,8 @@ def demo() -> None:
     os.environ["MTB_TOKEN_SECRET"] = "secreto-de-prueba"
     t0 = 1_800_000_000.0
     t = firmar(7, "EURUSD", "Scalping 15m", "activar", t0)
-    assert verificar(t, t0 + 10) == {"licencia_id": 7, "simbolo": "EURUSD", "temporalidad": "Scalping 15m", "accion": "activar"}
+    assert verificar(t, t0 + 10) == {"licencia_id": 7, "simbolo": "EURUSD", "temporalidad": "Scalping 15m", "accion": "activar",
+                                     "chat": None, "texto_huella": None}
     assert verificar(t, t0 + VIGENCIA_S + 1) is None            # vencido
     assert verificar(t[:-2] + "xx", t0 + 10) is None             # firma alterada
     c, f = t.split(".")
@@ -132,6 +149,14 @@ def demo() -> None:
     r2 = mensaje("https://x.test", 4, "EURUSD", "Scalping 15m", t0, {"nombre": "Master Trader - EUR/USD <x>", "cuenta": 1, "tipo": "demo"})
     assert "maximo 2 %" in r2["text"] and "&lt;x&gt;" in r2["text"] and "<x>" not in r2["text"]  # escapa HTML
     assert "Confirmar" in pagina("T", "x", t) and "Confirmar" not in pagina("T", "x")
+    # evidencia: el enlace firmado lleva el chat y la huella del texto; alterarlos invalida la firma
+    m2 = mensaje("https://x.test", 7, "EURUSD", "Scalping 15m", t0, chat=555)
+    tok = m2["reply_markup"]["inline_keyboard"][0][0]["url"].split("t=", 1)[1]
+    v = verificar(tok, t0 + 5)
+    assert v["chat"] == 555 and v["texto_huella"] == huella(m2["text"]) and len(v["texto_huella"]) == 16, v
+    c64, f64 = tok.split(".")
+    cuerpo = json.loads(_unb64(c64)); cuerpo["c"] = 999
+    assert verificar(_b64(json.dumps(cuerpo, separators=(",", ":")).encode()) + "." + f64, t0 + 5) is None
     print("master.aceptacion.demo() OK")
 
 

@@ -108,7 +108,7 @@ def procesar_admin(metodo: str, datos: dict, headers: dict, repo=None) -> tuple[
 
 
 def solicitar_activacion(licencia_id: int, simbolo: str, temporalidad: str, chat_de=None, enviar=None,
-                         destino_licencia_id: int | None = None, datos_de=None) -> tuple[int, dict]:
+                         destino_licencia_id: int | None = None, datos_de=None, repo=None) -> tuple[int, dict]:
     """Manda al alumno el mensaje de Telegram con los botones Activar / Ahora no (enlaces firmados)."""
     from master import aceptacion
 
@@ -130,8 +130,15 @@ def solicitar_activacion(licencia_id: int, simbolo: str, temporalidad: str, chat
     try:
         base = os.environ.get("MTB_BASE_URL", "https://mextradebot.com.mx")
         d = datos_de(licencia_id) or {}
-        st, resp = enviar(token, {"chat_id": chat, **aceptacion.mensaje(
-            base, licencia_id, simbolo, temporalidad, detalle={"nombre": d.get("cliente"), "cuenta": d.get("cuenta"), "tipo": d.get("tipo")})})
+        cuerpo = aceptacion.mensaje(base, licencia_id, simbolo, temporalidad, chat=chat,
+                                    detalle={"nombre": d.get("cliente"), "cuenta": d.get("cuenta"), "tipo": d.get("tipo")})
+        st, resp = enviar(token, {"chat_id": chat, **cuerpo})
+        if st == 200:  # evidencia: a que chat se envio y que texto exacto se mostro
+            try:
+                (repo or _repo()).registrar_autorizacion(licencia_id, simbolo, temporalidad, "solicitada", int(chat),
+                                                         aceptacion.huella(cuerpo["text"]), None, None)
+            except Exception:
+                pass  # no se pierde el envio por no poder anotarlo
     except (OSError, RuntimeError) as e:
         return 502, {"error": f"no se pudo enviar: {e}"}
     return (200, {"ok": True}) if st == 200 else (502, {"error": "Telegram rechazo el mensaje", "detalle": resp.get("description")})
@@ -148,13 +155,20 @@ def procesar_aceptar_get(qs: dict) -> tuple[int, str]:
     return 200, aceptacion.pagina("Master Trader", f"Vas a {que} las oportunidades del Master Trader para tu robot {d['simbolo']} ({d['temporalidad']}).", qs["t"])
 
 
-def procesar_aceptar_post(datos: dict, repo=None) -> tuple[int, dict]:
+def procesar_aceptar_post(datos: dict, repo=None, headers: dict | None = None) -> tuple[int, dict]:
     from master import aceptacion
 
     d = aceptacion.verificar(str(datos.get("t", "")))
     if not d:
         return 400, {"error": "enlace no valido o vencido"}
-    (repo or _repo()).activar(d["licencia_id"], d["simbolo"], d["temporalidad"], d["accion"] == "activar")
+    repo = repo or _repo()
+    h = {k.lower(): v for k, v in (headers or {}).items()}
+    ip = h.get("cf-connecting-ip") or (h.get("x-forwarded-for") or "").split(",")[0].strip() or None
+    # primero la evidencia, despues el cambio: si no se puede anotar, no se activa
+    repo.registrar_autorizacion(d["licencia_id"], d["simbolo"], d["temporalidad"],
+                                "aceptada" if d["accion"] == "activar" else "rechazada",
+                                d.get("chat"), d.get("texto_huella"), ip, h.get("user-agent"))
+    repo.activar(d["licencia_id"], d["simbolo"], d["temporalidad"], d["accion"] == "activar")
     if d["accion"] == "activar":
         return 200, {"ok": True, "mensaje": "Listo: tu robot recibira las oportunidades del Master Trader. Puedes apagarlo cuando quieras."}
     return 200, {"ok": True, "mensaje": "De acuerdo: tu robot sigue como hasta hoy."}
@@ -220,6 +234,10 @@ def demo() -> None:
     st, b = procesar_aceptar_post({"t": token}, repo2)
     assert st == 200 and b["ok"] is True
     assert procesar_aceptar_post({"t": token + "x"}, repo2)[0] == 400
+    # evidencia: la respuesta queda registrada con chat, huella del texto, IP y navegador
+    st, b = procesar_aceptar_post({"t": token}, repo2, {"CF-Connecting-IP": "203.0.113.9", "User-Agent": "Telegram-iOS"})
+    ev = repo2.autorizaciones[-1]
+    assert ev["evento"] == "aceptada" and ev["chat_id"] == 555 and len(ev["texto_huella"]) == 16 and ev["ip"] == "203.0.113.9" and ev["user_agent"] == "Telegram-iOS", ev
     os.environ["MASTER_CIERRE_AUTO"] = "1"
     assert cierre_auto() is True
     os.environ.pop("MASTER_CIERRE_AUTO")

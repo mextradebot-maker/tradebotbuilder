@@ -203,6 +203,11 @@ class MemRepo:
     def activar(self, lic, sim, tf, activo):
         self.robots.setdefault((lic, sim, tf), {"licencia_id": lic, "cuenta": None, "activo": False})["activo"] = bool(activo)
 
+    def registrar_autorizacion(self, lic, sim, tf, evento, chat_id, huella, ip, ua):
+        self.autorizaciones = getattr(self, "autorizaciones", [])
+        self.autorizaciones.append({"licencia_id": lic, "simbolo": sim, "temporalidad": tf, "evento": evento,
+                                    "chat_id": chat_id, "texto_huella": huella, "ip": ip, "user_agent": ua})
+
 
 class RepoPg:
     """Postgres (tablas master_* de persistencia/migraciones.py)."""
@@ -322,6 +327,11 @@ class RepoPg:
         with self._conn() as c:
             c.execute("UPDATE master_cuentas SET halt = NULL, actualizado_en = now() WHERE cuenta = %s", (cuenta,))
 
+    def registrar_autorizacion(self, lic, sim, tf, evento, chat_id, huella, ip, ua):
+        with self._conn() as c:
+            c.execute("""INSERT INTO master_autorizaciones (licencia_id, simbolo, temporalidad, evento, chat_id, texto_huella, ip, user_agent)
+                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""", (lic, sim, tf, evento, chat_id, huella, ip, (ua or "")[:300]))
+
     def panel(self):
         with self._conn() as c:
             robots = c.execute(
@@ -332,7 +342,10 @@ class RepoPg:
                 """SELECT orden_id, licencia_id, simbolo, temporalidad, direccion, entrada, lotes, estado, motivo, creada_en
                    FROM master_ordenes ORDER BY creada_en DESC LIMIT 30""").fetchall()
             cuentas = c.execute("SELECT cuenta, pico_equity, halt, actualizado_en FROM master_cuentas ORDER BY cuenta").fetchall()
-        return {"robots": [dict(zip(("licencia_id", "simbolo", "temporalidad", "cuenta", "activo", "visto_en", "vivo", "estado"), r)) for r in robots],
+            auts = c.execute("""SELECT licencia_id, simbolo, temporalidad, evento, chat_id, texto_huella, ip, registrada_en
+                                FROM master_autorizaciones ORDER BY registrada_en DESC LIMIT 25""").fetchall()
+        return {"autorizaciones": [dict(zip(("licencia_id", "simbolo", "temporalidad", "evento", "chat_id", "texto_huella", "ip", "registrada_en"), a)) for a in auts],
+                "robots": [dict(zip(("licencia_id", "simbolo", "temporalidad", "cuenta", "activo", "visto_en", "vivo", "estado"), r)) for r in robots],
                 "ordenes": [dict(zip(("orden_id", "licencia_id", "simbolo", "temporalidad", "direccion", "entrada", "lotes", "estado", "motivo", "creada_en"), r)) for r in ordenes],
                 "cuentas": [dict(zip(("cuenta", "pico_equity", "halt", "actualizado_en"), r)) for r in cuentas]}
 

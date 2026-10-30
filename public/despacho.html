@@ -76,6 +76,14 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
     </table>
   </section>
 
+  <section id="auts" hidden>
+    <h2>Autorizaciones del alumno</h2>
+    <table>
+      <thead><tr><th>Hora (UTC)</th><th>Evento</th><th>Licencia</th><th>Robot</th><th>Chat</th><th>Huella del texto</th><th>IP</th></tr></thead>
+      <tbody id="ta"></tbody>
+    </table>
+  </section>
+
   <section id="ordenes" hidden>
     <h2>Ordenes recientes</h2>
     <table>
@@ -98,8 +106,8 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
 
   async function cargar(){
     const {st,d}=await api('GET');
-    if(st!==200){msg(st===401?'Clave incorrecta.':'No se pudo leer el estado ('+st+').',true);['robots','cuentas','ordenes'].forEach(i=>$(i).hidden=true);$('acceso').hidden=false;clearInterval(timer);return}
-    msg('');$('acceso').hidden=true;['robots','cuentas','ordenes'].forEach(i=>$(i).hidden=false);
+    if(st!==200){msg(st===401?'Clave incorrecta.':'No se pudo leer el estado ('+st+').',true);['robots','cuentas','auts','ordenes'].forEach(i=>$(i).hidden=true);$('acceso').hidden=false;clearInterval(timer);return}
+    msg('');$('acceso').hidden=true;['robots','cuentas','auts','ordenes'].forEach(i=>$(i).hidden=false);
     $('estado').innerHTML=pill(d.master_activo?'Master encendido':'Master apagado',d.master_activo?'ok':'bad')+pill((d.robots||[]).filter(r=>r.vivo).length+' robots vivos','ok');
     $('tr').innerHTML=(d.robots||[]).filter(r=>(r.visto_en||r.activo)&&!(r.cuenta>=900000000)).map(r=>{const e=r.estado||{};return `<tr>
       <td>${r.licencia_id}</td><td>${pill(r.activo?'Activado':'No activado',r.activo?'ok':'warn')}</td><td>${esc(r.simbolo)}</td><td>${esc(r.temporalidad)}</td>
@@ -113,6 +121,9 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
     $('tc').innerHTML=(d.cuentas||[]).filter(c=>c.cuenta<900000000).map(c=>`<tr><td>${c.cuenta}</td><td class="num">${num(c.pico_equity)}</td>
       <td>${c.halt?pill(c.halt,'bad'):pill('Sin freno','ok')}</td>
       <td>${c.halt?`<div class="acciones"><button data-a="reanudar" data-c="${c.cuenta}">Levantar freno</button></div>`:''}</td></tr>`).join('')||'<tr><td colspan="4" class="vacio">Sin cuentas todavia.</td></tr>';
+    $('ta').innerHTML=(d.autorizaciones||[]).map(a=>`<tr><td class="mono">${esc(String(a.registrada_en||'').slice(0,19))}</td>
+      <td>${pill(a.evento,a.evento==='aceptada'?'ok':a.evento==='rechazada'?'bad':'warn')}</td><td>${a.licencia_id}</td>
+      <td>${esc(a.simbolo)} ${esc(a.temporalidad)}</td><td class="mono">${esc(a.chat_id??'-')}</td><td class="mono">${esc(a.texto_huella||'-')}</td><td class="mono">${esc(a.ip||'-')}</td></tr>`).join('')||'<tr><td colspan="7" class="vacio">Aun no hay autorizaciones.</td></tr>';
     const col={colocada:'ok',entregada:'warn',pendiente:'warn',bloqueada:'bad',sin_lotes:'bad',rechazada:'bad',expirada:'warn'};
     $('to').innerHTML=(d.ordenes||[]).filter(o=>o.licencia_id!==10).map(o=>`<tr><td class="mono">${esc(String(o.creada_en||'').slice(11,19))}</td><td class="mono">${esc(String(o.orden_id).slice(0,9))}</td>
       <td>${o.licencia_id}</td><td>${esc(o.simbolo)}</td><td>${esc(o.direccion)}</td><td class="num">${num(o.entrada,5)}</td><td class="num">${o.lotes==null?'-':num(o.lotes)}</td>
