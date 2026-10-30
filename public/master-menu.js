@@ -27,6 +27,6 @@
 
   // fondo 3D y pie oficial; si algo no carga, la pagina funciona igual
   const carga=src=>new Promise((ok,mal)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=mal;document.head.appendChild(s)});
-  carga('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js').then(()=>carga('/master-fondo.js')).catch(()=>{lienzo.remove()});
-  carga('/legal.js').catch(()=>{});
+  carga('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js').then(()=>carga('/master-fondo.js?v=20261030b')).catch(()=>{lienzo.remove()});
+  carga('/legal.js?v=20261030b').catch(()=>{});
 })();
