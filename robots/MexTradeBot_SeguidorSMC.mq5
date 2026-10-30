@@ -33,10 +33,11 @@
 //| venta, arriba de cada nuevo maximo mas bajo) de InpTF, si queda   |
 //| mejor que el escalon; nunca baja.                                 |
 //| OJO: backtesting/backtest.py NO simula esta gestion todavia.      |
-//| SWING CON ESCALERA (v1.17, regla 5 de Ricardo 2 oct 2026): Swing  |
-//| S/M usa la misma escalera y trailing; como no lleva SL, su R es   |
-//| la distancia que equivale al cierre forzado (3% del balance):     |
-//| +3% -> SL a la entrada, +4.5% -> +1.5%, +6% -> +3%, luego trailing.|
+//| SWING SIN SL, SIEMPRE (v1.22, principio de Ricardo 30 oct 2026):  |
+//| Swing (S)/(M) no llevan stop loss ni al abrir ni despues -- se     |
+//| retira la escalera/trailing que la v1.17 (regla 5, 2 oct) les      |
+//| ponia. Su salida: TP del motor, cierre forzado -3% y el cierre     |
+//| ordenado por el Master. Exclusivo de Swing: el resto no cambia.    |
 //| MONTO A OPERAR (v1.18, ficha de descarga 3 oct 2026): InpCapital  |
 //| > 0 limita el capital al menor entre ese monto y el balance (lote,|
 //| cierre forzado -3% y R de Swing). 0 = balance de la cuenta.       |
@@ -67,7 +68,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.21"
+#property version   "1.22"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -372,7 +373,7 @@ void MasterPulso()
 {
    string estado = StringFormat(
       "{\"balance\":%.2f,\"equity\":%.2f,\"pnl_hoy\":%.2f,\"racha\":%d,\"riesgo_abierto_pct\":%.4f,\"posiciones\":%d,\"pendientes\":%d,\"riesgo_pct\":%.4f,"
-      + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f,\"version\":\"1.21\"}",
+      + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f,\"version\":\"1.22\"}",
       CapitalEfectivo(), AccountInfoDouble(ACCOUNT_EQUITY), PnlHoy(), RachaPerdidas(), RiesgoAbiertoPct(), CountPositions(), CountOrdenesPendientes(),
       EsSwingSM() ? InpRiskPercentSwing : InpRiskPercent,
       SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE), SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE),
@@ -851,6 +852,7 @@ void CerrarPorPerdidaMaxima()
 //+------------------------------------------------------------------+
 void MoverBreakeven()
 {
+   if(EsSwingSM()) return; // v1.22: Swing (S)/(M) NUNCA llevan SL -- ni al abrir ni despues; solo TP, salida por estructura y cierre forzado
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
       ulong ticket = PositionGetTicket(i);

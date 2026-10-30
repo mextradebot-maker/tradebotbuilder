@@ -28,6 +28,12 @@ PCT_RIESGO_SWING = 0.02
 PCT_MAX_SWING = 0.02
 PCT_RIESGO_DEFAULT = 0.02
 PCT_MAX_SL = 0.02  # tope de pérdida en el SL para scalping/intraday
+PCT_CIERRE_FORZADO = 0.03  # swing no lleva SL: su pérdida real la acota el cierre forzado del -3 % (EA InpPerdidaMaxPct)
+
+
+def tope_riesgo(temporalidad: str) -> float:
+    """Riesgo máximo por operación que la regla permite para esa temporalidad (fracción del capital)."""
+    return PCT_CIERRE_FORZADO if es_swing(temporalidad) else PCT_MAX_SL
 
 
 @dataclass(frozen=True)
@@ -36,6 +42,7 @@ class Lotaje:
     viable: bool
     motivo: str
     capital_minimo: float  # capital con el que el lote mínimo cabe en el riesgo
+    riesgo_efectivo: float = 0.0  # fracción del capital que arriesga el lote devuelto (puede superar `pct` si se adaptó)
 
 
 def es_swing(temporalidad: str) -> bool:
@@ -49,8 +56,12 @@ def perdida_por_lote(precio_entrada: float, sl_precio: float, tick_size: float, 
 
 
 def dimensionar(capital: float, pct: float, costo_1_lote: float,
-                vol_min: float, vol_max: float, vol_step: float) -> Lotaje:
-    """Núcleo puro de la regla: presupuesto de riesgo / costo por lote, al step, hacia abajo."""
+                vol_min: float, vol_max: float, vol_step: float, pct_tope: float | None = None) -> Lotaje:
+    """Núcleo puro de la regla: presupuesto de riesgo / costo por lote, al step, hacia abajo.
+
+    Adaptable al capital: todo sale de `capital`, `pct` y el costo del lote en el broker, no de montos fijos. Si el
+    presupuesto `pct` no alcanza ni para el lote mínimo y se da `pct_tope`, se sube el riesgo AL LOTE MÍNIMO mientras
+    no pase ese tope (es lo máximo que la regla permite perder); más allá, no es viable y se informa el capital mínimo."""
     if capital <= 0 or pct <= 0 or costo_1_lote <= 0:
         return Lotaje(0.0, False, "capital, % de riesgo o costo por lote inválido", 0.0)
 
@@ -58,10 +69,15 @@ def dimensionar(capital: float, pct: float, costo_1_lote: float,
     pasos = math.floor(capital * pct / costo_1_lote / vol_step + 1e-9)
     lotes = round(min(pasos * vol_step, vol_max), 8)
     if lotes < vol_min - 1e-9:
+        riesgo_min = vol_min * costo_1_lote / capital
+        if pct_tope is not None and riesgo_min <= pct_tope + 1e-9:
+            return Lotaje(vol_min, True, f"lote mínimo: el riesgo sube de {pct:.1%} a {riesgo_min:.2%} (tope {pct_tope:.0%})",
+                          capital_minimo, riesgo_min)
         return Lotaje(0.0, False,
                       f"Capital insuficiente (${capital:,.2f}): el lote mínimo {vol_min} "
-                      f"requiere ${capital_minimo:,.2f} con {pct:.1%} de riesgo", capital_minimo)
-    return Lotaje(lotes, True, "ok", capital_minimo)
+                      f"requiere ${capital_minimo:,.2f} con {pct:.1%} de riesgo"
+                      + (f" y ${vol_min * costo_1_lote / pct_tope:,.2f} con el tope de {pct_tope:.0%}" if pct_tope else ""), capital_minimo)
+    return Lotaje(lotes, True, "ok", capital_minimo, lotes * costo_1_lote / capital)
 
 
 def calcular_lotes(simbolo: str, capital: float, temporalidad: str, precio_entrada: float,
@@ -92,7 +108,7 @@ def calcular_lotes(simbolo: str, capital: float, temporalidad: str, precio_entra
         pct = min(PCT_RIESGO_DEFAULT if pct_riesgo is None else pct_riesgo, PCT_MAX_SL)
         costo = perdida_por_lote(precio_entrada, sl_precio, info.trade_tick_size, info.trade_tick_value)
 
-    return dimensionar(capital, pct, costo, info.volume_min, info.volume_max, info.volume_step)
+    return dimensionar(capital, pct, costo, info.volume_min, info.volume_max, info.volume_step, pct_tope=tope_riesgo(temporalidad))
 
 
 def demo() -> None:
@@ -127,6 +143,25 @@ def demo() -> None:
     # Coincide con la regla confirmada: con $300 solo es viable Scalping/Intraday.
     r = dimensionar(300, 0.02, 3683.0, mn, mx, st)
     assert not r.viable, r
+
+    # Adaptable al capital (cuenta 3, 30 oct 2026): oro swing mensual, stop del motor $154.5 -> $15,446 por lote de 100 oz.
+    # Con $10,224.94 y 1 % el lote minimo no cabe (queria $15,446); el tope de swing es 3 % -> abre 0.01 con 1.51 % de riesgo.
+    r = dimensionar(10_224.94, 0.01, 15_446.0, mn, mx, st)
+    assert not r.viable and abs(r.capital_minimo - 15_446) < 2, r
+    r = dimensionar(10_224.94, 0.01, 15_446.0, mn, mx, st, pct_tope=tope_riesgo("Swing (M)"))
+    assert r.viable and r.lotes == 0.01 and abs(r.riesgo_efectivo - 0.0151) < 1e-4, r
+    # el tope manda: con $3,000 el mismo lote arriesgaria 5.1 % -> sigue sin abrir (y avisa cuanto capital hace falta)
+    r = dimensionar(3_000, 0.01, 15_446.0, mn, mx, st, pct_tope=tope_riesgo("Swing (M)"))
+    assert not r.viable and "5,148.67" in r.motivo, r
+    # scalping/intraday: el tope es 2 % (regla 29 sep); con $300 y SL de 30 pips ($300 por lote) el minimo arriesga 1 %
+    r = dimensionar(300, 0.01, perdida_por_lote(1.1050, 1.1020, 0.00001, 1.0), mn, mx, st, pct_tope=tope_riesgo("Scalping 15m"))
+    assert r.viable and r.lotes == 0.01, r
+    # si el SL cuesta mas del 2 % con el lote minimo, NO se abre
+    r = dimensionar(300, 0.01, 1000.0, mn, mx, st, pct_tope=tope_riesgo("Scalping 15m"))   # 0.01 lote perderia $10 = 3.3 %
+    assert not r.viable, r
+    # con capital grande el riesgo efectivo es el pedido, no el tope
+    r = dimensionar(10_000, 0.01, 1_000.0, mn, mx, st, pct_tope=0.02)
+    assert r.lotes == 0.10 and abs(r.riesgo_efectivo - 0.01) < 1e-9, r
 
     # Tope del broker
     r = dimensionar(10_000_000, 0.01, 10.0, mn, mx, st)

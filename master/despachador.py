@@ -27,6 +27,24 @@ def clave_oportunidad(s: dict) -> str:
     return f"{s['direccion']}|{float(s['entrada']):.8g}|{float(s['stop']):.8g}"
 
 
+MAX_EDAD_VELAS = 20      # misma caducidad que la orden pendiente del EA (InpVelasExpiracion)
+MAX_DISTANCIA_PCT = 10.0  # ponytail: tope unico; si un swing legitimo queda mas lejos, subirlo por temporalidad
+
+
+def vigentes(confirmados: list[dict], velas, ref_cierre) -> list[dict]:
+    """Descarta del camino automatico los setups que ya no sirven: confirmados hace mas de MAX_EDAD_VELAS velas o con la
+    entrada a mas de MAX_DISTANCIA_PCT % del precio actual (p. ej. una zona de hace anos que el motor sigue viendo 'sin llenar').
+    Sin velas / ref_cierre (API vieja) no filtra por ese dato."""
+    salida = []
+    for s in confirmados:
+        if velas and s.get("indice_conocido") is not None and velas - 1 - int(s["indice_conocido"]) > MAX_EDAD_VELAS:
+            continue
+        if ref_cierre and s.get("entrada") and abs(float(s["entrada"]) - float(ref_cierre)) / float(ref_cierre) * 100 > MAX_DISTANCIA_PCT:
+            continue
+        salida.append(s)
+    return salida
+
+
 def recibir_oportunidades(repo, simbolo: str, temporalidad: str, confirmados: list[dict],
                           ref_ts=None, ref_cierre=None, ahora: datetime | None = None) -> dict:
     """Crea una orden pendiente por cada robot activado de ese activo/temporalidad para el ULTIMO setup confirmado
@@ -52,10 +70,12 @@ def recibir_oportunidades(repo, simbolo: str, temporalidad: str, confirmados: li
 
 
 def _lotes(est: dict, orden: dict, riesgo_pct: float) -> tuple[float, str]:
-    from conectividad.riesgo import dimensionar
+    from conectividad.riesgo import dimensionar, tope_riesgo
     costo = abs(orden["entrada"] - orden["stop"]) / float(est["tick_size"]) * float(est["tick_value"])
+    # adaptable al capital: si el lote minimo no cabe en el riesgo pedido, sube hasta el tope de la regla (2 % con SL, 3 % swing)
     lot = dimensionar(float(est["balance"]), riesgo_pct / 100.0, costo,
-                      float(est["vol_min"]), float(est["vol_max"]), float(est["vol_step"]))
+                      float(est["vol_min"]), float(est["vol_max"]), float(est["vol_step"]),
+                      pct_tope=tope_riesgo(orden["temporalidad"]))
     return (lot.lotes, "") if lot.viable else (0.0, lot.motivo or "capital insuficiente para el lote minimo")
 
 
@@ -165,7 +185,8 @@ class MemRepo:
 
     def crear_cierre(self, c):
         if any(x["licencia_id"] == c["licencia_id"] and x["simbolo"] == c["simbolo"] and x["temporalidad"] == c["temporalidad"]
-               and x["estado"] == "pendiente" and x["expira_en"] > _ahora() for x in self.cierres.values()):
+               and x["estado"] == "pendiente" and x["expira_en"] > c["expira_en"] - timedelta(seconds=TTL_ORDEN_S)
+               for x in self.cierres.values()):   # "ahora" = el de la creacion del nuevo (la prueba usa hora fija)
             return False
         self.cierres[c["cierre_id"]] = {**c, "estado": "pendiente"}
         return True
@@ -405,6 +426,13 @@ class RepoPg:
 
 
 def demo() -> None:
+    # vigentes(): casos reales del 30 oct 2026
+    oro_m = {"direccion": "long", "entrada": 1905.4, "stop": 1750.9, "indice_conocido": 79}   # zona de hace anos, oro a 3883
+    assert vigentes([oro_m], 83, 3883.74) == []                                                 # 51 % lejos del precio
+    fresco = {"direccion": "short", "entrada": 1.1213, "stop": 1.1218, "indice_conocido": 4220}
+    assert vigentes([fresco], 4224, 1.1151) == [fresco]                                         # 3 velas, 0.55 % lejos
+    assert vigentes([{**fresco, "indice_conocido": 4100}], 4224, 1.1151) == []                  # 123 velas: ya expiro
+    assert vigentes([fresco], None, None) == [fresco]                                           # API vieja: no filtra
     assert filtros_autorizaciones() == ("", [])
     w, p = filtros_autorizaciones(desde="2026-10-01", hasta="2026-10-31", usuario="Ricardo", nombre="Oro", activo="gold", evento="aceptada")
     assert w.count("%s") == len(p) == 7 and w.startswith("WHERE ") and p[-2:] == ["GOLD", "aceptada"] and p[2] == "%ricardo%", (w, p)

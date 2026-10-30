@@ -91,7 +91,8 @@ def procesar_auth(datos: dict, headers: dict) -> tuple[int, dict]:
             if d["tick_size"] <= 0:
                 raise ValueError("tick_size inválido")
             costo = abs(d["entrada"] - d["stop"]) / d["tick_size"] * d["tick_value"]
-            lotaje = dimensionar(d["balance"], min(d["riesgo_pct"] / 100.0, PCT_MAX_SL), costo, d["vol_min"], d["vol_max"], d["vol_step"])
+            lotaje = dimensionar(d["balance"], min(d["riesgo_pct"] / 100.0, PCT_MAX_SL), costo, d["vol_min"], d["vol_max"], d["vol_step"],
+                                 pct_tope=PCT_MAX_SL)  # sin temporalidad en el payload: tope conservador del 2 %
         except (TypeError, ValueError) as e:
             return 400, {"autorizado": False, "motivo": f"datos de lotes inválidos: {e}"}
         cuerpo.update(lotes=lotaje.lotes, viable=lotaje.viable, motivo_lotes=lotaje.motivo,
