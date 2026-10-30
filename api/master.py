@@ -87,7 +87,12 @@ def procesar_admin(metodo: str, datos: dict, headers: dict, repo=None) -> tuple[
     accion = datos.get("accion")
     try:
         if accion in ("activar", "desactivar"):
-            r.activar(int(datos["licencia_id"]), str(datos["simbolo"]), str(datos["temporalidad"]), accion == "activar")
+            lic, sim, tf = int(datos["licencia_id"]), str(datos["simbolo"]), str(datos["temporalidad"])
+            # sin Telegram no hay autorizacion, y sin autorizacion no se activa (apagar siempre se puede)
+            if accion == "activar" and r.ultima_autorizacion(lic, sim, tf) != "aceptada":
+                return 409, {"error": "sin_autorizacion",
+                             "detalle": "El alumno debe aceptar por Telegram antes de activar (pide la autorizacion con accion 'solicitar')."}
+            r.activar(lic, sim, tf, accion == "activar")
             return 200, {"ok": True}
         if accion == "reanudar":
             r.reanudar(int(datos["cuenta"]))
@@ -107,6 +112,28 @@ def procesar_admin(metodo: str, datos: dict, headers: dict, repo=None) -> tuple[
     return 400, {"error": "accion debe ser activar | desactivar | reanudar"}
 
 
+def procesar_autorizaciones(qs: dict, headers: dict, repo=None) -> tuple[int, dict]:
+    """GET /api/v1/master/autorizaciones?desde&hasta&usuario&nombre&activo&evento&limite&salto (admin)."""
+    if not os.environ.get("MTB_ADMIN_KEY"):
+        return 503, {"error": "MTB_ADMIN_KEY no configurada en el servidor"}
+    if not _clave_ok(_h(headers, "X-Admin-Key"), "MTB_ADMIN_KEY"):
+        return 401, {"error": "clave de administrador invalida"}
+    f = {k: (qs.get(k) or "").strip() or None for k in ("desde", "hasta", "usuario", "nombre", "activo", "evento")}
+    if f["evento"] not in (None, "solicitada", "aceptada", "rechazada"):
+        return 400, {"error": "evento debe ser solicitada | aceptada | rechazada"}
+    try:
+        from datetime import date
+
+        for k in ("desde", "hasta"):
+            if f[k]:
+                date.fromisoformat(f[k])
+        f["limite"], f["salto"] = min(max(int(qs.get("limite") or 100), 1), 500), max(int(qs.get("salto") or 0), 0)
+    except ValueError:
+        return 400, {"error": "fecha o numero invalido (fecha AAAA-MM-DD)"}
+    filas = (repo or _repo()).buscar_autorizaciones(**f)
+    return 200, {"total": len(filas), "autorizaciones": filas}
+
+
 def solicitar_activacion(licencia_id: int, simbolo: str, temporalidad: str, chat_de=None, enviar=None,
                          destino_licencia_id: int | None = None, datos_de=None, repo=None) -> tuple[int, dict]:
     """Manda al alumno el mensaje de Telegram con los botones Activar / Ahora no (enlaces firmados)."""
@@ -123,7 +150,8 @@ def solicitar_activacion(licencia_id: int, simbolo: str, temporalidad: str, chat
             datos_de = lambda _l: None
     chat = chat_de(destino_licencia_id or licencia_id)  # destino_licencia_id: pedir la autorizacion al dueno de OTRA licencia
     if not chat:
-        return 409, {"error": "el alumno de esa licencia no tiene Telegram vinculado"}
+        return 409, {"error": "telegram_no_vinculado",
+                     "detalle": "El alumno debe vincular su Telegram en el panel de alumnos: sin eso no se le puede pedir autorizacion ni enviar reportes."}
     token = os.environ.get("MTB_TELEGRAM_BOT_TOKEN", "")
     if not token:
         return 503, {"error": "MTB_TELEGRAM_BOT_TOKEN no configurado en el servidor"}
@@ -161,6 +189,8 @@ def procesar_aceptar_post(datos: dict, repo=None, headers: dict | None = None) -
     d = aceptacion.verificar(str(datos.get("t", "")))
     if not d:
         return 400, {"error": "enlace no valido o vencido"}
+    if not d.get("chat"):  # enlace sin chat de Telegram = sin firmante identificable
+        return 400, {"error": "enlace sin Telegram vinculado; pide uno nuevo"}
     repo = repo or _repo()
     h = {k.lower(): v for k, v in (headers or {}).items()}
     ip = h.get("cf-connecting-ip") or (h.get("x-forwarded-for") or "").split(",")[0].strip() or None
@@ -199,7 +229,7 @@ def demo() -> None:
         assert procesar_pulso(datos, h, repo)[1]["estado"] == "sin_activar"             # vivo, pero nadie lo activo
         assert procesar_admin("GET", {}, {}, repo)[0] == 401
         assert procesar_oportunidad({}, {}, repo)[0] == 401
-        repo.robots[(7, "EURUSD", "Scalping 15m")]["activo"] = True                      # lo que hace admin.activar
+        repo.robots[(7, "EURUSD", "Scalping 15m")]["activo"] = True                      # lo que hace admin.activar (con aceptacion previa)
         setup = {"direccion": "short", "entrada": 1.1, "stop": 1.101, "tp": 1.098}
         st, b = procesar_oportunidad({"simbolo": "EURUSD", "temporalidad": "Scalping 15m", "setups_confirmados": [setup]},
                                      {"X-MTB-Service-Key": "svc-k"}, repo)
@@ -238,6 +268,28 @@ def demo() -> None:
     st, b = procesar_aceptar_post({"t": token}, repo2, {"CF-Connecting-IP": "203.0.113.9", "User-Agent": "Telegram-iOS"})
     ev = repo2.autorizaciones[-1]
     assert ev["evento"] == "aceptada" and ev["chat_id"] == 555 and len(ev["texto_huella"]) == 16 and ev["ip"] == "203.0.113.9" and ev["user_agent"] == "Telegram-iOS", ev
+    # Telegram obligatorio: sin respuesta firmada por Telegram no se puede activar desde el panel; apagar siempre se puede
+    adm = {"X-Admin-Key": "admin-k"}
+    act = {"accion": "activar", "licencia_id": 7, "simbolo": "EURUSD", "temporalidad": "Scalping 15m"}
+    repo3 = MemRepo()
+    st, b = procesar_admin("POST", act, adm, repo3)
+    assert st == 409 and b["error"] == "sin_autorizacion", (st, b)
+    repo3.registrar_autorizacion(7, "EURUSD", "Scalping 15m", "solicitada", 555, "h", None, None)   # solo pedida: no cuenta
+    assert procesar_admin("POST", act, adm, repo3)[0] == 409
+    repo3.registrar_autorizacion(7, "EURUSD", "Scalping 15m", "aceptada", None, "h", None, None)    # sin chat: no cuenta
+    assert procesar_admin("POST", act, adm, repo3)[0] == 409
+    repo3.registrar_autorizacion(7, "EURUSD", "Scalping 15m", "aceptada", 555, "h", "1.2.3.4", "UA")
+    assert procesar_admin("POST", act, adm, repo3)[0] == 200 and repo3.robots[(7, "EURUSD", "Scalping 15m")]["activo"] is True
+    repo3.registrar_autorizacion(7, "EURUSD", "Scalping 15m", "rechazada", 555, "h", None, None)    # lo ultimo manda
+    assert procesar_admin("POST", act, adm, repo3)[0] == 409
+    assert procesar_admin("POST", {**act, "accion": "desactivar"}, adm, repo3)[0] == 200
+    # enlaces sin chat (los de antes de la evidencia) ya no activan nada
+    from master import aceptacion as _ac
+    assert procesar_aceptar_post({"t": _ac.firmar(7, "EURUSD", "Scalping 15m", "activar")}, MemRepo())[0] == 400
+    # buscador: solo admin, filtros validados
+    assert procesar_autorizaciones({}, {}, MemRepo())[0] == 401
+    assert procesar_autorizaciones({"evento": "x"}, adm, MemRepo())[0] == 400
+    assert procesar_autorizaciones({"desde": "ayer"}, adm, MemRepo())[0] == 400
     os.environ["MASTER_CIERRE_AUTO"] = "1"
     assert cierre_auto() is True
     os.environ.pop("MASTER_CIERRE_AUTO")

@@ -208,6 +208,37 @@ class MemRepo:
         self.autorizaciones.append({"licencia_id": lic, "simbolo": sim, "temporalidad": tf, "evento": evento,
                                     "chat_id": chat_id, "texto_huella": huella, "ip": ip, "user_agent": ua})
 
+    def ultima_autorizacion(self, lic, sim, tf):
+        """Ultimo evento 'aceptada' / 'rechazada' de ese robot (None si nunca respondio)."""
+        for a in reversed(getattr(self, "autorizaciones", [])):
+            if (a["licencia_id"], a["simbolo"], a["temporalidad"]) == (lic, sim, tf) and a["evento"] != "solicitada" and a["chat_id"]:
+                return a["evento"]
+        return None
+
+
+COLS_AUT = ("id", "registrada_en", "evento", "simbolo", "temporalidad", "alumno", "correo", "robot", "cuenta", "licencia_id",
+            "chat_id", "texto_huella", "ip", "user_agent")
+
+
+def filtros_autorizaciones(desde=None, hasta=None, usuario=None, nombre=None, activo=None, evento=None, **_) -> tuple[str, list]:
+    """WHERE parametrizado del buscador (todo opcional, se combina con AND).
+    desde/hasta: fecha AAAA-MM-DD (hasta incluye ese dia); usuario: parte del correo; nombre: parte del nombre del alumno o del robot;
+    activo: simbolo exacto (GOLD, EURUSD...); evento: solicitada | aceptada | rechazada."""
+    cond, p = [], []
+    if desde:
+        cond.append("registrada_en >= %s::date"); p.append(desde)
+    if hasta:
+        cond.append("registrada_en < (%s::date + 1)"); p.append(hasta)
+    if usuario:
+        cond.append("lower(correo) LIKE %s"); p.append(f"%{usuario.lower()}%")
+    if nombre:
+        cond.append("(alumno ILIKE %s OR robot ILIKE %s)"); p += [f"%{nombre}%"] * 2
+    if activo:
+        cond.append("upper(simbolo) = %s"); p.append(activo.upper())
+    if evento:
+        cond.append("evento = %s"); p.append(evento)
+    return ("WHERE " + " AND ".join(cond) if cond else ""), p
+
 
 class RepoPg:
     """Postgres (tablas master_* de persistencia/migraciones.py)."""
@@ -328,9 +359,32 @@ class RepoPg:
             c.execute("UPDATE master_cuentas SET halt = NULL, actualizado_en = now() WHERE cuenta = %s", (cuenta,))
 
     def registrar_autorizacion(self, lic, sim, tf, evento, chat_id, huella, ip, ua):
+        """Usuario = el alumno DUENO DEL TELEGRAM que respondio (no el dueno de la licencia): es quien firmo."""
         with self._conn() as c:
-            c.execute("""INSERT INTO master_autorizaciones (licencia_id, simbolo, temporalidad, evento, chat_id, texto_huella, ip, user_agent)
-                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""", (lic, sim, tf, evento, chat_id, huella, ip, (ua or "")[:300]))
+            n = c.execute("""INSERT INTO master_autorizaciones
+                                 (licencia_id, simbolo, temporalidad, evento, chat_id, texto_huella, ip, user_agent, correo, alumno, robot, cuenta)
+                             SELECT l.id, %s, %s, %s, %s, %s, %s, %s, a.correo, a.nombre_completo, l.cliente, l.cuenta
+                             FROM licencias l LEFT JOIN alumnos a ON a.telegram_chat_id = %s WHERE l.id = %s""",
+                          (sim, tf, evento, chat_id, huella, ip, (ua or "")[:300], chat_id, lic)).rowcount
+            if n != 1:
+                raise ValueError("licencia no encontrada")
+
+    def ultima_autorizacion(self, lic, sim, tf):
+        with self._conn() as c:
+            r = c.execute("""SELECT evento FROM master_autorizaciones
+                             WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s AND evento <> 'solicitada' AND chat_id IS NOT NULL
+                             ORDER BY registrada_en DESC, id DESC LIMIT 1""", (lic, sim, tf)).fetchone()
+        return r[0] if r else None
+
+    def buscar_autorizaciones(self, **f):
+        """Busqueda del historial de confirmaciones (ver filtros_autorizaciones)."""
+        where, params = filtros_autorizaciones(**f)
+        with self._conn() as c:
+            rows = c.execute(f"""SELECT id, registrada_en, evento, simbolo, temporalidad, alumno, correo, robot, cuenta, licencia_id,
+                                        chat_id, texto_huella, ip, user_agent
+                                 FROM master_autorizaciones {where} ORDER BY registrada_en DESC, id DESC LIMIT %s OFFSET %s""",
+                             params + [f["limite"], f["salto"]]).fetchall()
+        return [dict(zip(COLS_AUT, r)) for r in rows]
 
     def panel(self):
         with self._conn() as c:
@@ -342,15 +396,19 @@ class RepoPg:
                 """SELECT orden_id, licencia_id, simbolo, temporalidad, direccion, entrada, lotes, estado, motivo, creada_en
                    FROM master_ordenes ORDER BY creada_en DESC LIMIT 30""").fetchall()
             cuentas = c.execute("SELECT cuenta, pico_equity, halt, actualizado_en FROM master_cuentas ORDER BY cuenta").fetchall()
-            auts = c.execute("""SELECT licencia_id, simbolo, temporalidad, evento, chat_id, texto_huella, ip, registrada_en
+            auts = c.execute("""SELECT licencia_id, simbolo, temporalidad, evento, chat_id, texto_huella, ip, registrada_en, alumno
                                 FROM master_autorizaciones ORDER BY registrada_en DESC LIMIT 25""").fetchall()
-        return {"autorizaciones": [dict(zip(("licencia_id", "simbolo", "temporalidad", "evento", "chat_id", "texto_huella", "ip", "registrada_en"), a)) for a in auts],
+        return {"autorizaciones": [dict(zip(("licencia_id", "simbolo", "temporalidad", "evento", "chat_id", "texto_huella", "ip", "registrada_en", "alumno"), a)) for a in auts],
                 "robots": [dict(zip(("licencia_id", "simbolo", "temporalidad", "cuenta", "activo", "visto_en", "vivo", "estado"), r)) for r in robots],
                 "ordenes": [dict(zip(("orden_id", "licencia_id", "simbolo", "temporalidad", "direccion", "entrada", "lotes", "estado", "motivo", "creada_en"), r)) for r in ordenes],
                 "cuentas": [dict(zip(("cuenta", "pico_equity", "halt", "actualizado_en"), r)) for r in cuentas]}
 
 
 def demo() -> None:
+    assert filtros_autorizaciones() == ("", [])
+    w, p = filtros_autorizaciones(desde="2026-10-01", hasta="2026-10-31", usuario="Ricardo", nombre="Oro", activo="gold", evento="aceptada")
+    assert w.count("%s") == len(p) == 7 and w.startswith("WHERE ") and p[-2:] == ["GOLD", "aceptada"] and p[2] == "%ricardo%", (w, p)
+    assert "'" not in w and ";" not in w   # nada se pega al SQL: todo va como parametro
     t0 = datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc)
     est = {"balance": 10000, "equity": 10000, "pnl_hoy": 0, "racha": 0, "riesgo_abierto_pct": 0, "posiciones": 0, "riesgo_pct": 2.0,
            "tick_size": 0.00001, "tick_value": 1.0, "vol_min": 0.01, "vol_max": 100, "vol_step": 0.01}

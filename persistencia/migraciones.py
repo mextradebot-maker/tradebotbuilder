@@ -376,6 +376,24 @@ _SQL = [
     """
     CREATE INDEX IF NOT EXISTS idx_master_autorizaciones_lic ON master_autorizaciones (licencia_id, registrada_en DESC)
     """,
+    # quien confirmo, congelado al momento (si el alumno cambia de nombre o correo, la evidencia no cambia)
+    """
+    ALTER TABLE master_autorizaciones ADD COLUMN IF NOT EXISTS correo text,
+        ADD COLUMN IF NOT EXISTS alumno text, ADD COLUMN IF NOT EXISTS robot text, ADD COLUMN IF NOT EXISTS cuenta bigint
+    """,
+    # busqueda por fecha, activo, aceptacion/rechazo y usuario
+    """
+    CREATE INDEX IF NOT EXISTS idx_master_aut_fecha ON master_autorizaciones (registrada_en DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_master_aut_simbolo ON master_autorizaciones (simbolo, registrada_en DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_master_aut_evento ON master_autorizaciones (evento, registrada_en DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_master_aut_correo ON master_autorizaciones (lower(correo), registrada_en DESC)
+    """,
     # ── Etapa 2: temporalidades canonicas (idempotente: se corre en cada arranque) ──
     # 1) catalogo: 7 canonicas por simbolo con filas viejas, heredando fecha_inicio
     #    (Scalping 30m entra inactiva); sin filas viejas no hace nada.

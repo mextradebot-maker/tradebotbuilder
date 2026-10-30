@@ -57,6 +57,7 @@ RUTA_MASTER_PULSO = "/api/v1/master/pulso"
 RUTA_MASTER_OPORTUNIDAD = "/api/v1/master/oportunidad"
 RUTA_MASTER_ADMIN = "/api/v1/master/admin"
 RUTA_MASTER_ACEPTAR = "/api/v1/master/aceptar"
+RUTA_MASTER_AUTORIZACIONES = "/api/v1/master/autorizaciones"
 RUTA_OPERACION_EN_VIVO = "/api/v1/operacion-en-vivo"
 RUTA_HOTMART = "/api/v1/hotmart"
 RUTA_VELAS_XM = "/api/v1/velas-xm"
@@ -120,6 +121,10 @@ class handler(BaseHTTPRequestHandler):
             from api.master import procesar_admin as procesar_master_admin
 
             status, body = procesar_master_admin("GET", qs, dict(self.headers))
+        elif ruta == RUTA_MASTER_AUTORIZACIONES:
+            from api.master import procesar_autorizaciones
+
+            status, body = procesar_autorizaciones(qs, dict(self.headers))
         elif ruta == RUTA_MASTER_ACEPTAR:
             from api.master import procesar_aceptar_get
 
