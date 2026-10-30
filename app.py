@@ -35,6 +35,7 @@ _SIN_REENVIO = {"host", "connection", "keep-alive", "transfer-encoding", "conten
 class Handler(SimpleHTTPRequestHandler):
     _responder = ApiHandler._responder
     _responder_archivo = ApiHandler._responder_archivo  # descargas (.ex5) del router de la API
+    _responder_html = ApiHandler._responder_html        # paginas HTML del router (aceptacion del Master)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=PUBLICO, **kwargs)
