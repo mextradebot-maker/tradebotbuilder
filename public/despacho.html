@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Despacho del Master Trader</title>
+<style>
+:root{--bg:#0b1320;--panel:#111c2e;--raised:#162338;--line:#243550;--text:#e6edf6;--muted:#9fb0c7;--accent:#2dd4bf;--ink:#06242c;--ok:#34d399;--warn:#fbbf24;--bad:#f87171;--ease:cubic-bezier(.23,1,.32,1)}
+@media (prefers-color-scheme:light){:root{--bg:#f3f6fb;--panel:#fff;--raised:#eef3fa;--line:#cfd9e8;--text:#0f1b2d;--muted:#4a5d78;--accent:#0f766e;--ink:#fff;--ok:#047857;--warn:#92400e;--bad:#b91c1c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1180px;margin:0 auto;padding:20px 16px 64px}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:20px}
+h1{font-size:22px;margin:0;font-weight:650;letter-spacing:-.01em;text-wrap:balance}
+h2{font-size:12px;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;overflow-x:auto}
+.estado{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid var(--line);background:var(--raised)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.ok .dot{background:var(--ok)}.bad .dot{background:var(--bad)}.warn .dot{background:var(--warn)}
+table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums;min-width:720px}
+th{color:var(--muted);font-weight:600;text-align:left;font-size:12px;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+.num{text-align:right}
+.vacio{color:var(--muted);padding:12px 4px}
+button,input{font:inherit;color:inherit}
+button{min-height:44px;min-width:44px;padding:0 14px;border-radius:8px;border:1px solid var(--line);background:var(--raised);cursor:pointer;touch-action:manipulation;transition:transform 140ms var(--ease),background-color 140ms var(--ease),border-color 140ms var(--ease)}
+button:active{transform:scale(.97)}
+@media (hover:hover) and (pointer:fine){button:hover{border-color:var(--accent)}}
+button.primario{background:var(--accent);color:var(--ink);border-color:var(--accent);font-weight:600}
+button.peligro{border-color:var(--bad);color:var(--bad)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button[disabled]{opacity:.5;cursor:not-allowed}
+.acciones{display:flex;gap:6px;flex-wrap:wrap}
+.acciones button{min-height:36px;padding:0 10px;font-size:13px}
+input{min-height:44px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--raised);width:min(360px,100%)}
+label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.clave{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.msg{min-height:22px;margin:8px 0 0;font-size:13px;color:var(--muted)}
+.msg.err{color:var(--bad)}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){button{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Despacho del Master Trader</h1>
+    <div class="estado" id="estado" aria-live="polite"></div>
+  </header>
+
+  <section id="acceso">
+    <h2>Acceso de administrador</h2>
+    <form class="clave" id="f">
+      <div><label for="k">Clave de administrador</label><input id="k" type="password" autocomplete="off" spellcheck="false"></div>
+      <button class="primario" type="submit">Entrar</button>
+    </form>
+    <p class="msg" id="m" role="status"></p>
+  </section>
+
+  <section id="robots" hidden>
+    <h2>Robots</h2>
+    <table>
+      <thead><tr><th>Licencia</th><th>Activo</th><th>Simbolo</th><th>Temporalidad</th><th>Cuenta</th><th>Pulso</th><th class="num">Equity</th><th class="num">Racha</th><th>Acciones</th></tr></thead>
+      <tbody id="tr"></tbody>
+    </table>
+  </section>
+
+  <section id="cuentas" hidden>
+    <h2>Cuentas y frenos</h2>
+    <table>
+      <thead><tr><th>Cuenta</th><th class="num">Pico de equity</th><th>Freno</th><th>Acciones</th></tr></thead>
+      <tbody id="tc"></tbody>
+    </table>
+  </section>
+
+  <section id="ordenes" hidden>
+    <h2>Ordenes recientes</h2>
+    <table>
+      <thead><tr><th>Hora (UTC)</th><th>Orden</th><th>Licencia</th><th>Simbolo</th><th>Direccion</th><th class="num">Entrada</th><th class="num">Lotes</th><th>Estado</th><th>Motivo</th></tr></thead>
+      <tbody id="to"></tbody>
+    </table>
+  </section>
+</main>
+<script>
+(()=>{
+  const $=id=>document.getElementById(id);
+  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let clave=''; try{clave=sessionStorage.getItem('mtb_admin')||''}catch(e){}
+  let timer=null;
+  const api=(m,b)=>fetch('/api/v1/master/admin',{method:m,headers:{'X-Admin-Key':clave,'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined}).then(async r=>({st:r.status,d:await r.json().catch(()=>({}))}));
+  const hace=iso=>{if(!iso)return 'nunca';const s=Math.max(0,Math.round((Date.now()-new Date(iso))/1000));return s<90?s+' s':s<5400?Math.round(s/60)+' min':Math.round(s/3600)+' h'};
+  const num=(v,d=2)=>v==null?'-':Number(v).toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d});
+  const pill=(t,c)=>`<span class="pill ${c}"><span class="dot"></span>${esc(t)}</span>`;
+  function msg(t,err){const m=$('m');m.textContent=t||'';m.className='msg'+(err?' err':'')}
+
+  async function cargar(){
+    const {st,d}=await api('GET');
+    if(st!==200){msg(st===401?'Clave incorrecta.':'No se pudo leer el estado ('+st+').',true);['robots','cuentas','ordenes'].forEach(i=>$(i).hidden=true);$('acceso').hidden=false;clearInterval(timer);return}
+    msg('');$('acceso').hidden=true;['robots','cuentas','ordenes'].forEach(i=>$(i).hidden=false);
+    $('estado').innerHTML=pill(d.master_activo?'Master encendido':'Master apagado',d.master_activo?'ok':'bad')+pill((d.robots||[]).filter(r=>r.vivo).length+' robots vivos','ok');
+    $('tr').innerHTML=(d.robots||[]).filter(r=>r.cuenta<900000000).map(r=>{const e=r.estado||{};return `<tr>
+      <td>${r.licencia_id}</td><td>${pill(r.activo?'Activado':'No activado',r.activo?'ok':'warn')}</td><td>${esc(r.simbolo)}</td><td>${esc(r.temporalidad)}</td>
+      <td>${esc(r.cuenta??'-')}</td><td>${pill(r.vivo?'Vivo':'Sin pulso',r.vivo?'ok':'bad')} <span class="mono">${hace(r.visto_en)}</span></td>
+      <td class="num">${num(e.equity)}</td><td class="num">${e.racha??'-'}</td>
+      <td><div class="acciones">
+        <button data-a="${r.activo?'desactivar':'activar'}" data-l="${r.licencia_id}" data-s="${esc(r.simbolo)}" data-t="${esc(r.temporalidad)}">${r.activo?'Desactivar':'Activar'}</button>
+        <button class="peligro" data-a="cerrar" data-l="${r.licencia_id}" data-s="${esc(r.simbolo)}" data-t="${esc(r.temporalidad)}">Cerrar todo</button>
+        <button data-a="solicitar" data-l="${r.licencia_id}" data-s="${esc(r.simbolo)}" data-t="${esc(r.temporalidad)}">Pedir aceptacion</button>
+      </div></td></tr>`}).join('')||'<tr><td colspan="9" class="vacio">Ningun robot ha preguntado todavia.</td></tr>';
+    $('tc').innerHTML=(d.cuentas||[]).filter(c=>c.cuenta<900000000).map(c=>`<tr><td>${c.cuenta}</td><td class="num">${num(c.pico_equity)}</td>
+      <td>${c.halt?pill(c.halt,'bad'):pill('Sin freno','ok')}</td>
+      <td>${c.halt?`<div class="acciones"><button data-a="reanudar" data-c="${c.cuenta}">Levantar freno</button></div>`:''}</td></tr>`).join('')||'<tr><td colspan="4" class="vacio">Sin cuentas todavia.</td></tr>';
+    const col={colocada:'ok',entregada:'warn',pendiente:'warn',bloqueada:'bad',sin_lotes:'bad',rechazada:'bad',expirada:'warn'};
+    $('to').innerHTML=(d.ordenes||[]).filter(o=>o.licencia_id!==10).map(o=>`<tr><td class="mono">${esc(String(o.creada_en||'').slice(11,19))}</td><td class="mono">${esc(String(o.orden_id).slice(0,9))}</td>
+      <td>${o.licencia_id}</td><td>${esc(o.simbolo)}</td><td>${esc(o.direccion)}</td><td class="num">${num(o.entrada,5)}</td><td class="num">${o.lotes==null?'-':num(o.lotes)}</td>
+      <td>${pill(o.estado,col[o.estado]||'warn')}</td><td>${esc(o.motivo||'')}</td></tr>`).join('')||'<tr><td colspan="9" class="vacio">Aun no hay ordenes.</td></tr>';
+  }
+  function iniciar(){cargar();clearInterval(timer);timer=setInterval(()=>{if(!document.hidden)cargar()},5000)}
+
+  $('f').addEventListener('submit',e=>{e.preventDefault();clave=$('k').value.trim();try{sessionStorage.setItem('mtb_admin',clave)}catch(x){}iniciar()});
+  document.addEventListener('click',async e=>{
+    const b=e.target.closest('button[data-a]');if(!b)return;
+    const a=b.dataset.a;
+    if(a==='cerrar'&&!confirm('Esto cierra a mercado todas las posiciones y cancela las ordenes pendientes de ese robot. ¿Continuar?'))return;
+    b.disabled=true;
+    const body=a==='reanudar'?{accion:a,cuenta:Number(b.dataset.c)}:{accion:a,licencia_id:Number(b.dataset.l),simbolo:b.dataset.s,temporalidad:b.dataset.t};
+    const {st,d}=await api('POST',body);
+    alert(st===200?'Hecho.':(d.error||('Error '+st)));
+    b.disabled=false;cargar();
+  });
+  if(clave)iniciar();
+})();
+</script>
+</body>
+</html>

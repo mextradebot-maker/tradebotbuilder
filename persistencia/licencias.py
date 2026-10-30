@@ -224,6 +224,15 @@ def robots_de_licencias(ids) -> list[dict]:
     return [{"licencia_id": r[0], "simbolo": r[1], "temporalidad": r[2], "creada_en": r[3]} for r in rows]
 
 
+def chat_de_licencia(licencia_id: int) -> int | None:
+    """Telegram del alumno dueno de la licencia (por correo); None si no tiene alumno o no vinculo Telegram."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT a.telegram_chat_id FROM licencias l JOIN alumnos a ON lower(a.correo) = lower(l.correo)
+               WHERE l.id = %s LIMIT 1""", (licencia_id,)).fetchone()
+    return int(row[0]) if row and row[0] else None
+
+
 def cuenta_de_licencia(licencia_id: int) -> int | None:
     """Cuenta MT5 amarrada a la licencia (None si todavía no se amarró) — para nombrar el .ex5."""
     with get_conn() as conn:

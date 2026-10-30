@@ -67,7 +67,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.20"
+#property version   "1.21"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -105,6 +105,7 @@ datetime g_reintento_en = 0;              // >0 = la consulta fallo por red/5xx;
 double   g_ultima_entrada_operada = 0;
 bool     g_standby = false;               // true = licencia rechazada, no opera
 string   g_master_orden_id = "";          // ultima orden del Master que este EA ya proceso (no repetirla)
+string   g_master_cierre_id = "";         // ultimo cierre ordenado por el Master que este EA ya ejecuto
 string   g_master_ack = "";               // confirmacion pendiente de mandar en el siguiente pulso (JSON)
 long     g_ultimo_ticket = 0;             // ticket de la ultima orden pendiente colocada
 datetime g_master_aviso = 0;              // ultimo aviso de error del pulso (para no llenar el log)
@@ -324,6 +325,42 @@ void MasterAck(const string orden_id, const string estado, const string motivo)
                                orden_id, estado, g_ultimo_ticket, motivo);
 }
 
+void MasterAckCierre(const string cierre_id, const string estado)
+{
+   g_master_ack = StringFormat("{\"cierre_id\":\"%s\",\"estado\":\"%s\"}", cierre_id, estado);
+}
+
+// El Master pide salir: cierra a mercado las posiciones de ESTE EA y cancela sus ordenes pendientes.
+// Salir nunca se bloquea. true = no quedo nada abierto de este EA.
+bool CerrarTodoMaster(const string motivo)
+{
+   Print("MASTER: cierre ordenado -- ", motivo);
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket) || PositionGetInteger(POSITION_MAGIC) != InpMagicNumber) continue;
+      bool larga = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY;
+      MqlTradeRequest request = {};
+      MqlTradeResult  result  = {};
+      request.action    = TRADE_ACTION_DEAL;
+      request.position  = ticket;
+      request.symbol    = PositionGetString(POSITION_SYMBOL);
+      request.volume    = PositionGetDouble(POSITION_VOLUME);
+      request.type      = larga ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+      request.price     = larga ? SymbolInfoDouble(request.symbol, SYMBOL_BID) : SymbolInfoDouble(request.symbol, SYMBOL_ASK);
+      request.deviation = 50;
+      request.magic     = InpMagicNumber;
+      request.comment   = "MTB-master-cierre";
+      request.type_filling = FillingDelSimbolo(request.symbol);
+      if(OrderSend(request, result))
+         Print("MASTER: posicion ", ticket, " cerrada");
+      else
+         Print("MASTER: ERROR cerrando ", ticket, ": ", GetLastError(), " retcode ", result.retcode);
+   }
+   CancelarOrdenesPendientes(false);
+   return CountPositions() == 0 && CountOrdenesPendientes() == 0;
+}
+
 void OnTimer()
 {
    if(!InpModoMaster) return;
@@ -334,9 +371,9 @@ void OnTimer()
 void MasterPulso()
 {
    string estado = StringFormat(
-      "{\"balance\":%.2f,\"equity\":%.2f,\"pnl_hoy\":%.2f,\"racha\":%d,\"riesgo_abierto_pct\":%.4f,\"posiciones\":%d,\"riesgo_pct\":%.4f,"
-      + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f,\"version\":\"1.20\"}",
-      CapitalEfectivo(), AccountInfoDouble(ACCOUNT_EQUITY), PnlHoy(), RachaPerdidas(), RiesgoAbiertoPct(), CountPositions(),
+      "{\"balance\":%.2f,\"equity\":%.2f,\"pnl_hoy\":%.2f,\"racha\":%d,\"riesgo_abierto_pct\":%.4f,\"posiciones\":%d,\"pendientes\":%d,\"riesgo_pct\":%.4f,"
+      + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f,\"version\":\"1.21\"}",
+      CapitalEfectivo(), AccountInfoDouble(ACCOUNT_EQUITY), PnlHoy(), RachaPerdidas(), RiesgoAbiertoPct(), CountPositions(), CountOrdenesPendientes(),
       EsSwingSM() ? InpRiskPercentSwing : InpRiskPercent,
       SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE), SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE),
       SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN), SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX), SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP));
@@ -369,6 +406,19 @@ void MasterPulso()
    }
    SalirStandby();
    g_master_ack = ""; // el servidor ya recibio la confirmacion
+
+   int pc = StringFind(cuerpo, "\"cierre\":{");
+   if(pc >= 0)
+   {
+      string cierre_id, motivo_cierre = "";
+      if(ExtraerCampoStringDesde(cuerpo, "cierre_id", pc, cierre_id) && cierre_id != g_master_cierre_id)
+      {
+         ExtraerCampoStringDesde(cuerpo, "motivo", pc, motivo_cierre);
+         g_master_cierre_id = cierre_id;
+         MasterAckCierre(cierre_id, CerrarTodoMaster(motivo_cierre) ? "ejecutado" : "fallido");
+      }
+      return; // un cierre tiene prioridad sobre cualquier orden
+   }
 
    int pos = StringFind(cuerpo, "\"orden\":{");
    if(pos < 0) return; // sin orden

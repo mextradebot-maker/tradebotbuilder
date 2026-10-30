@@ -23,6 +23,10 @@ def habilitado() -> bool:
     return os.environ.get("MASTER_ACTIVO") == "1"
 
 
+def cierre_auto() -> bool:
+    return os.environ.get("MASTER_CIERRE_AUTO") == "1"
+
+
 def _repo():
     from master.despachador import RepoPg
     return RepoPg()
@@ -50,10 +54,11 @@ def procesar_pulso(datos: dict, headers: dict, repo=None) -> tuple[int, dict]:
         return 403, {"ok": False, "motivo": motivo}
     try:
         r = despachador.pulso(repo or _repo(), lic["id"], cuenta, simbolo, temporalidad, est,
-                              datos.get("acks") or [], habilitado=habilitado())
+                              datos.get("acks") or [], habilitado=habilitado(), cierre_auto=cierre_auto())
     except Exception as e:
         return 503, {"ok": False, "motivo": f"master_no_disponible: {type(e).__name__}"}
-    return 200, {"ok": True, "estado": r["estado"], "motivos": r["motivos"], "orden": r["orden"]}
+    # "cierre" antes que "orden": el parser del EA busca cada bloque desde su propia llave
+    return 200, {"ok": True, "estado": r["estado"], "motivos": r["motivos"], "cierre": r.get("cierre"), "orden": r["orden"]}
 
 
 def procesar_oportunidad(datos: dict, headers: dict, repo=None) -> tuple[int, dict]:
@@ -87,9 +92,61 @@ def procesar_admin(metodo: str, datos: dict, headers: dict, repo=None) -> tuple[
         if accion == "reanudar":
             r.reanudar(int(datos["cuenta"]))
             return 200, {"ok": True}
+        if accion == "cerrar":
+            from master.despachador import ordenar_cierre
+            c = ordenar_cierre(r, int(datos["licencia_id"]), str(datos["simbolo"]), str(datos["temporalidad"]),
+                               str(datos.get("motivo") or "cierre pedido por el administrador"))
+            return (200, {"ok": True, "cierre_id": c["cierre_id"]}) if c else (409, {"error": "ya hay un cierre pendiente"})
+        if accion == "solicitar":
+            return solicitar_activacion(int(datos["licencia_id"]), str(datos["simbolo"]), str(datos["temporalidad"]))
     except (KeyError, TypeError, ValueError) as e:
         return 400, {"error": f"datos invalidos: {e}"}
     return 400, {"error": "accion debe ser activar | desactivar | reanudar"}
+
+
+def solicitar_activacion(licencia_id: int, simbolo: str, temporalidad: str, chat_de=None, enviar=None) -> tuple[int, dict]:
+    """Manda al alumno el mensaje de Telegram con los botones Activar / Ahora no (enlaces firmados)."""
+    from master import aceptacion
+
+    if chat_de is None:
+        from persistencia.licencias import chat_de_licencia as chat_de
+    if enviar is None:
+        from api.alumnos import _enviar_tg as enviar
+    chat = chat_de(licencia_id)
+    if not chat:
+        return 409, {"error": "el alumno de esa licencia no tiene Telegram vinculado"}
+    token = os.environ.get("MTB_TELEGRAM_BOT_TOKEN", "")
+    if not token:
+        return 503, {"error": "MTB_TELEGRAM_BOT_TOKEN no configurado en el servidor"}
+    try:
+        base = os.environ.get("MTB_BASE_URL", "https://mextradebot.com.mx")
+        st, resp = enviar(token, {"chat_id": chat, **aceptacion.mensaje(base, licencia_id, simbolo, temporalidad)})
+    except (OSError, RuntimeError) as e:
+        return 502, {"error": f"no se pudo enviar: {e}"}
+    return (200, {"ok": True}) if st == 200 else (502, {"error": "Telegram rechazo el mensaje", "detalle": resp.get("description")})
+
+
+def procesar_aceptar_get(qs: dict) -> tuple[int, str]:
+    """GET /api/v1/master/aceptar?t=... -> pagina HTML (nunca activa nada por si sola)."""
+    from master import aceptacion
+
+    d = aceptacion.verificar(qs.get("t", ""))
+    if not d:
+        return 400, aceptacion.pagina("Enlace no valido", "Este enlace ya vencio o no es valido. Pide uno nuevo desde tu panel o desde Telegram.")
+    que = "activar" if d["accion"] == "activar" else "dejar sin activar"
+    return 200, aceptacion.pagina("Master Trader", f"Vas a {que} las oportunidades del Master Trader para tu robot {d['simbolo']} ({d['temporalidad']}).", qs["t"])
+
+
+def procesar_aceptar_post(datos: dict, repo=None) -> tuple[int, dict]:
+    from master import aceptacion
+
+    d = aceptacion.verificar(str(datos.get("t", "")))
+    if not d:
+        return 400, {"error": "enlace no valido o vencido"}
+    (repo or _repo()).activar(d["licencia_id"], d["simbolo"], d["temporalidad"], d["accion"] == "activar")
+    if d["accion"] == "activar":
+        return 200, {"ok": True, "mensaje": "Listo: tu robot recibira las oportunidades del Master Trader. Puedes apagarlo cuando quieras."}
+    return 200, {"ok": True, "mensaje": "De acuerdo: tu robot sigue como hasta hoy."}
 
 
 def demo() -> None:
@@ -129,6 +186,26 @@ def demo() -> None:
     finally:
         licencias._verificar = guardado
         os.environ.pop("MASTER_ACTIVO", None)
+    # cierre por admin, solicitud por Telegram y aceptacion firmada
+    os.environ["MTB_TOKEN_SECRET"] = "secreto-de-prueba"
+    os.environ["MTB_TELEGRAM_BOT_TOKEN"] = "tg-prueba"
+    enviados = []
+    st, b = solicitar_activacion(7, "EURUSD", "Scalping 15m", chat_de=lambda l: None, enviar=lambda t, c: (200, {}))
+    assert st == 409, (st, b)
+    st, b = solicitar_activacion(7, "EURUSD", "Scalping 15m", chat_de=lambda l: 555, enviar=lambda t, c: (enviados.append(c) or (200, {})))
+    assert st == 200 and enviados[0]["chat_id"] == 555 and "inline_keyboard" in enviados[0]["reply_markup"], (st, b)
+    url = enviados[0]["reply_markup"]["inline_keyboard"][0][0]["url"]
+    token = url.split("t=", 1)[1]
+    st, html = procesar_aceptar_get({"t": token})
+    assert st == 200 and "Confirmar" in html
+    assert procesar_aceptar_get({"t": "x"})[0] == 400
+    repo2 = MemRepo()
+    st, b = procesar_aceptar_post({"t": token}, repo2)
+    assert st == 200 and b["ok"] is True
+    assert procesar_aceptar_post({"t": token + "x"}, repo2)[0] == 400
+    os.environ["MASTER_CIERRE_AUTO"] = "1"
+    assert cierre_auto() is True
+    os.environ.pop("MASTER_CIERRE_AUTO")
     print("api.master.demo() OK")
 
 

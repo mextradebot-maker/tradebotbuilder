@@ -56,6 +56,7 @@ RUTA_MASTER_TRADING = "/api/v1/master/trading"
 RUTA_MASTER_PULSO = "/api/v1/master/pulso"
 RUTA_MASTER_OPORTUNIDAD = "/api/v1/master/oportunidad"
 RUTA_MASTER_ADMIN = "/api/v1/master/admin"
+RUTA_MASTER_ACEPTAR = "/api/v1/master/aceptar"
 RUTA_OPERACION_EN_VIVO = "/api/v1/operacion-en-vivo"
 RUTA_HOTMART = "/api/v1/hotmart"
 RUTA_VELAS_XM = "/api/v1/velas-xm"
@@ -119,6 +120,11 @@ class handler(BaseHTTPRequestHandler):
             from api.master import procesar_admin as procesar_master_admin
 
             status, body = procesar_master_admin("GET", qs, dict(self.headers))
+        elif ruta == RUTA_MASTER_ACEPTAR:
+            from api.master import procesar_aceptar_get
+
+            status, html = procesar_aceptar_get(qs)
+            return self._responder_html(status, html)
         elif ruta == RUTA_TENDENCIA:
             from api.tendencia import procesar as procesar_tendencia
 
@@ -193,6 +199,10 @@ class handler(BaseHTTPRequestHandler):
             from api.master import procesar_pulso
 
             status, body = procesar_pulso(payload, dict(self.headers))
+        elif ruta == RUTA_MASTER_ACEPTAR:
+            from api.master import procesar_aceptar_post
+
+            status, body = procesar_aceptar_post(payload)
         elif ruta == RUTA_MASTER_OPORTUNIDAD:
             from api.master import procesar_oportunidad
 
@@ -251,6 +261,15 @@ class handler(BaseHTTPRequestHandler):
             self.send_header(k, v)
         self.end_headers()
         self.wfile.write(datos)
+
+    def _responder_html(self, status: int, html: str) -> None:
+        cuerpo = html.encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(cuerpo)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(cuerpo)
 
     def _responder(self, status: int, payload: dict) -> None:
         self.send_response(status)
