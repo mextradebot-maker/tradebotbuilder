@@ -63,10 +63,22 @@ def _publica(o: dict) -> dict:
     return {k: o.get(k) for k in ("orden_id", "direccion", "entrada", "stop", "tp", "lotes", "ref_ts", "ref_cierre")}
 
 
+def ordenar_cierre(repo, licencia_id: int, simbolo: str, temporalidad: str, motivo: str,
+                   ahora: datetime | None = None) -> dict | None:
+    """Pide al robot que cierre todo lo suyo (posiciones y ordenes pendientes) en su proximo pulso.
+    None si ya hay un cierre pendiente. Salir siempre debe ser posible: no pasa por la compuerta."""
+    ahora = ahora or _ahora()
+    c = {"cierre_id": "C" + uuid.uuid4().hex[:14], "licencia_id": licencia_id, "simbolo": simbolo,
+         "temporalidad": temporalidad, "motivo": motivo[:200], "expira_en": ahora + timedelta(seconds=TTL_ORDEN_S)}
+    return c if repo.crear_cierre(c) else None
+
+
 def pulso(repo, licencia_id: int, cuenta: int, simbolo: str, temporalidad: str, est: dict,
           acks: list[dict] | None = None, habilitado: bool = True, ahora: datetime | None = None,
-          cfg: dict | None = None) -> dict:
-    """Un pulso del robot. -> {"orden": {...}|None, "estado": "...", "motivos": [...]}"""
+          cfg: dict | None = None, cierre_auto: bool = False) -> dict:
+    """Un pulso del robot. -> {"orden": {...}|None, "cierre": {...}|None, "estado": "...", "motivos": [...]}
+
+    cierre_auto: con un freno duro activo en la cuenta (drawdown o racha), el Master pide cerrar lo abierto."""
     ahora = ahora or _ahora()
     repo.upsert_robot(licencia_id, simbolo, temporalidad, cuenta, est, ahora)
     for a in acks or []:
@@ -74,20 +86,29 @@ def pulso(repo, licencia_id: int, cuenta: int, simbolo: str, temporalidad: str, 
     repo.expirar(ahora)
     robot = repo.robot(licencia_id, simbolo, temporalidad)
     if not habilitado or not robot or not robot["activo"]:
-        return {"orden": None, "estado": "sin_activar" if habilitado else "master_apagado", "motivos": []}
+        return {"orden": None, "cierre": None, "estado": "sin_activar" if habilitado else "master_apagado", "motivos": []}
 
     c = repo.cuenta(cuenta) or {"pico_equity": 0.0, "halt": None}
     pico = max(float(c.get("pico_equity") or 0), float(est.get("equity") or 0))
     est = {**est, "pico_equity": pico, "halt": c.get("halt")}
 
+    # cierre ordenado: tiene prioridad sobre cualquier orden nueva (los cierres nunca se bloquean)
+    cierre = repo.cierre_pendiente(licencia_id, simbolo, temporalidad, ahora)
+    if cierre is None and cierre_auto and c.get("halt") and (int(est.get("posiciones") or 0) > 0 or est.get("pendientes")):
+        cierre = ordenar_cierre(repo, licencia_id, simbolo, temporalidad, "FRENO de la cuenta: " + str(c["halt"]), ahora)
+    if cierre:
+        repo.guardar_cuenta(cuenta, pico, c.get("halt"))
+        return {"orden": None, "cierre": {"cierre_id": cierre["cierre_id"], "motivo": cierre["motivo"]},
+                "estado": "cierre", "motivos": []}
+
     orden = repo.orden_para_entregar(licencia_id, simbolo, temporalidad, ahora)
     if orden is None:
         repo.guardar_cuenta(cuenta, pico, c.get("halt"))
-        return {"orden": None, "estado": "sin_orden", "motivos": []}
+        return {"orden": None, "cierre": None, "estado": "sin_orden", "motivos": []}
 
     if orden["estado"] == "entregada":   # ya calculada y entregada: se reentrega igual hasta que el robot confirme
         repo.guardar_cuenta(cuenta, pico, c.get("halt"))
-        return {"orden": _publica(orden), "estado": "reentrega", "motivos": []}
+        return {"orden": _publica(orden), "cierre": None, "estado": "reentrega", "motivos": []}
 
     base = float(est.get("riesgo_pct") or PCT_MAX)
     rr = None
@@ -97,13 +118,13 @@ def pulso(repo, licencia_id: int, cuenta: int, simbolo: str, temporalidad: str, 
     repo.guardar_cuenta(cuenta, pico, v["halt"] or c.get("halt"))
     if not v["ok"]:
         repo.marcar(orden["orden_id"], "bloqueada", "; ".join(v["motivos"]))
-        return {"orden": None, "estado": "bloqueada", "motivos": v["motivos"]}
+        return {"orden": None, "cierre": None, "estado": "bloqueada", "motivos": v["motivos"]}
     lotes, motivo = _lotes(est, orden, min(base * v["factor"], PCT_MAX))
     if lotes <= 0:
         repo.marcar(orden["orden_id"], "sin_lotes", motivo)
-        return {"orden": None, "estado": "sin_lotes", "motivos": [motivo]}
+        return {"orden": None, "cierre": None, "estado": "sin_lotes", "motivos": [motivo]}
     orden = repo.marcar(orden["orden_id"], "entregada", None, lotes, ahora)
-    return {"orden": _publica(orden), "estado": "entregada", "motivos": []}
+    return {"orden": _publica(orden), "cierre": None, "estado": "entregada", "motivos": []}
 
 
 # --------------------------------------------------------------------------- repos
@@ -111,7 +132,7 @@ class MemRepo:
     """Repo en memoria: pruebas y demo."""
 
     def __init__(self, activados=()):
-        self.robots, self.ordenes, self.cuentas = {}, {}, {}
+        self.robots, self.ordenes, self.cuentas, self.cierres = {}, {}, {}, {}
         for lic, sim, tf, cuenta in activados:
             self.robots[(lic, sim, tf)] = {"licencia_id": lic, "cuenta": cuenta, "activo": True, "visto_en": None}
 
@@ -132,10 +153,29 @@ class MemRepo:
         return self.robots.get((lic, sim, tf))
 
     def aplicar_ack(self, lic, a):
+        if a.get("cierre_id"):
+            c = self.cierres.get(a["cierre_id"])
+            if c and c["licencia_id"] == lic:
+                c["estado"] = "ejecutado" if a.get("estado") == "ejecutado" else "fallido"
+            return
         o = self.ordenes.get(a.get("orden_id"))
         if o and o["licencia_id"] == lic:
             o["estado"] = "colocada" if a.get("estado") == "colocada" else "rechazada"
             o["ticket"], o["motivo"] = a.get("ticket"), a.get("motivo")
+
+    def crear_cierre(self, c):
+        if any(x["licencia_id"] == c["licencia_id"] and x["simbolo"] == c["simbolo"] and x["temporalidad"] == c["temporalidad"]
+               and x["estado"] == "pendiente" and x["expira_en"] > _ahora() for x in self.cierres.values()):
+            return False
+        self.cierres[c["cierre_id"]] = {**c, "estado": "pendiente"}
+        return True
+
+    def cierre_pendiente(self, lic, sim, tf, ahora):
+        for c in self.cierres.values():
+            if c["licencia_id"] == lic and c["simbolo"] == sim and c["temporalidad"] == tf \
+                    and c["estado"] == "pendiente" and c["expira_en"] > ahora:
+                return c
+        return None
 
     def expirar(self, ahora):
         for o in self.ordenes.values():
@@ -159,6 +199,9 @@ class MemRepo:
 
     def guardar_cuenta(self, cuenta, pico, halt):
         self.cuentas[cuenta] = {"pico_equity": pico, "halt": halt}
+
+    def activar(self, lic, sim, tf, activo):
+        self.robots.setdefault((lic, sim, tf), {"licencia_id": lic, "cuenta": None, "activo": False})["activo"] = bool(activo)
 
 
 class RepoPg:
@@ -202,7 +245,32 @@ class RepoPg:
                           (lic, sim, tf)).fetchone()
         return {"activo": f[0]} if f else None
 
+    def crear_cierre(self, c):
+        with self._conn() as conn:
+            hay = conn.execute(
+                """SELECT 1 FROM master_cierres WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s
+                   AND estado = 'pendiente' AND expira_en > now()""",
+                (c["licencia_id"], c["simbolo"], c["temporalidad"])).fetchone()
+            if hay:
+                return False
+            conn.execute(
+                """INSERT INTO master_cierres (cierre_id, licencia_id, simbolo, temporalidad, motivo, expira_en)
+                   VALUES (%(cierre_id)s, %(licencia_id)s, %(simbolo)s, %(temporalidad)s, %(motivo)s, %(expira_en)s)""", c)
+        return True
+
+    def cierre_pendiente(self, lic, sim, tf, ahora):
+        with self._conn() as conn:
+            f = conn.execute(
+                """SELECT cierre_id, motivo FROM master_cierres WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s
+                   AND estado = 'pendiente' AND expira_en > %s ORDER BY creada_en LIMIT 1""", (lic, sim, tf, ahora)).fetchone()
+        return {"cierre_id": f[0], "motivo": f[1]} if f else None
+
     def aplicar_ack(self, lic, a):
+        if a.get("cierre_id"):
+            with self._conn() as c:
+                c.execute("UPDATE master_cierres SET estado = %s WHERE cierre_id = %s AND licencia_id = %s",
+                          ("ejecutado" if a.get("estado") == "ejecutado" else "fallido", a["cierre_id"], lic))
+            return
         with self._conn() as c:
             c.execute("""UPDATE master_ordenes SET estado = %s, ticket = %s, motivo = %s
                          WHERE orden_id = %s AND licencia_id = %s""",
@@ -318,6 +386,23 @@ def demo() -> None:
     recibir_oportunidades(repo3, "EURUSD", "Scalping 15m", [setup], 1, 1.1, t0)
     r = pulso(repo3, 7, 111, "EURUSD", "Scalping 15m", est, ahora=t0 + timedelta(seconds=TTL_ORDEN_S + 1))
     assert r["estado"] == "sin_orden", r
+    # 10. cierre ordenado: el robot lo recibe primero, aunque haya una orden pendiente; el ack lo cierra
+    repo4 = MemRepo(activados=[(7, "EURUSD", "Scalping 15m", 111)])
+    recibir_oportunidades(repo4, "EURUSD", "Scalping 15m", [setup], 1, 1.1, t0)
+    assert ordenar_cierre(repo4, 7, "EURUSD", "Scalping 15m", "prueba", t0) is not None
+    assert ordenar_cierre(repo4, 7, "EURUSD", "Scalping 15m", "otra vez", t0) is None  # ya hay uno pendiente
+    r = pulso(repo4, 7, 111, "EURUSD", "Scalping 15m", est, ahora=t0 + timedelta(seconds=1))
+    assert r["estado"] == "cierre" and r["orden"] is None and r["cierre"]["motivo"] == "prueba", r
+    cid = r["cierre"]["cierre_id"]
+    r = pulso(repo4, 7, 111, "EURUSD", "Scalping 15m", est, [{"cierre_id": cid, "estado": "ejecutado"}], ahora=t0 + timedelta(seconds=6))
+    assert repo4.cierres[cid]["estado"] == "ejecutado" and r["estado"] == "entregada", r  # despues del cierre sigue la orden
+    # 11. cierre automatico: con freno activo y posiciones abiertas, el Master pide cerrar (solo si cierre_auto)
+    repo5 = MemRepo(activados=[(7, "EURUSD", "Scalping 15m", 111)])
+    repo5.cuentas[111] = {"pico_equity": 10000, "halt": "drawdown 16 %"}
+    r = pulso(repo5, 7, 111, "EURUSD", "Scalping 15m", {**est, "posiciones": 1}, ahora=t0)
+    assert r["estado"] == "sin_orden", r  # apagado por defecto
+    r = pulso(repo5, 7, 111, "EURUSD", "Scalping 15m", {**est, "posiciones": 1}, ahora=t0, cierre_auto=True)
+    assert r["estado"] == "cierre" and "FRENO" in r["cierre"]["motivo"], r
     print("master.despachador.demo() OK")
 
 

@@ -344,6 +344,20 @@ _SQL = [
         actualizado_en timestamptz NOT NULL DEFAULT now()
     )
     """,
+    # cierre ordenado por el Master: el robot lo recibe en su pulso, cierra lo suyo y confirma
+    """
+    CREATE TABLE IF NOT EXISTS master_cierres (
+        id           bigserial   PRIMARY KEY,
+        cierre_id    text        NOT NULL UNIQUE,
+        licencia_id  bigint      NOT NULL REFERENCES licencias(id) ON DELETE CASCADE,
+        simbolo      text        NOT NULL,
+        temporalidad text        NOT NULL,
+        motivo       text,
+        estado       text        NOT NULL DEFAULT 'pendiente',
+        creada_en    timestamptz NOT NULL DEFAULT now(),
+        expira_en    timestamptz NOT NULL
+    )
+    """,
     # ── Etapa 2: temporalidades canonicas (idempotente: se corre en cada arranque) ──
     # 1) catalogo: 7 canonicas por simbolo con filas viejas, heredando fecha_inicio
     #    (Scalping 30m entra inactiva); sin filas viejas no hace nada.
