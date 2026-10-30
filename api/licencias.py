@@ -257,7 +257,7 @@ def faltan_presets(simbolo, temporalidad) -> bool:
     return not simbolo or not temporalidad
 
 
-def compilar_robot(licencia_id: int, simbolo=None, temporalidad=None) -> tuple[int, bytes | dict]:
+def compilar_robot(licencia_id: int, simbolo=None, temporalidad=None, master=False) -> tuple[int, bytes | dict]:
     """.ex5 compilado con el token de esa licencia (lo usan el admin y "Mis robots" del alumno).
 
     simbolo + temporalidad son OBLIGATORIOS: el .ex5 siempre sale configurado para ese par/marco
@@ -277,7 +277,10 @@ def compilar_robot(licencia_id: int, simbolo=None, temporalidad=None) -> tuple[i
         token = licencias.token_de_licencia(int(licencia_id))
     except (TypeError, ValueError) as e:
         return 400, {"error": str(e)}
-    return compilar_token(token, {"simbolo": simbolo, "temporalidad": temporalidad})
+    presets = {"simbolo": simbolo, "temporalidad": temporalidad}
+    if master:  # robot que nace en modo Master (InpModoMaster = true)
+        presets["master"] = True
+    return compilar_token(token, presets)
 
 
 def nombre_ex5(licencia_id, cuenta=None, simbolo=None, temporalidad=None) -> str:
@@ -313,7 +316,7 @@ def procesar_robot(datos: dict, headers: dict) -> tuple[int, bytes | dict]:
     simbolo, temporalidad = datos.get("simbolo") or None, datos.get("temporalidad") or None
     if faltan_presets(simbolo, temporalidad):  # antes de tocar el compilador
         return 400, {"error": ERROR_SIN_PRESETS}
-    status, cuerpo = compilar_robot(datos["id"], simbolo, temporalidad)
+    status, cuerpo = compilar_robot(datos["id"], simbolo, temporalidad, str(datos.get("master", "")).lower() in ("1", "true"))
     if status != 200:
         return status, cuerpo
     from persistencia import licencias

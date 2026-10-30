@@ -31,6 +31,7 @@ LINEA_SIMBOLO = 'input string InpSimboloConsulta  = "XAUUSD";'
 LINEA_TEMPORALIDAD = 'input string InpTemporalidad     = "Intraday 1H";'
 LINEA_TF = "input ENUM_TIMEFRAMES InpTF      = PERIOD_H1;"
 LINEA_CAPITAL = "input double InpCapital = 0;"
+LINEA_MASTER = "input bool   InpModoMaster       = false;"
 TOKEN_RE = re.compile(r"MTB-([A-HJ-NP-Z2-9]{5}-){3}[A-HJ-NP-Z2-9]{5}")
 # Copia de persistencia/migraciones._SIMBOLOS_SEED: el VPS compila sin Postgres (demo() verifica que sigan iguales)
 SIMBOLOS = (
@@ -68,7 +69,7 @@ def validar_presets(simbolo, temporalidad, capital=None) -> tuple[str, str, floa
     return simbolo, temporalidad, round(capital, 2)
 
 
-def preparar_fuente(fuente: str, token: str, simbolo=None, temporalidad=None, capital=None) -> str:
+def preparar_fuente(fuente: str, token: str, simbolo=None, temporalidad=None, capital=None, master=False) -> str:
     if not TOKEN_RE.fullmatch(token):
         raise ValueError("token con formato inválido")
     cambios = {LINEA_TOKEN: f'input string MTB_LICENSE_TOKEN   = "{token}";'}
@@ -81,6 +82,8 @@ def preparar_fuente(fuente: str, token: str, simbolo=None, temporalidad=None, ca
         })
         if capital is not None:  # sin capital, InpCapital = 0 → el robot usa el balance de la cuenta
             cambios[LINEA_CAPITAL] = f"input double InpCapital = {capital:.2f};"
+    if master:  # robot que nace en modo Master: pregunta al despachador en vez de consultar /api/setups
+        cambios[LINEA_MASTER] = "input bool   InpModoMaster       = true;"
     for vieja, nueva in cambios.items():
         if fuente.count(vieja) != 1:
             raise ValueError(f"el .mq5 no tiene exactamente una vez la línea esperada: {vieja}")
@@ -95,8 +98,8 @@ def metaeditor() -> str:
     return ruta
 
 
-def compilar(token: str, simbolo=None, temporalidad=None, capital=None) -> bytes:
-    fuente = preparar_fuente(FUENTE.read_text(encoding="utf-8"), token, simbolo, temporalidad, capital)
+def compilar(token: str, simbolo=None, temporalidad=None, capital=None, master=False) -> bytes:
+    fuente = preparar_fuente(FUENTE.read_text(encoding="utf-8"), token, simbolo, temporalidad, capital, master)
     with _candado, tempfile.TemporaryDirectory() as tmp:
         mq5 = Path(tmp) / "MexTradeBot_SeguidorSMC.mq5"
         log = Path(tmp) / "compilar.log"
@@ -127,7 +130,7 @@ def procesar_http(headers: dict, cuerpo: bytes) -> tuple[int, str, bytes]:
         if not isinstance(datos, dict):
             raise ValueError("se esperaba un objeto JSON")
         presets = (datos.get("simbolo"), datos.get("temporalidad"), datos.get("capital"))
-        return 200, "application/octet-stream", compilar(str(datos.get("token", "")), *presets)
+        return 200, "application/octet-stream", compilar(str(datos.get("token", "")), *presets, master=datos.get("master") is True)
     except (ValueError, json.JSONDecodeError) as e:
         return error(400, str(e))
     except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
@@ -138,6 +141,9 @@ def demo() -> None:
     token = "MTB-ABCDE-FGHJK-LMNPQ-RS234"
     fuente = FUENTE.read_text(encoding="utf-8")
     assert f'MTB_LICENSE_TOKEN   = "{token}";' in preparar_fuente(fuente, token)
+    assert LINEA_MASTER in preparar_fuente(fuente, token)  # por defecto el modo Master queda apagado
+    m = preparar_fuente(fuente, token, "EURUSD", "Scalping 15m", None, True)
+    assert "InpModoMaster       = true;" in m and LINEA_MASTER not in m
     for malo in ['MTB-ABCDE-FGHJK-LMNPQ-RS23"', "MTB-ABCD0-FGHJK-LMNPQ-RS234", "x"]:
         try:
             preparar_fuente(fuente, malo)
