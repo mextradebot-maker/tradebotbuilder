@@ -101,7 +101,7 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
     if(st!==200){msg(st===401?'Clave incorrecta.':'No se pudo leer el estado ('+st+').',true);['robots','cuentas','ordenes'].forEach(i=>$(i).hidden=true);$('acceso').hidden=false;clearInterval(timer);return}
     msg('');$('acceso').hidden=true;['robots','cuentas','ordenes'].forEach(i=>$(i).hidden=false);
     $('estado').innerHTML=pill(d.master_activo?'Master encendido':'Master apagado',d.master_activo?'ok':'bad')+pill((d.robots||[]).filter(r=>r.vivo).length+' robots vivos','ok');
-    $('tr').innerHTML=(d.robots||[]).filter(r=>r.cuenta<900000000).map(r=>{const e=r.estado||{};return `<tr>
+    $('tr').innerHTML=(d.robots||[]).filter(r=>(r.visto_en||r.activo)&&!(r.cuenta>=900000000)).map(r=>{const e=r.estado||{};return `<tr>
       <td>${r.licencia_id}</td><td>${pill(r.activo?'Activado':'No activado',r.activo?'ok':'warn')}</td><td>${esc(r.simbolo)}</td><td>${esc(r.temporalidad)}</td>
       <td>${esc(r.cuenta??'-')}</td><td>${pill(r.vivo?'Vivo':'Sin pulso',r.vivo?'ok':'bad')} <span class="mono">${hace(r.visto_en)}</span></td>
       <td class="num">${num(e.equity)}</td><td class="num">${e.racha??'-'}</td>
