@@ -67,7 +67,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.19"
+#property version   "1.20"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -75,6 +75,11 @@
 //--- LICENCIA MASTER TRADER
 input string MTB_LICENSE_TOKEN   = "";            // Token entregado por MexTradeBot (MTB-XXXXX-XXXXX-XXXXX-XXXXX)
 input string InpAuthUrl          = "https://mextradebot.com.mx/api/v1/auth"; // Autorizacion + lotes
+
+//--- MODO MASTER (v1.20): el servidor entrega la orden (ya con lotes y pasada por la compuerta de riesgo)
+input bool   InpModoMaster       = false;         // true = no consulta /api/setups: pregunta al Master Trader cada pocos segundos
+input string InpMasterUrl        = "https://mextradebot.com.mx/api/v1/master/pulso"; // Pulso del Master Trader
+input int    InpPulsoSeg         = 5;             // Segundos entre preguntas (minimo 2)
 
 //--- CONEXION AL MOTOR PROPIO
 input string InpApiUrl           = "https://mextradebot.com.mx/api/setups"; // URL de /api/setups
@@ -99,6 +104,10 @@ datetime g_ultima_vela = 0;
 datetime g_reintento_en = 0;              // >0 = la consulta fallo por red/5xx; reintentar en esta misma vela
 double   g_ultima_entrada_operada = 0;
 bool     g_standby = false;               // true = licencia rechazada, no opera
+string   g_master_orden_id = "";          // ultima orden del Master que este EA ya proceso (no repetirla)
+string   g_master_ack = "";               // confirmacion pendiente de mandar en el siguiente pulso (JSON)
+long     g_ultimo_ticket = 0;             // ticket de la ultima orden pendiente colocada
+datetime g_master_aviso = 0;              // ultimo aviso de error del pulso (para no llenar el log)
 
 //+------------------------------------------------------------------+
 //| INICIALIZACION                                                    |
@@ -129,6 +138,15 @@ int OnInit()
    }
    Print("MexTradeBot_SeguidorSMC inicializado -- consultando ", InpApiUrl, " para ", InpSimboloConsulta, " (", InpTemporalidad, "), solo opera setups confirmados");
    Print("Licencia: cuenta ", AccountInfoInteger(ACCOUNT_LOGIN), " (", ModoCuenta(), "), robot ", MTB_ROBOT_ID);
+   if(InpModoMaster)
+   {
+      if(!EventSetTimer(MathMax(2, InpPulsoSeg)))
+      {
+         Print("ERROR: no se pudo iniciar el temporizador del pulso");
+         return INIT_FAILED;
+      }
+      Print("MODO MASTER: preguntando a ", InpMasterUrl, " cada ", MathMax(2, InpPulsoSeg), " s -- ya no consulta /api/setups");
+   }
    Print("Monto a operar: ", DoubleToString(CapitalEfectivo(), 2), InpCapital > 0 ? " (menor entre InpCapital y el balance)" : " (balance de la cuenta)");
    Print("IMPORTANTE: agrega 'https://mextradebot.com.mx' (cubre ", InpApiUrl, " y ", InpAuthUrl, ") en Herramientas > Opciones > Expert Advisors > 'Permitir WebRequest para las URL siguientes', si no las consultas fallan.");
    return INIT_SUCCEEDED;
@@ -173,6 +191,7 @@ void OnTick()
    CerrarPorPerdidaMaxima(); // cada tick: el freno del -3% no espera a la vela
    MoverBreakeven();        // cada tick: el escalon se alcanza a mitad de vela
    CancelarOrdenesPorTP(); // cada tick: el TP se puede tocar a mitad de vela
+   if(InpModoMaster) return; // modo Master: las ordenes llegan por OnTimer (MasterPulso), no por vela nueva
 
    // Solo procesar en vela nueva -- evita golpear la API en cada tick
    // Si la API fallo (502, timeout) se reintenta cada 60s en la misma vela: sin esto un
@@ -216,6 +235,190 @@ void OnTick()
    double sl_orden = EsSwingSM() ? 0.0 : stop;
    if(ColocarOrdenPendiente(tipo, entrada, sl_orden, tp, lotes))
       g_ultima_entrada_operada = entrada_motor;
+}
+
+//+------------------------------------------------------------------+
+//| MODO MASTER (v1.20)                                               |
+//| Un MQL5 no puede recibir mensajes: PREGUNTA. Cada InpPulsoSeg     |
+//| manda su estado y la confirmacion de la orden anterior y recibe   |
+//| a lo mas UNA orden con lotes ya calculados. El orden_id evita     |
+//| colocar dos veces la misma orden si el servidor la reentrega.     |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+{
+   EventKillTimer();
+}
+
+bool DealPropio(ulong ticket)
+{
+   return ticket != 0 && HistoryDealGetInteger(ticket, DEAL_MAGIC) == InpMagicNumber
+          && HistoryDealGetInteger(ticket, DEAL_ENTRY) == DEAL_ENTRY_OUT;
+}
+
+double DealNeto(ulong ticket)
+{
+   return HistoryDealGetDouble(ticket, DEAL_PROFIT) + HistoryDealGetDouble(ticket, DEAL_SWAP) + HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+}
+
+// Resultado realizado hoy (USD) de este EA
+double PnlHoy()
+{
+   MqlDateTime d;
+   TimeToStruct(TimeCurrent(), d);
+   d.hour = 0; d.min = 0; d.sec = 0;
+   if(!HistorySelect(StructToTime(d), TimeCurrent() + 60)) return 0;
+   double total = 0;
+   for(int i = HistoryDealsTotal() - 1; i >= 0; i--)
+   {
+      ulong t = HistoryDealGetTicket(i);
+      if(DealPropio(t)) total += DealNeto(t);
+   }
+   return total;
+}
+
+// Perdidas seguidas (cierres de este EA, ultimos 30 dias); un cierre en cero o ganador corta la racha
+int RachaPerdidas()
+{
+   if(!HistorySelect(TimeCurrent() - 30 * 86400, TimeCurrent() + 60)) return 0;
+   int racha = 0;
+   for(int i = HistoryDealsTotal() - 1; i >= 0; i--)
+   {
+      ulong t = HistoryDealGetTicket(i);
+      if(!DealPropio(t)) continue;
+      if(DealNeto(t) < 0) racha++;
+      else break;
+   }
+   return racha;
+}
+
+// Riesgo de lo abierto, en % del balance (con SL: perdida hasta el SL; Swing sin SL: el % provisional de swing)
+double RiesgoAbiertoPct()
+{
+   double bal = AccountInfoDouble(ACCOUNT_BALANCE);
+   if(bal <= 0) return 0;
+   double ts = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE), tv = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double pct = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket) || PositionGetInteger(POSITION_MAGIC) != InpMagicNumber) continue;
+      double sl = PositionGetDouble(POSITION_SL);
+      if(sl > 0 && ts > 0)
+         pct += PositionGetDouble(POSITION_VOLUME) * MathAbs(PositionGetDouble(POSITION_PRICE_OPEN) - sl) / ts * tv / bal * 100.0;
+      else
+         pct += InpRiskPercentSwing;
+   }
+   return pct;
+}
+
+void MasterAviso(const string texto)
+{
+   if(TimeCurrent() - g_master_aviso < 60) return;
+   g_master_aviso = TimeCurrent();
+   Print(texto);
+}
+
+void MasterAck(const string orden_id, const string estado, const string motivo)
+{
+   g_master_ack = StringFormat("{\"orden_id\":\"%s\",\"estado\":\"%s\",\"ticket\":%I64d,\"motivo\":\"%s\"}",
+                               orden_id, estado, g_ultimo_ticket, motivo);
+}
+
+void OnTimer()
+{
+   if(!InpModoMaster) return;
+   CancelarOrdenesVencidas();
+   MasterPulso();
+}
+
+void MasterPulso()
+{
+   string estado = StringFormat(
+      "{\"balance\":%.2f,\"equity\":%.2f,\"pnl_hoy\":%.2f,\"racha\":%d,\"riesgo_abierto_pct\":%.4f,\"posiciones\":%d,\"riesgo_pct\":%.4f,"
+      + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f,\"version\":\"1.20\"}",
+      CapitalEfectivo(), AccountInfoDouble(ACCOUNT_EQUITY), PnlHoy(), RachaPerdidas(), RiesgoAbiertoPct(), CountPositions(),
+      EsSwingSM() ? InpRiskPercentSwing : InpRiskPercent,
+      SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE), SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE),
+      SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN), SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX), SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP));
+   string acks = (StringLen(g_master_ack) > 0) ? "[" + g_master_ack + "]" : "[]";
+   string payload = StringFormat("{\"account\":%I64d,\"mode\":\"%s\",\"robot\":\"%s\",\"simbolo\":\"%s\",\"temporalidad\":\"%s\",\"estado\":%s,\"acks\":%s}",
+                                 AccountInfoInteger(ACCOUNT_LOGIN), ModoCuenta(), MTB_ROBOT_ID, InpSimboloConsulta, InpTemporalidad, estado, acks);
+
+   char   datos[];
+   char   respuesta[];
+   string headers_respuesta;
+   string headers = "Content-Type: application/json\r\nAuthorization: Bearer " + MTB_LICENSE_TOKEN + "\r\n";
+   StringToCharArray(payload, datos, 0, StringLen(payload));
+   ResetLastError();
+   int status = WebRequest("POST", InpMasterUrl, headers, 10000, datos, respuesta, headers_respuesta);
+   string cuerpo = CharArrayToString(respuesta);
+   if(status == -1)
+   {
+      MasterAviso("MASTER: WebRequest fallo (err " + IntegerToString(GetLastError()) + "). Agrega https://mextradebot.com.mx en Herramientas > Opciones > Expert Advisors.");
+      return;
+   }
+   if(status == 401 || status == 403)
+   {
+      EntrarStandby(cuerpo);
+      return;
+   }
+   if(status != 200)
+   {
+      MasterAviso("MASTER: el servidor respondio HTTP " + IntegerToString(status) + " -- se reintenta en el siguiente pulso");
+      return;
+   }
+   SalirStandby();
+   g_master_ack = ""; // el servidor ya recibio la confirmacion
+
+   int pos = StringFind(cuerpo, "\"orden\":{");
+   if(pos < 0) return; // sin orden
+   string orden_id, direccion;
+   double entrada, stop, tp = 0, lotes, ajuste = 0;
+   if(!ExtraerCampoStringDesde(cuerpo, "orden_id", pos, orden_id) || !ExtraerCampoStringDesde(cuerpo, "direccion", pos, direccion)
+      || !ExtraerCampoNumeroDesde(cuerpo, "entrada", pos, entrada) || !ExtraerCampoNumeroDesde(cuerpo, "stop", pos, stop)
+      || !ExtraerCampoNumeroDesde(cuerpo, "lotes", pos, lotes) || lotes <= 0)
+   {
+      MasterAviso("MASTER: orden con formato invalido: " + cuerpo);
+      return;
+   }
+   ExtraerCampoNumeroDesde(cuerpo, "tp", pos, tp); // opcional
+   if(orden_id == g_master_orden_id) return;       // reentrega de una orden que ya procese
+   g_master_orden_id = orden_id;
+
+   if(CountPositions() > 0 || CountOrdenesPendientes() > 0)
+   {
+      MasterAck(orden_id, "rechazada", "ya hay una operacion de este robot");
+      return;
+   }
+   if(!CalcularAjuste(cuerpo, entrada, ajuste))
+   {
+      MasterAck(orden_id, "rechazada", "ajuste de precio no disponible");
+      return;
+   }
+   double entrada_motor = entrada;
+   entrada += ajuste;
+   stop    += ajuste;
+   if(tp > 0) tp += ajuste;
+   double riesgo = MathAbs(entrada - stop);
+   if(riesgo <= 0)
+   {
+      MasterAck(orden_id, "rechazada", "geometria invalida");
+      return;
+   }
+   bool tp_ok = (tp > 0) && ((direccion == "long") ? (tp > entrada) : (tp < entrada));
+   double tp_final = tp_ok ? tp : ((direccion == "long") ? entrada + InpTakeProfitR * riesgo : entrada - InpTakeProfitR * riesgo);
+   ENUM_ORDER_TYPE tipo = (direccion == "long") ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_SELL_LIMIT;
+   double sl_orden = EsSwingSM() ? 0.0 : stop; // Swing (S)/(M): sin SL en la orden, como en el modo normal
+
+   g_ultimo_ticket = 0;
+   if(ColocarOrdenPendiente(tipo, entrada, sl_orden, tp_final, lotes))
+   {
+      g_ultima_entrada_operada = entrada_motor;
+      Print("MASTER: orden ", orden_id, " colocada -- ", direccion, " ", _Symbol, " ", lotes, " lotes");
+      MasterAck(orden_id, "colocada", "");
+   }
+   else
+      MasterAck(orden_id, "rechazada", "el broker rechazo la orden");
 }
 
 //+------------------------------------------------------------------+
@@ -490,6 +693,7 @@ bool ColocarOrdenPendiente(ENUM_ORDER_TYPE tipo, double precio, double sl, doubl
       Print("ERROR al colocar orden pendiente: ", GetLastError());
       return false;
    }
+   g_ultimo_ticket = (long)result.order;
    Print("Orden pendiente colocada: ", EnumToString(tipo), " | Precio: ", precio, " | SL: ", sl, " | TP: ", tp, " | Lotes: ", lots);
    return true;
 }

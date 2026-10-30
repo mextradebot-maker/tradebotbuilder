@@ -175,6 +175,18 @@ def hay_pendientes_urgentes(ahora: datetime) -> bool:
     return bool(pendientes(ahora, URGENTES, persistencia.resumen_snapshots(URGENTES)))
 
 
+def _avisar_master(simbolo: str, temporalidad: str, body: dict) -> None:
+    """Receptor de oportunidades del Master Trader: cada refresco que trae un setup confirmado se lo pasa al despachador
+    (master/despachador.py). Nunca propaga un fallo: el analisis sigue aunque el Master no responda."""
+    try:
+        confirmados = body.get("setups_confirmados") or []
+        if confirmados:
+            from master.despachador import RepoPg, recibir_oportunidades
+            recibir_oportunidades(RepoPg(), simbolo, temporalidad, confirmados, body.get("ref_ts"), body.get("ref_cierre"))
+    except Exception as e:
+        print(f"[master] oportunidad {simbolo} {temporalidad} no despachada: {type(e).__name__}: {e}", flush=True)
+
+
 def refrescar_uno(simbolo: str, temporalidad: str) -> tuple:
     """(simbolo, temporalidad, status, error); status None si procesar lanzó. procesar abre su propia
     conexión a Postgres por llamada (seguro entre hilos)."""
@@ -185,6 +197,8 @@ def refrescar_uno(simbolo: str, temporalidad: str) -> tuple:
         return simbolo, temporalidad, None, "sin persistencia"
     try:
         status, body = procesar({"simbolo": simbolo, "temporalidad": temporalidad, "_force_refresh": True})
+        if status == 200 and os.environ.get("MASTER_ACTIVO") == "1":
+            _avisar_master(simbolo, temporalidad, body)
         return simbolo, temporalidad, status, body.get("error") if status != 200 else None
     except Exception as e:
         return simbolo, temporalidad, None, f"{type(e).__name__}: {e}"

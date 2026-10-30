@@ -10,6 +10,7 @@ despacha por path hacia la lógica de cada endpoint:
   GET/POST /api/backtest?simbolo=XAUUSD&direccion=compra — ver api/backtest.py
   GET/POST /api/calendario?simbolo=XAUUSD&horas=24 — ver api/calendario.py
   GET/POST /api/mejor-indicador?simbolo=XAUUSD&direccion=compra — ver api/mejor_indicador.py
+  POST /api/v1/master/pulso (robot), /api/v1/master/oportunidad (servicio), GET/POST /api/v1/master/admin — despachador, ver api/master.py
   POST /api/v1/auth, GET/POST /api/v1/licencias — cerebro de licencias, ver api/licencias.py
   GET /api/v1/licencias/robot?id=N&simbolo&temporalidad — .ex5 personalizado y ya configurado
       (admin; simbolo y temporalidad obligatorios), nombrado MTB_<cuenta>_<SIMBOLO>_<TF>.ex5; ver api/licencias.procesar_robot
@@ -52,6 +53,9 @@ RUTA_VINCULAR_TELEGRAM = "/api/v1/vincular-telegram"
 RUTA_TELEGRAM_ENVIAR = "/api/v1/telegram/enviar"
 RUTA_ESTADO_CARGA = "/api/v1/estado-carga"
 RUTA_MASTER_TRADING = "/api/v1/master/trading"
+RUTA_MASTER_PULSO = "/api/v1/master/pulso"
+RUTA_MASTER_OPORTUNIDAD = "/api/v1/master/oportunidad"
+RUTA_MASTER_ADMIN = "/api/v1/master/admin"
 RUTA_OPERACION_EN_VIVO = "/api/v1/operacion-en-vivo"
 RUTA_HOTMART = "/api/v1/hotmart"
 RUTA_VELAS_XM = "/api/v1/velas-xm"
@@ -111,6 +115,10 @@ class handler(BaseHTTPRequestHandler):
             from api.licencias import procesar_admin
 
             status, body = procesar_admin("GET", qs, dict(self.headers))
+        elif ruta == RUTA_MASTER_ADMIN:
+            from api.master import procesar_admin as procesar_master_admin
+
+            status, body = procesar_master_admin("GET", qs, dict(self.headers))
         elif ruta == RUTA_TENDENCIA:
             from api.tendencia import procesar as procesar_tendencia
 
@@ -181,6 +189,18 @@ class handler(BaseHTTPRequestHandler):
             from api.alumnos import procesar_vincular_telegram
 
             status, body = procesar_vincular_telegram(payload, dict(self.headers))
+        elif ruta == RUTA_MASTER_PULSO:
+            from api.master import procesar_pulso
+
+            status, body = procesar_pulso(payload, dict(self.headers))
+        elif ruta == RUTA_MASTER_OPORTUNIDAD:
+            from api.master import procesar_oportunidad
+
+            status, body = procesar_oportunidad(payload, dict(self.headers))
+        elif ruta == RUTA_MASTER_ADMIN:
+            from api.master import procesar_admin as procesar_master_admin
+
+            status, body = procesar_master_admin("POST", payload, dict(self.headers))
         elif ruta == RUTA_VELAS_XM:
             from api.velas_xm import procesar as procesar_velas_xm
 
