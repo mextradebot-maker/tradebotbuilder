@@ -5,45 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title>Despacho del Master Trader</title>
-<style>
-:root{--bg:#0b1320;--panel:#111c2e;--raised:#162338;--line:#243550;--text:#e6edf6;--muted:#9fb0c7;--accent:#2dd4bf;--ink:#06242c;--ok:#34d399;--warn:#fbbf24;--bad:#f87171;--ease:cubic-bezier(.23,1,.32,1)}
-@media (prefers-color-scheme:light){:root{--bg:#f3f6fb;--panel:#fff;--raised:#eef3fa;--line:#cfd9e8;--text:#0f1b2d;--muted:#4a5d78;--accent:#0f766e;--ink:#fff;--ok:#047857;--warn:#92400e;--bad:#b91c1c}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:1180px;margin:0 auto;padding:20px 16px 64px}
-header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:20px}
-h1{font-size:22px;margin:0;font-weight:650;letter-spacing:-.01em;text-wrap:balance}
-h2{font-size:12px;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
-section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;overflow-x:auto}
-.estado{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid var(--line);background:var(--raised)}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
-.ok .dot{background:var(--ok)}.bad .dot{background:var(--bad)}.warn .dot{background:var(--warn)}
-table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums;min-width:720px}
-th{color:var(--muted);font-weight:600;text-align:left;font-size:12px;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
-td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
-tr:last-child td{border-bottom:0}
-.num{text-align:right}
-.vacio{color:var(--muted);padding:12px 4px}
-button,input{font:inherit;color:inherit}
-button{min-height:44px;min-width:44px;padding:0 14px;border-radius:8px;border:1px solid var(--line);background:var(--raised);cursor:pointer;touch-action:manipulation;transition:transform 140ms var(--ease),background-color 140ms var(--ease),border-color 140ms var(--ease)}
-button:active{transform:scale(.97)}
-@media (hover:hover) and (pointer:fine){button:hover{border-color:var(--accent)}}
-button.primario{background:var(--accent);color:var(--ink);border-color:var(--accent);font-weight:600}
-button.peligro{border-color:var(--bad);color:var(--bad)}
-button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-button[disabled]{opacity:.5;cursor:not-allowed}
-.acciones{display:flex;gap:6px;flex-wrap:wrap}
-.acciones button{min-height:36px;padding:0 10px;font-size:13px}
-input,select{min-height:44px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--raised);width:min(360px,100%);font:inherit;color:inherit}
-.filtros{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}.filtros input,.filtros select{width:170px}
-label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
-.clave{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
-.msg{min-height:22px;margin:8px 0 0;font-size:13px;color:var(--muted)}
-.msg.err{color:var(--bad)}
-.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--muted)}
-@media (prefers-reduced-motion:reduce){button{transition:none}}
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/master-tema.css">
+<link rel="icon" type="image/png" href="/img/favicon-32.png">
 </head>
 <body>
 <main>
@@ -60,6 +25,13 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
       <button class="primario" type="submit">Entrar</button>
     </form>
     <p class="msg" id="m" role="status"></p>
+  </section>
+
+  <section class="kpis" id="kpis" hidden>
+    <div class="kpi"><span>Robots vivos</span><b id="k1">-</b><em>con pulso reciente</em></div>
+    <div class="kpi"><span>Activados en el Master</span><b id="k2">-</b><em>con autorización del alumno</em></div>
+    <div class="kpi"><span>Órdenes hoy</span><b id="k3">-</b><em>generadas por el despachador</em></div>
+    <div class="kpi"><span>Frenos activos</span><b id="k4">-</b><em>cuentas detenidas por riesgo</em></div>
   </section>
 
   <section id="robots" hidden>
@@ -100,9 +72,13 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
 
   async function cargar(){
     const {st,d}=await api('GET');
-    if(st!==200){msg(st===401?'Clave incorrecta.':'No se pudo leer el estado ('+st+').',true);['robots','cuentas','ordenes'].forEach(i=>$(i).hidden=true);$('acceso').hidden=false;clearInterval(timer);return}
-    msg('');$('acceso').hidden=true;['robots','cuentas','ordenes'].forEach(i=>$(i).hidden=false);
+    if(st!==200){msg(st===401?'Clave incorrecta.':'No se pudo leer el estado ('+st+').',true);['kpis','robots','cuentas','ordenes'].forEach(i=>$(i).hidden=true);$('acceso').hidden=false;clearInterval(timer);return}
+    msg('');$('acceso').hidden=true;['kpis','robots','cuentas','ordenes'].forEach(i=>$(i).hidden=false);
     $('estado').innerHTML=pill(d.master_activo?'Master encendido':'Master apagado',d.master_activo?'ok':'bad')+pill((d.robots||[]).filter(r=>r.vivo).length+' robots vivos','ok');
+    const rs=(d.robots||[]).filter(r=>(r.visto_en||r.activo)&&!(r.cuenta>=900000000)),hoy=new Date().toISOString().slice(0,10);
+    $('k1').innerHTML=rs.filter(r=>r.vivo).length+' <small>/ '+rs.length+'</small>';$('k2').textContent=rs.filter(r=>r.activo).length;
+    $('k3').textContent=(d.ordenes||[]).filter(o=>o.licencia_id!==10&&String(o.creada_en||'').slice(0,10)===hoy).length;
+    $('k4').textContent=(d.cuentas||[]).filter(c=>c.cuenta<900000000&&c.halt).length;
     $('tr').innerHTML=(d.robots||[]).filter(r=>(r.visto_en||r.activo)&&!(r.cuenta>=900000000)).map(r=>{const e=r.estado||{};return `<tr>
       <td>${r.licencia_id}</td><td>${pill(r.activo?'Activado':'No activado',r.activo?'ok':'warn')}</td><td>${esc(r.simbolo)}</td><td>${esc(r.temporalidad)}</td>
       <td>${esc(r.cuenta??'-')}</td><td>${pill(r.vivo?'Vivo':'Sin pulso',r.vivo?'ok':'bad')} <span class="mono">${hace(r.visto_en)}</span></td>
