@@ -98,9 +98,10 @@ def procesar_admin(metodo: str, datos: dict, headers: dict, repo=None) -> tuple[
                                str(datos.get("motivo") or "cierre pedido por el administrador"))
             return (200, {"ok": True, "cierre_id": c["cierre_id"]}) if c else (409, {"error": "ya hay un cierre pendiente"})
         if accion == "solicitar":
-            dest = datos.get("destino_licencia_id")
+            dest, chat = datos.get("destino_licencia_id"), datos.get("chat_id")
             return solicitar_activacion(int(datos["licencia_id"]), str(datos["simbolo"]), str(datos["temporalidad"]),
-                                        destino_licencia_id=int(dest) if dest else None)
+                                        destino_licencia_id=int(dest) if dest else None,
+                                        chat_de=(lambda _l: int(chat)) if chat else None)  # chat_id: el administrador lo indica a mano
     except (KeyError, TypeError, ValueError) as e:
         return 400, {"error": f"datos invalidos: {e}"}
     return 400, {"error": "accion debe ser activar | desactivar | reanudar"}
