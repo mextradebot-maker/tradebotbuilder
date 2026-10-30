@@ -42,13 +42,15 @@ def resumen_snapshots(temporalidades) -> dict:
 
 
 def filas_catalogo() -> list[tuple]:
-    """(simbolo, temporalidad, tendencia_actual, refrescado_en, backtests_snapshot, backtests_largo_total, largo_en)
+    """(simbolo, temporalidad, tendencia_actual, refrescado_en, backtests_snapshot, backtests_largo_total, largo_en,
+    validacion_lab (jsonb o None), validado_en)
     de todos los pares en UNA consulta, sin el arreglo de velas."""
     with get_conn() as conn:
         return conn.execute(
             "SELECT s.simbolo, s.temporalidad, s.tendencia_actual, s.refrescado_en,"
-            " s.estructura_smc->'backtests', b.resultado->'backtests'->'total', b.calculado_en"
-            " FROM smc_snapshot s LEFT JOIN backtest_largo b USING (simbolo, temporalidad)").fetchall()
+            " s.estructura_smc->'backtests', b.resultado->'backtests'->'total', b.calculado_en, v.resultado, v.validado_en"
+            " FROM smc_snapshot s LEFT JOIN backtest_largo b USING (simbolo, temporalidad)"
+            " LEFT JOIN validacion_lab v USING (simbolo, temporalidad)").fetchall()
 
 
 def escribir_snapshot(simbolo: str, temporalidad: str, respuesta: dict, tendencia_actual: str | None) -> None:

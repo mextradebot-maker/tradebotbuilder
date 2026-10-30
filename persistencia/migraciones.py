@@ -159,6 +159,16 @@ _SQL = [
     )
     """,
 
+    # -- Validacion de laboratorio (validacion_lab.py): una fila por combo, la recalcula un hilo --
+    """
+    CREATE TABLE IF NOT EXISTS validacion_lab (
+        simbolo text NOT NULL, temporalidad text NOT NULL,
+        validado_en timestamptz NOT NULL, backtest_en timestamptz NOT NULL,
+        version text NOT NULL, resultado jsonb NOT NULL,
+        PRIMARY KEY (simbolo, temporalidad)
+    )
+    """,
+
     # Bloque 6 (peticiones_usuario / solicitar.py) retirado 2026-09-26: las
     # operaciones manuales se abren directo en MT5 y el coordinador las adopta.
 

@@ -8,7 +8,7 @@
 
 Además arranca el refresco de snapshots SMC en segundo plano (refresco.py).
 Variables: PORT (8000), N8N_URL, REFRESCO_ACTIVO=0 para apagarlo, REFRESCO_PROCESOS=N (por defecto 1) reparte el refresco entre N procesos en paralelo (pide CPU >= N), ALMACEN_CARGA_ACTIVA=0 apaga la carga
-historica de velas (carga_historica.py), BACKTEST_LARGO_ACTIVO=0 apaga el backtest largo incremental (backtest_largo.py), REFRESCO_HILOS (hilos del
+historica de velas (carga_historica.py), BACKTEST_LARGO_ACTIVO=0 apaga el backtest largo incremental (backtest_largo.py), VALIDACION_LAB_ACTIVA=0 la validacion de laboratorio (validacion_lab.py), REFRESCO_HILOS (hilos del
 refresco, I/O-bound; por defecto 6, 1 = en serie; REFRESCO_WORKERS es alias obsoleto), más las de la API
 (DATABASE_URL, MTB_ADMIN_KEY, MTB_SERVICE_KEY).
 """
@@ -165,6 +165,11 @@ def _segundo_plano(grupo: tuple[int, int] | None = None, solo_refresco: bool = F
 
         backtest_largo.iniciar_en_segundo_plano()
         logging.info("backtest largo incremental activo")
+    if os.environ.get("VALIDACION_LAB_ACTIVA", "1") != "0" and os.environ.get("DATABASE_URL"):
+        import validacion_lab
+
+        validacion_lab.iniciar_en_segundo_plano()
+        logging.info("validacion de laboratorio activa")
     threading.Event().wait()  # los hilos son daemon: el hijo vive mientras ellos trabajan
 
 

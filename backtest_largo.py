@@ -160,13 +160,11 @@ def resultado_de(ohlc: pd.DataFrame, ohlc_mayor: pd.DataFrame, vela: str, vela_m
                     previo["completo_en"], "incremental")
 
 
-def calcular(simbolo: str, temporalidad: str, ahora: datetime | None = None, obtener=None, previo: dict | None = None) -> dict:
-    """{"desde","hasta","velas","resultado"} de la ventana larga. `obtener(simbolo, inicio, fin, intervalo)` por defecto
-    conectividad.obtener_velas (sirve del almacen: sin descarga grande si las series estan completas).
-    `previo`: lo guardado (leer_previo) para el incremental."""
+def velas_de(simbolo: str, temporalidad: str, ahora: datetime | None = None, obtener=None):
+    """(ohlc, ohlc_mayor, vela, mayor) de la ventana larga, sin la vela en formacion. `obtener(simbolo, inicio, fin, intervalo)`
+    por defecto conectividad.obtener_velas (sirve del almacen: sin descarga grande si las series estan completas)."""
     from conectividad import TEMPORALIDADES, almacen, obtener_velas
     from motor_smc.reglas import DURACION_VELA
-    from motor_smc.setups_v2 import reglas_informativas
     obtener = obtener or (lambda s, a, b, iv: obtener_velas(s, a, b, iv, solo_almacen=True))  # nunca descarga directa de anios
     ahora = ahora or datetime.now(timezone.utc)
     t = TEMPORALIDADES[temporalidad]
@@ -187,6 +185,15 @@ def calcular(simbolo: str, temporalidad: str, ahora: datetime | None = None, obt
         ohlc_mayor = obtener(simbolo, max(ini, inicio_de(SERIE_BASE[mayor])), ahora, iv_mayor)
     if ohlc.empty or ohlc_mayor.empty:
         raise ValueError("sin velas para el backtest largo")
+    return ohlc, ohlc_mayor, vela, mayor
+
+
+def calcular(simbolo: str, temporalidad: str, ahora: datetime | None = None, obtener=None, previo: dict | None = None) -> dict:
+    """{"desde","hasta","velas","resultado"} de la ventana larga (velas: ver `velas_de`).
+    `previo`: lo guardado (leer_previo) para el incremental."""
+    from motor_smc.setups_v2 import reglas_informativas
+    ahora = ahora or datetime.now(timezone.utc)
+    ohlc, ohlc_mayor, vela, mayor = velas_de(simbolo, temporalidad, ahora, obtener)
     resultado = resultado_de(ohlc, ohlc_mayor, vela, mayor, reglas_informativas(simbolo, temporalidad), previo, ahora)
     return {"desde": ohlc.index[0].to_pydatetime(), "hasta": ohlc.index[-1].to_pydatetime(),
             "velas": len(ohlc), "resultado": resultado}
