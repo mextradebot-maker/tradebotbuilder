@@ -1,0 +1,40 @@
+/* Cerebro (master.html): traduce los colores fijos de Tailwind al tema del Master Trader (dia / noche). Solo aspecto. */
+body.mtb-cerebro{font-family:var(--font)}
+body.mtb-cerebro #mtbOperacion{animation:none}
+/* texto */
+body.mtb-cerebro .text-white,body.mtb-cerebro .text-slate-200,body.mtb-cerebro .text-slate-300{color:var(--text)}
+body.mtb-cerebro .text-slate-400,body.mtb-cerebro .text-slate-500,body.mtb-cerebro .ag-muted{color:var(--muted)}
+body.mtb-cerebro .ag-eyebrow,body.mtb-cerebro .text-sky-300,body.mtb-cerebro .text-sky-200{color:var(--accent)}
+body.mtb-cerebro .text-emerald-400,body.mtb-cerebro .text-emerald-300{color:var(--up)}
+body.mtb-cerebro .text-rose-400,body.mtb-cerebro .text-rose-300,body.mtb-cerebro .text-rose-200{color:var(--down)}
+body.mtb-cerebro .text-amber-300{color:var(--warn)}
+/* superficies: cristal */
+body.mtb-cerebro .bg-slate-900,body.mtb-cerebro .bg-slate-900\/90,body.mtb-cerebro .bg-slate-900\/50{background-color:var(--glass);backdrop-filter:blur(18px) saturate(1.5);-webkit-backdrop-filter:blur(18px) saturate(1.5)}
+body.mtb-cerebro .bg-slate-800\/40,body.mtb-cerebro .bg-slate-800\/80{background-color:color-mix(in srgb,var(--glass) 70%,transparent)}
+body.mtb-cerebro .bg-slate-950{background-color:color-mix(in srgb,var(--bg) 55%,transparent)}
+body.mtb-cerebro .bg-slate-950\/80{background-color:color-mix(in srgb,var(--bg) 78%,transparent)}
+body.mtb-cerebro #modalLicenciaMaster>div,body.mtb-cerebro .fixed .bg-slate-900{background-color:var(--glass-fuerte)}
+body.mtb-cerebro .bg-slate-800,body.mtb-cerebro .bg-slate-700{background-color:var(--line);color:var(--text)}
+/* bordes */
+body.mtb-cerebro [class*="border-slate-"],body.mtb-cerebro .divide-slate-800>*,body.mtb-cerebro .divide-slate-800\/60>*{border-color:var(--line)}
+body.mtb-cerebro .border-sky-500,body.mtb-cerebro .focus\:border-sky-500:focus{border-color:var(--accent)}
+/* botones principales */
+body.mtb-cerebro .bg-sky-600,body.mtb-cerebro .bg-sky-500,body.mtb-cerebro .bg-sky-800{background-color:var(--accent);color:var(--ink);box-shadow:0 0 24px color-mix(in srgb,var(--accent) 38%,transparent)}
+body.mtb-cerebro .bg-sky-600.text-white,body.mtb-cerebro .bg-sky-500.text-white,body.mtb-cerebro .bg-sky-800.text-white{color:var(--ink)}
+body.mtb-cerebro .bg-sky-900\/60{background-color:color-mix(in srgb,var(--accent) 18%,transparent)}
+body.mtb-cerebro .hover\:bg-sky-500:hover{background-color:var(--accent)}
+body.mtb-cerebro .bg-rose-600{background-color:var(--down);color:#fff}
+/* estados */
+body.mtb-cerebro .bg-emerald-500,body.mtb-cerebro .bg-emerald-500\/20,body.mtb-cerebro .bg-emerald-500\/15,body.mtb-cerebro .bg-emerald-900\/80,body.mtb-cerebro .bg-emerald-950\/60{background-color:color-mix(in srgb,var(--up) 16%,transparent)}
+body.mtb-cerebro .bg-rose-500\/10,body.mtb-cerebro .bg-rose-500\/15,body.mtb-cerebro .bg-rose-500\/20,body.mtb-cerebro .bg-rose-900\/60,body.mtb-cerebro .bg-rose-950\/60{background-color:color-mix(in srgb,var(--down) 14%,transparent)}
+body.mtb-cerebro .bg-amber-500\/20{background-color:color-mix(in srgb,var(--warn) 18%,transparent)}
+body.mtb-cerebro [class*="border-emerald-500"]{border-color:color-mix(in srgb,var(--up) 45%,transparent)}
+body.mtb-cerebro [class*="border-rose-"]{border-color:color-mix(in srgb,var(--down) 50%,transparent)}
+body.mtb-cerebro [class*="border-amber-500"]{border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
+/* campos */
+body.mtb-cerebro input,body.mtb-cerebro select{color:var(--text);border-color:var(--line-fuerte);transition:box-shadow 200ms var(--ease),border-color 200ms var(--ease)}
+body.mtb-cerebro input:focus,body.mtb-cerebro select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 28%,transparent),0 0 28px color-mix(in srgb,var(--accent) 22%,transparent)}
+body.mtb-cerebro input::placeholder{color:var(--muted);opacity:.7}
+/* terminal y codigo */
+body.mtb-cerebro #masterTerminalFeed{background-color:color-mix(in srgb,var(--bg) 60%,transparent)}
+body.mtb-cerebro code{color:var(--accent)}
