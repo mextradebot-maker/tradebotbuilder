@@ -293,6 +293,57 @@ _SQL = [
         PRIMARY KEY (licencia_id, simbolo, temporalidad)
     )
     """,
+    # ── Master Trader: despachador (master/despachador.py) ───────────────
+    # robots que preguntan (visto_en) y si el alumno/admin los activo para el Master (activo)
+    """
+    CREATE TABLE IF NOT EXISTS master_robots (
+        licencia_id  bigint      NOT NULL REFERENCES licencias(id) ON DELETE CASCADE,
+        simbolo      text        NOT NULL,
+        temporalidad text        NOT NULL,
+        cuenta       bigint,
+        activo       boolean     NOT NULL DEFAULT false,
+        visto_en     timestamptz,
+        estado       jsonb,
+        PRIMARY KEY (licencia_id, simbolo, temporalidad)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS master_ordenes (
+        id           bigserial   PRIMARY KEY,
+        orden_id     text        NOT NULL UNIQUE,
+        licencia_id  bigint      NOT NULL REFERENCES licencias(id) ON DELETE CASCADE,
+        cuenta       bigint,
+        simbolo      text        NOT NULL,
+        temporalidad text        NOT NULL,
+        direccion    text        NOT NULL,
+        entrada      double precision NOT NULL,
+        stop         double precision NOT NULL,
+        tp           double precision,
+        clave        text        NOT NULL,
+        estado       text        NOT NULL DEFAULT 'pendiente',
+        lotes        double precision,
+        motivo       text,
+        ticket       bigint,
+        ref_ts       bigint,
+        ref_cierre   double precision,
+        creada_en    timestamptz NOT NULL DEFAULT now(),
+        entregada_en timestamptz,
+        expira_en    timestamptz NOT NULL,
+        UNIQUE (licencia_id, clave)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_master_ordenes_pend ON master_ordenes (licencia_id, simbolo, temporalidad, estado)
+    """,
+    # pico de equity y freno duro por cuenta (solo una persona levanta el halt)
+    """
+    CREATE TABLE IF NOT EXISTS master_cuentas (
+        cuenta         bigint PRIMARY KEY,
+        pico_equity    double precision NOT NULL DEFAULT 0,
+        halt           text,
+        actualizado_en timestamptz NOT NULL DEFAULT now()
+    )
+    """,
     # ── Etapa 2: temporalidades canonicas (idempotente: se corre en cada arranque) ──
     # 1) catalogo: 7 canonicas por simbolo con filas viejas, heredando fecha_inicio
     #    (Scalping 30m entra inactiva); sin filas viejas no hace nada.
