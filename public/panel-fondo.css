@@ -9,3 +9,15 @@
 .mtb-fondo-btn:focus-visible{outline:2px solid var(--mt-accent);outline-offset:3px}
 /* pantalla de acceso: el texto de bienvenida va sobre cristal para que se lea sobre las velas */
 #app>.text-center{background:color-mix(in srgb,var(--mt-bg) 72%,transparent);backdrop-filter:blur(12px) saturate(1.2);-webkit-backdrop-filter:blur(12px) saturate(1.2);border:1px solid var(--mt-line);border-radius:18px;padding:28px}
+
+/* iconos de linea (reemplazan emojis y simbolos basicos) */
+.mtb-ico{width:17px;height:17px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ag-icon{display:inline-flex;align-items:center;justify-content:center;color:var(--mt-accent)}.ag-icon .mtb-ico{width:19px;height:19px}
+.mtb-side-btn[aria-current=true] .ag-icon,.mtb-side-btn:hover .ag-icon{filter:drop-shadow(0 0 6px color-mix(in srgb,var(--mt-accent) 55%,transparent))}
+/* pestanas de Bots en produccion: legibles en dia y noche */
+#wizardNav{background:var(--mt-raised);border-color:var(--mt-line)}
+#wizardNav .mtb-nav-btn{display:inline-flex;align-items:center;gap:8px;min-height:44px;color:var(--mt-muted);background:transparent;box-shadow:none;transition:transform 160ms cubic-bezier(.23,1,.32,1),background-color 160ms,color 160ms}
+@media (hover:hover){#wizardNav .mtb-nav-btn:hover{color:var(--mt-text);background:var(--mt-panel)}}
+#wizardNav .mtb-nav-btn[aria-current=true]{color:var(--mt-accent-ink);background:var(--mt-accent);box-shadow:0 0 20px color-mix(in srgb,var(--mt-accent) 35%,transparent)}
+#wizardNav .mtb-nav-btn:focus-visible{outline:2px solid var(--mt-accent);outline-offset:2px}
+#wizard .ag-title{color:var(--mt-text)}
