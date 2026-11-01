@@ -85,7 +85,19 @@ section+section{border-top:0}
 .cierre p{max-width:560px;margin:0 auto 22px;color:#c6d3e4}
 .cierre svg.ln{position:absolute;left:0;right:0;bottom:0;width:100%;height:90px;opacity:.5;pointer-events:none}
 .cierre>*{position:relative}
-@media(hover:hover) and (pointer:fine){.kit a:hover,.p:hover{transform:translateY(-3px);border-color:var(--accent)}}
+/* videos: carga el reproductor solo al pulsar (sin cookies de YouTube hasta entonces) */
+.videos{display:grid;grid-template-columns:repeat(2,minmax(0,300px));gap:28px;justify-content:center;margin-top:26px}
+.vid figure{margin:0}
+.vid .caja{position:relative;aspect-ratio:9/16;border-radius:18px;overflow:hidden;border:1px solid var(--line);background:var(--panel);box-shadow:0 30px 60px -24px rgba(0,0,0,.65)}
+.vid .caja img,.vid .caja iframe{position:absolute;inset:0;width:100%;height:100%;border:0;object-fit:cover}
+.vid .play{position:absolute;inset:0;width:100%;border:0;padding:0;cursor:pointer;background:linear-gradient(180deg,rgba(8,15,27,.15),rgba(8,15,27,.62));display:flex;align-items:center;justify-content:center;transition:transform 160ms var(--ease)}
+.vid .play:active{transform:scale(.98)}
+.vid .play span{width:68px;height:68px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;box-shadow:0 14px 30px -8px rgba(50,199,223,.55);transition:transform 200ms var(--ease)}
+.vid .play svg{width:26px;height:26px;fill:var(--accent-ink);margin-left:3px}
+.vid figcaption{margin-top:12px;font-size:15px;color:var(--text);font-weight:600}
+.vid figcaption small{display:block;font-weight:400;font-size:13px;color:var(--muted);margin-top:2px}
+@media(hover:hover) and (pointer:fine){.kit a:hover,.p:hover{transform:translateY(-3px);border-color:var(--accent)}.vid .play:hover span{transform:scale(1.08)}}
+@media(max-width:560px){.videos{grid-template-columns:minmax(0,320px)}}
 /* entrada escalonada, sin bloquear nada */
 @keyframes sube{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 .hero2>div:first-child>*{animation:sube 480ms var(--ease) both}
@@ -128,6 +140,21 @@ section+section{border-top:0}
     </div>
   </div>
 </div></div>
+
+<section id="videos" style="padding-top:8px"><div class="wrap">
+  <p class="eyebrow">Míralo en 2 minutos</p>
+  <h2>Qué es MexTradeBot y cómo funciona el programa</h2>
+  <div class="videos">
+    <div class="vid"><figure>
+      <div class="caja"><img src="https://i.ytimg.com/vi/e2OWrOfyRcw/hqdefault.jpg" alt="" width="480" height="360" loading="lazy"><button class="play" type="button" data-yt="e2OWrOfyRcw" aria-label="Reproducir video: qué es MexTradeBot y cómo probarlo en DEMO"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4l14 8-14 8z"/></svg></span></button></div>
+      <figcaption>Qué es MexTradeBot<small>Cómo probarlo primero en DEMO</small></figcaption>
+    </figure></div>
+    <div class="vid"><figure>
+      <div class="caja"><img src="https://i.ytimg.com/vi/Jn8bE3Fy6lw/hqdefault.jpg" alt="" width="480" height="360" loading="lazy"><button class="play" type="button" data-yt="Jn8bE3Fy6lw" aria-label="Reproducir video: el programa de afiliados en 45 segundos"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4l14 8-14 8z"/></svg></span></button></div>
+      <figcaption>El programa de afiliados<small>Comisiones y reglas en 45 segundos</small></figcaption>
+    </figure></div>
+  </div>
+</div></section>
 
 <section style="padding-top:8px"><div class="wrap">
   <div class="rec">
@@ -230,6 +257,14 @@ section+section{border-top:0}
   <p>MexTradeBot · Querétaro, Qro., México · <a href="mailto:soporte@mextradebot.com.mx">soporte@mextradebot.com.mx</a></p>
   <p><a href="aviso-de-riesgo.html">Aviso de riesgo</a> · <a href="terminos-y-condiciones.html">Términos y condiciones</a> · <a href="reglas-del-afiliado.html">Reglas del afiliado</a> · <a href="aviso-de-privacidad.html">Aviso de privacidad</a> · <a href="politica-de-cookies.html">Política de cookies</a> · <a href="#" onclick="return mtbPreferenciasCookies()">Preferencias de cookies</a></p>
 </div></footer>
+<script>
+document.querySelectorAll('.vid .play').forEach(function(b){b.addEventListener('click',function(){
+  var f=document.createElement('iframe');
+  f.src='https://www.youtube-nocookie.com/embed/'+b.dataset.yt+'?autoplay=1&rel=0&playsinline=1';
+  f.allow='autoplay; encrypted-media; picture-in-picture';f.allowFullscreen=true;f.title=b.getAttribute('aria-label');
+  b.parentNode.replaceChild(f,b);
+});});
+</script>
 <script src="consent-pixel.js" defer></script>
 </body>
 </html>
