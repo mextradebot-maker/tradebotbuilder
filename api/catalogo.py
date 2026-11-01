@@ -67,8 +67,8 @@ def fila(simbolo, temporalidad, tendencia, refrescado_en, bt_snapshot, bt_largo,
         desc = (f"Laboratorio: {n} operaciones simuladas como las opera el robot (una a la vez, spread {v['spread_fuente']}"
                 f" {v['spread_pct'] * 100:.3f} %)")
         if v.get("r_neto") is not None:
-            desc += (f", acierto {round((v.get('winrate') or 0) * 100)}%, expectativa neta {v['r_neto']:+.2f}R"
-                     f" (mitades {v['mitad_1']:+.2f}R / {v['mitad_2']:+.2f}R). ")
+            mitades = f" (mitades {v['mitad_1']:+.2f}R / {v['mitad_2']:+.2f}R)" if v.get("mitad_1") is not None and v.get("mitad_2") is not None else ""
+            desc += f", acierto {round((v.get('winrate') or 0) * 100)}%, expectativa neta {v['r_neto']:+.2f}R{mitades}. "
         else:
             desc += ". "
         desc += v["motivo"]
@@ -123,6 +123,8 @@ def demo() -> None:
         ("NZDUSD", "Intraday 1H", "compra", "t6", None, None, None),
         ("GBPJPY", "Intraday 1H", "compra", "t6", None, None, None, val("validado", 32, 0.5, 0.6, 0.4, 0.05), "t9"),
         ("AUDJPY", "Scalping 15m", "compra", "t6", None, None, None, val("insuficiente", 12, 0.9, 0.9, 0.9, 0.1), "t9"),
+        ("EURGBP", "Intraday D", "venta", "t6", None, None, None, val("insuficiente", 1, 0.5, None, None, None), "t9"),  # 1 operacion: sin mitades ni IC
+        ("EURJPY", "Intraday D", "venta", "t6", None, None, None, {**val("insuficiente", 0, 0.0, None, None, None), "r_neto": None, "winrate": None}, "t9"),
     ])
     f = {x["simbolo"]: x for x in filas}
     assert f["EURUSD"]["veredicto"] == "INSUFICIENTE" and not f["EURUSD"]["viable"] and f["EURUSD"]["expectativa_r"] is None  # sin validar: sin cifra
@@ -134,6 +136,7 @@ def demo() -> None:
     assert f["GBPUSD"]["direccion"] == "compra" and not f["GBPUSD"]["viable"] and f["GBPUSD"]["veredicto"] == "NO RECOMENDABLE"
     assert f["AUDJPY"]["veredicto"] == "INSUFICIENTE" and not f["AUDJPY"]["viable"] and "rank" not in f["AUDJPY"]  # 0.9R con 12 operaciones no cuenta
     assert f["NZDUSD"]["expectativa_r"] is None and f["NZDUSD"]["fuente"] is None
+    assert f["EURGBP"]["veredicto"] == "INSUFICIENTE" and "mitades" not in f["EURGBP"]["descripcion_larga"]  # no revienta con 0 o 1 operacion
     assert f["XAUUSD"]["simbolo_xm"] == "GOLD" and f["EURUSD"]["simbolo_xm"] == "EURUSD"
     assert len(SIMBOLO_XM) == 34 and SIMBOLO_XM["US500"] == "US500Cash" and SIMBOLO_XM.get("AMXL") is None
     from pathlib import Path
