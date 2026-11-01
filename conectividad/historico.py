@@ -140,6 +140,10 @@ def obtener_velas(
     disponible (sin BD, en pausa, fallando) o no cubre `inicio`, lanza RuntimeError. Solo puede bajar de
     Dukascopy la cola reciente (incremental)."""
     instrumento = SIMBOLOS.get(simbolo, simbolo)
+    xm = os.environ.get("MTB_VELAS_FUENTE", "").strip().lower() == "xm"  # fuente XM: nunca se cae a Dukascopy
+    if xm and not (simbolo in SIMBOLOS and intervalo in _ALMACEN and offer_side == dp.OFFER_SIDE_BID
+                   and os.environ.get("DATABASE_URL")):
+        raise RuntimeError(f"fuente XM: {simbolo} {intervalo} no sale del almacen y no se baja de Dukascopy")
     if solo_almacen and not (simbolo in SIMBOLOS and intervalo in _ALMACEN and offer_side == dp.OFFER_SIDE_BID
                              and os.environ.get("DATABASE_URL") and time.monotonic() >= _ALMACEN_FALLA[0]):
         raise RuntimeError(f"almacen no disponible para {simbolo} {intervalo} (solo_almacen)")
@@ -150,8 +154,8 @@ def obtener_velas(
         except _ErrDescarga as e:
             raise e.__cause__  # falla de Dukascopy, no del almacen: sin pausa ni reintento directo
         except Exception as e:
-            if solo_almacen:
-                raise RuntimeError(f"almacen fallo para {simbolo} {intervalo} (solo_almacen): {e}") from e
+            if solo_almacen or xm:
+                raise RuntimeError(f"almacen fallo para {simbolo} {intervalo} (solo_almacen/XM): {e}") from e
             # ponytail: pausa global de 60 s tras cualquier falla (BD caida no cuesta un timeout por llamada)
             _ALMACEN_FALLA[0] = time.monotonic() + 60
             log.error("almacen de velas fallo (%s %s); descarga directa", simbolo, intervalo, exc_info=True)

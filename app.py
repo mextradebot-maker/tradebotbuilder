@@ -155,7 +155,9 @@ def _segundo_plano(grupo: tuple[int, int] | None = None, solo_refresco: bool = F
         logging.info("refresco de snapshots SMC activo%s", f" (grupo {grupo[0] + 1}/{grupo[1]})" if grupo else "")
     if solo_refresco:
         threading.Event().wait()
-    if os.environ.get("ALMACEN_CARGA_ACTIVA", "1") != "0" and os.environ.get("DATABASE_URL"):
+    if os.environ.get("MTB_VELAS_FUENTE", "").strip().lower() == "xm":
+        logging.info("fuente de velas XM: la carga historica de Dukascopy no se inicia")
+    elif os.environ.get("ALMACEN_CARGA_ACTIVA", "1") != "0" and os.environ.get("DATABASE_URL"):
         import carga_historica
 
         carga_historica.iniciar_en_segundo_plano()
