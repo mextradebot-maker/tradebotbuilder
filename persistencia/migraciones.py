@@ -149,6 +149,20 @@ _SQL = [
     ALTER TABLE velas_carga ADD COLUMN IF NOT EXISTS ultimo_vacio timestamptz
     """,
 
+    # Velas de XM (historial completo del MT5, conectividad/historial_xm.py). Tablas aparte de `velas`: se llenan y
+    # se validan sin tocar lo de Dukascopy; MTB_VELAS_FUENTE=xm hace que el almacen lea de aqui. `spread` = puntos.
+    """
+    CREATE TABLE IF NOT EXISTS velas_xm (
+        simbolo text NOT NULL, serie text NOT NULL, ts timestamptz NOT NULL,
+        open double precision, high double precision, low double precision,
+        close double precision, volume double precision, spread double precision,
+        PRIMARY KEY (simbolo, serie, ts)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS velas_carga_xm (LIKE velas_carga INCLUDING ALL)
+    """,
+
     # -- Backtest largo semanal (backtest_largo.py) --
     """
     CREATE TABLE IF NOT EXISTS backtest_largo (

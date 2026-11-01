@@ -24,6 +24,13 @@ def get_conn():
         yield conn
 
 
+# Fuente de las velas, fija al arrancar el proceso (MTB_VELAS_FUENTE): "dukascopy" = tablas velas / velas_carga (por
+# defecto); "xm" = velas_xm / velas_carga_xm, historial del MT5 de XM (conectividad/historial_xm.py). Con "xm" nunca
+# se baja nada de Dukascopy: el almacen solo lee lo guardado y el colector del VPS lo mantiene al dia.
+FUENTE = os.environ.get("MTB_VELAS_FUENTE", "dukascopy").strip().lower()
+if FUENTE not in ("dukascopy", "xm"):
+    raise ValueError(f"MTB_VELAS_FUENTE debe ser 'dukascopy' o 'xm', no {FUENTE!r}")
+T_VELAS, T_CARGA = ("velas_xm", "velas_carga_xm") if FUENTE == "xm" else ("velas", "velas_carga")
 COLS = ["open", "high", "low", "close", "volume"]
 # serie derivada -> (serie base, regla de resample). 4H alinea a 00/04/.. UTC (origen = medianoche).
 DERIVADAS = {"30m": ("15m", "30min"), "4H": ("1H", "4h"), "S": ("D", "W-MON"), "M": ("D", "MS")}
@@ -46,7 +53,7 @@ def guardar(simbolo: str, serie: str, df: pd.DataFrame, lote: int = 5000) -> int
     idx = df.index.tz_localize("UTC") if df.index.tz is None else df.index.tz_convert("UTC")
     filas = [(simbolo, serie, ts.to_pydatetime(), *r)
              for ts, r in zip(idx, df[COLS].astype(float).itertuples(index=False, name=None))]
-    sql = """INSERT INTO velas (simbolo, serie, ts, open, high, low, close, volume)
+    sql = f"""INSERT INTO {T_VELAS} (simbolo, serie, ts, open, high, low, close, volume)
              VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
              ON CONFLICT (simbolo, serie, ts) DO UPDATE SET
                open = EXCLUDED.open, high = EXCLUDED.high, low = EXCLUDED.low,
@@ -61,7 +68,7 @@ def leer(simbolo: str, serie: str, inicio, fin) -> pd.DataFrame:
     """Velas con inicio <= ts <= fin (naive = UTC)."""
     with get_conn() as conn:
         filas = conn.execute(
-            "SELECT ts, open, high, low, close, volume FROM velas "
+            f"SELECT ts, open, high, low, close, volume FROM {T_VELAS} "
             "WHERE simbolo = %s AND serie = %s AND ts >= %s AND ts <= %s ORDER BY ts",
             (simbolo, serie, _utc(inicio), _utc(fin))).fetchall()
     df = pd.DataFrame(filas, columns=["ts", *COLS])
@@ -73,7 +80,7 @@ def leer(simbolo: str, serie: str, inicio, fin) -> pd.DataFrame:
 def rango(simbolo: str, serie: str):
     """(vela mas antigua, vela mas reciente) guardadas, o None si no hay."""
     with get_conn() as conn:
-        d, h = conn.execute("SELECT min(ts), max(ts) FROM velas WHERE simbolo = %s AND serie = %s",
+        d, h = conn.execute(f"SELECT min(ts), max(ts) FROM {T_VELAS} WHERE simbolo = %s AND serie = %s",
                             (simbolo, serie)).fetchone()
     return None if d is None else (pd.Timestamp(d), pd.Timestamp(h))
 
@@ -84,7 +91,7 @@ def carga(simbolo: str, serie: str):
     hasta = ultima vela guardada; sincronizado (columna actualizado_en) = ultima vez que una descarga llego
     hasta el cierre mas reciente de la serie."""
     with get_conn() as conn:
-        f = conn.execute("SELECT desde, hasta, actualizado_en FROM velas_carga WHERE simbolo = %s AND serie = %s",
+        f = conn.execute(f"SELECT desde, hasta, actualizado_en FROM {T_CARGA} WHERE simbolo = %s AND serie = %s",
                          (simbolo, serie)).fetchone()
     return None if f is None or f[0] is None else tuple(_utc(x) for x in f)
 
@@ -95,28 +102,28 @@ def registrar_carga(simbolo: str, serie: str, desde, hasta, sincronizado=None) -
     sentencia). `sincronizado=None` (descarga que no llego al cierre actual) no lo toca. No toca `completa`."""
     with get_conn() as conn:
         conn.execute(
-            """INSERT INTO velas_carga (simbolo, serie, desde, hasta, actualizado_en)
+            f"""INSERT INTO {T_CARGA} (simbolo, serie, desde, hasta, actualizado_en)
                VALUES (%s, %s, %s, %s, COALESCE(%s, 'epoch'::timestamptz))
                ON CONFLICT (simbolo, serie) DO UPDATE SET
-                 desde = LEAST(velas_carga.desde, EXCLUDED.desde),
-                 hasta = GREATEST(velas_carga.hasta, EXCLUDED.hasta),
-                 actualizado_en = GREATEST(velas_carga.actualizado_en, EXCLUDED.actualizado_en)
-               WHERE velas_carga.hasta IS NULL
-                  OR (EXCLUDED.desde <= velas_carga.hasta AND EXCLUDED.hasta >= velas_carga.desde)""",
+                 desde = LEAST({T_CARGA}.desde, EXCLUDED.desde),
+                 hasta = GREATEST({T_CARGA}.hasta, EXCLUDED.hasta),
+                 actualizado_en = GREATEST({T_CARGA}.actualizado_en, EXCLUDED.actualizado_en)
+               WHERE {T_CARGA}.hasta IS NULL
+                  OR (EXCLUDED.desde <= {T_CARGA}.hasta AND EXCLUDED.hasta >= {T_CARGA}.desde)""",
             (simbolo, serie, _utc(desde), _utc(hasta), None if sincronizado is None else _utc(sincronizado)))
 
 
 def marcar_completa(simbolo: str, serie: str) -> None:
     """La carga historica llego a su objetivo o al inicio de la historia de Dukascopy."""
     with get_conn() as conn:
-        conn.execute("INSERT INTO velas_carga (simbolo, serie, completa) VALUES (%s, %s, true) "
+        conn.execute(f"INSERT INTO {T_CARGA} (simbolo, serie, completa) VALUES (%s, %s, true) "
                      "ON CONFLICT (simbolo, serie) DO UPDATE SET completa = true", (simbolo, serie))
 
 
 def vacios(simbolo: str, serie: str):
     """(vacios seguidos contados, cuando se conto el ultimo) del bloque mas viejo, o None si no hay cuenta."""
     with get_conn() as conn:
-        f = conn.execute("SELECT vacios, ultimo_vacio FROM velas_carga WHERE simbolo = %s AND serie = %s",
+        f = conn.execute(f"SELECT vacios, ultimo_vacio FROM {T_CARGA} WHERE simbolo = %s AND serie = %s",
                          (simbolo, serie)).fetchone()
     return None if f is None or not f[0] else (f[0], _utc(f[1]))
 
@@ -124,7 +131,7 @@ def vacios(simbolo: str, serie: str):
 def registrar_vacios(simbolo: str, serie: str, n: int, cuando=None) -> None:
     """Guarda la cuenta de vacios (n=0 la reinicia). Solo sobre una fila existente: el primer bloque nunca cuenta."""
     with get_conn() as conn:
-        conn.execute("UPDATE velas_carga SET vacios = %s, ultimo_vacio = %s WHERE simbolo = %s AND serie = %s",
+        conn.execute(f"UPDATE {T_CARGA} SET vacios = %s, ultimo_vacio = %s WHERE simbolo = %s AND serie = %s",
                      (n, None if cuando is None else _utc(cuando), simbolo, serie))
 
 
@@ -132,7 +139,7 @@ def sincronizadas(series=("15m", "1H")) -> dict:
     """{(simbolo, serie): ultima sincronizacion} de las series base dadas, en una sola consulta (la usa el
     refresco para saltarse la espera de publicacion cuando el almacen ya trae la vela recien cerrada)."""
     with get_conn() as conn:
-        filas = conn.execute("SELECT simbolo, serie, actualizado_en FROM velas_carga WHERE serie = ANY(%s)",
+        filas = conn.execute(f"SELECT simbolo, serie, actualizado_en FROM {T_CARGA} WHERE serie = ANY(%s)",
                              (list(series),)).fetchall()
     return {(s, se): _utc(t) for s, se, t in filas if t is not None}
 
@@ -140,7 +147,7 @@ def sincronizadas(series=("15m", "1H")) -> dict:
 def completas() -> set:
     """{(simbolo, serie)} con la carga historica terminada."""
     with get_conn() as conn:
-        return set(conn.execute("SELECT simbolo, serie FROM velas_carga WHERE completa").fetchall())
+        return set(conn.execute(f"SELECT simbolo, serie FROM {T_CARGA} WHERE completa").fetchall())
 
 
 # = refresco.MARGEN_DATOS: Dukascopy publica la vela cerrada con hasta ~2 min de retraso. Una sincronizacion
@@ -157,6 +164,8 @@ def sincronizar(simbolo: str, serie: str, lo, hi, descargar, paso, ahora=None) -
     Si no cubre `lo`: baja la ventana completa (como antes) y la guarda → la siguiente sera incremental.
     `paso` = duracion de una vela base (15m, 1H o 1D; el cierre de D es 00:00 UTC)."""
     lo, hi = _utc(lo), _utc(hi)
+    if FUENTE == "xm":  # el historial de XM ya esta cargado y el colector lo mantiene: nunca se descarga
+        return leer(simbolo, serie, lo, hi)
     ahora = _utc(pd.Timestamp.now(tz="UTC") if ahora is None else ahora)
     cierre = ahora.floor(paso)
 

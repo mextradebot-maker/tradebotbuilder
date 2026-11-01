@@ -10,11 +10,13 @@ bajar las ultimas velas y las sobrescribe con sus valores (diferencias de precio
 No calcula nada aqui: el calculo es del proceso de refresco, fuera del proceso HTTP.
 """
 
+import logging
 import math
 from datetime import datetime, timezone
 
 import pandas as pd
 
+log = logging.getLogger(__name__)
 PASOS = {"15m": pd.Timedelta(minutes=15), "1H": pd.Timedelta(hours=1)}
 MAX_VELAS = 10
 MAX_ANTIGEDAD = pd.Timedelta(days=2)  # el colector solo manda lo reciente; el historial es de Dukascopy
@@ -72,6 +74,12 @@ def procesar(payload: dict, headers: dict, ahora=None, almacen=None, simbolos=No
     paso = PASOS[serie]
     try:
         almacen.guardar(simbolo, serie, df)
+        if hasattr(almacen, "FUENTE"):  # el almacen real (los dobles de prueba no lo tienen)
+            try:  # espejo en velas_xm y D en curso: si falla no debe tumbar el flujo en vivo
+                from conectividad import historial_xm
+                historial_xm.tras_guardar(simbolo, serie, df, ya_en_xm=almacen.FUENTE == "xm")
+            except Exception:
+                log.warning("historial XM: espejo de %s %s fallo", simbolo, serie, exc_info=True)
         cierre = ahora.floor(paso)
         al_dia = bool(df.index[-1] >= cierre - paso)  # trae la vela que acaba de cerrar
         # solo se marca al dia una serie que ya tiene cobertura registrada: sin ella, Dukascopy hace su carga normal
