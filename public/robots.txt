@@ -1,0 +1,7 @@
+# Cloudflare antepone su bloque administrado (Content-Signal y bots de entrenamiento); no lo borres.
+User-agent: *
+Disallow: /webhook/
+Disallow: /api/
+Disallow: /alumnos
+
+Sitemap: https://mextradebot.com.mx/sitemap.xml
