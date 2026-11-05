@@ -1,11 +1,11 @@
 /* Panel de alumnos: solo anade el fondo de velas 3D. Cookies, privacidad y pie siguen siendo los de /legal.js. */
-#fondo{position:fixed;inset:0;width:100%;height:100%;z-index:0;display:block;pointer-events:none}
-/* imagen del oso y el toro detras de las velas 3D; solo se pide cuando el fondo esta encendido */
-#fondo-img{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity .8s ease;background:#030a18 center/cover no-repeat}
-#fondo-img.on{opacity:1;background-image:url(/img/fondo-oso-toro.jpg)}
-#fondo-img::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(3,10,24,.50),rgba(3,10,24,.68))}
+/* fondo 3D: imagen del oso y el toro con parallax (inclinacion por perspectiva); la imagen solo se pide cuando el fondo esta encendido */
+#fondo-img{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity .8s ease;background:#030a18;perspective:1100px;overflow:hidden}
+#fondo-img.on{opacity:1}
+#fondo-img .capa{position:absolute;inset:-7%;background:center/cover no-repeat;transform:translate3d(var(--tx,0px),var(--ty,0px),0) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) scale(1.04);will-change:transform}
+#fondo-img.on .capa{background-image:url(/img/fondo-oso-toro.jpg)}
+#fondo-img::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(3,10,24,.42),rgba(3,10,24,.62))}
 html[data-theme=day] #fondo-img::after{background:linear-gradient(180deg,rgba(233,241,249,.80),rgba(233,241,249,.90))}
-#fondo-img.on~#fondo{opacity:.4!important}
 #app,#wizard{position:relative;z-index:1}
 #wizard>div{background:color-mix(in srgb,var(--mt-panel) 66%,transparent);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3)}
 #wizard aside{background:color-mix(in srgb,var(--mt-aside) 72%,transparent)}
