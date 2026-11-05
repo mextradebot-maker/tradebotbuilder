@@ -5,10 +5,12 @@
 (()=>{
   const ANCHO_MIN=900; // ponytail: por debajo de este ancho el fondo arranca apagado (se enciende con el boton)
   const lienzo=document.createElement('canvas');lienzo.id='fondo';lienzo.setAttribute('aria-hidden','true');document.body.insertBefore(lienzo,document.body.firstChild);
+  const imagen=document.createElement('div');imagen.id='fondo-img';imagen.setAttribute('aria-hidden','true');document.body.insertBefore(imagen,lienzo); // imagen del oso y el toro, siempre debajo del canvas
   const guardado=()=>{try{return localStorage.getItem('mtb_fondo')}catch(e){return null}};
   const liviano=()=>matchMedia('(max-width:'+(ANCHO_MIN-1)+'px)').matches||matchMedia('(prefers-reduced-motion: reduce)').matches||!!(navigator.connection&&navigator.connection.saveData);
   const g=guardado();
   let quiere=g==='1'?true:g==='0'?false:!liviano();
+  imagen.classList.toggle('on',quiere);
   let estado=0; // 0 sin cargar, 1 cargando, 2 listo
   const b=document.createElement('button');b.type='button';b.className='mtb-fondo-btn';b.textContent='Fondo 3D';b.title='Mostrar u ocultar el fondo 3D';b.setAttribute('aria-pressed',String(quiere));
   document.body.appendChild(b);
@@ -24,6 +26,7 @@
   b.addEventListener('click',()=>{
     quiere=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',String(quiere));
     try{localStorage.setItem('mtb_fondo',quiere?'1':'0')}catch(e){}
+    imagen.classList.toggle('on',quiere);
     if(quiere){lienzo.style.display='';iniciar()}else if(window.__fondoOn)window.__fondoOn(false);else lienzo.style.display='none';
   });
   if(quiere){
