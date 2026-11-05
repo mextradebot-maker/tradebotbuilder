@@ -2,7 +2,7 @@
 #fondo{position:fixed;inset:0;width:100%;height:100%;z-index:0;display:block;pointer-events:none}
 /* imagen del oso y el toro detras de las velas 3D; solo se pide cuando el fondo esta encendido */
 #fondo-img{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity .8s ease;background:#030a18 center/cover no-repeat}
-#fondo-img.on{opacity:1;background-image:url(/img/fondo-oso-toro.webp)}
+#fondo-img.on{opacity:1;background-image:url(/img/fondo-oso-toro.jpg)}
 #fondo-img::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(3,10,24,.50),rgba(3,10,24,.68))}
 html[data-theme=day] #fondo-img::after{background:linear-gradient(180deg,rgba(233,241,249,.80),rgba(233,241,249,.90))}
 #fondo-img.on~#fondo{opacity:.4!important}
