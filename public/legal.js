@@ -21,6 +21,7 @@
     '.mtb-legal-copy{max-width:1440px;margin:10px auto 0;font-size:11px;color:#899db9}' +
     '@media(max-width:800px){.mtb-legal-wrap{grid-template-columns:1fr 1fr}.mtb-legal-wrap>div:first-child{grid-column:1/-1}}' +
     '@media(max-width:480px){.mtb-legal-footer{padding:22px 16px}.mtb-legal-wrap{grid-template-columns:1fr;gap:18px}}' +
+    '.mtb-wa{position:fixed;right:16px;bottom:16px;z-index:9000;width:56px;height:56px;border-radius:50%;background:#25d366;color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px #0006;touch-action:manipulation}.mtb-wa:hover,.mtb-wa:focus-visible{background:#1ebe5b;color:#fff}' +
     '.mtb-cookies{position:fixed;left:16px;right:16px;bottom:16px;z-index:9999;max-width:720px;margin:0 auto;background:#101b2b;color:#edf3fb;border:1px solid #2a3a50;border-radius:12px;padding:16px 18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;box-shadow:0 10px 30px #0008;font:13px/1.5 "Lexend","Segoe UI",sans-serif}' +
     '.mtb-cookies p{margin:0;flex:1 1 300px;color:#a6b6cc}' +
     '.mtb-cookies a{color:#32c7df}' +
@@ -104,6 +105,14 @@
       document.body.style.alignItems = 'stretch';
     }
     document.body.appendChild(pie());
+    // Globo de WhatsApp (ponytail: un solo enlace wa.me, sin widget externo)
+    var wa = document.createElement('a');
+    wa.className = 'mtb-wa';
+    wa.href = 'https://wa.me/524421851478?text=' + encodeURIComponent('Hola, quiero información sobre MexTradeBot.');
+    wa.target = '_blank'; wa.rel = 'noopener';
+    wa.setAttribute('aria-label', 'Escríbenos por WhatsApp'); wa.title = 'WhatsApp';
+    wa.innerHTML = '<svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor" aria-hidden="true"><path d="M12.04 2a9.9 9.9 0 0 0-8.5 14.9L2 22l5.2-1.5A9.9 9.9 0 1 0 12.04 2zm0 18.1a8.2 8.2 0 0 1-4.2-1.15l-.3-.18-3.1.9.9-3-.2-.3a8.2 8.2 0 1 1 6.9 3.73zm4.5-6.1c-.25-.12-1.46-.72-1.69-.8-.23-.08-.39-.12-.56.12-.16.25-.64.8-.78.96-.14.17-.29.19-.54.06a6.7 6.7 0 0 1-3.3-2.9c-.25-.43.25-.4.72-1.33.08-.16.04-.3-.02-.42-.06-.12-.56-1.35-.77-1.85-.2-.48-.4-.42-.56-.42h-.47c-.16 0-.43.06-.66.3-.23.25-.87.85-.87 2.07s.89 2.4 1.01 2.57c.12.16 1.75 2.67 4.24 3.75 1.58.68 2.2.74 3 .62.49-.07 1.46-.6 1.67-1.17.2-.58.2-1.07.14-1.17-.06-.1-.23-.16-.48-.28z"/></svg>';
+    document.body.appendChild(wa);
     if (!window.MTB_AVISO_PROPIO) avisoCookies();
   }
 
