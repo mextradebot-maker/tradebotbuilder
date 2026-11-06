@@ -138,6 +138,12 @@ def pulso(repo, licencia_id: int, cuenta: int, simbolo: str, temporalidad: str, 
     if not habilitado or not robot or not robot["activo"]:
         return {"orden": None, "cierre": None, "estado": "sin_activar" if habilitado else "master_apagado", "motivos": []}
 
+    # Swing Express: si el EA ya no reporta ninguna posicion (cierre forzado -3%, cierre manual, orden pendiente
+    # vencida) pero el repo la seguia marcando abierta, se corrige aqui -- sin esto el robot nunca volveria a
+    # entrar aunque la tendencia siga alcista (recibir_tendencia_swing_express no abre con posicion_abierta=True).
+    if robot.get("estrategia") == "swing_express" and robot.get("posicion_abierta") and int(est.get("posiciones") or 0) == 0:
+        repo.reconciliar_posicion(licencia_id, simbolo, temporalidad)
+
     c = repo.cuenta(cuenta) or {"pico_equity": 0.0, "halt": None}
     pico = max(float(c.get("pico_equity") or 0), float(est.get("equity") or 0))
     est = {**est, "pico_equity": pico, "halt": c.get("halt")}
@@ -279,8 +285,18 @@ class MemRepo:
     def guardar_cuenta(self, cuenta, pico, halt):
         self.cuentas[cuenta] = {"pico_equity": pico, "halt": halt}
 
-    def activar(self, lic, sim, tf, activo):
-        self.robots.setdefault((lic, sim, tf), {"licencia_id": lic, "cuenta": None, "activo": False})["activo"] = bool(activo)
+    def activar(self, lic, sim, tf, activo, estrategia=None):
+        r = self.robots.setdefault((lic, sim, tf), {"licencia_id": lic, "cuenta": None, "activo": False})
+        r["activo"] = bool(activo)
+        if estrategia:
+            r["estrategia"] = estrategia
+
+    def reconciliar_posicion(self, lic, sim, tf):
+        """Corrige posicion_abierta a False cuando el EA ya no reporta ninguna posicion (ver pulso()),
+        aunque el cierre no haya pasado por ordenar_cierre/aplicar_ack (cierre forzado, manual, expiracion)."""
+        r = self.robots.get((lic, sim, tf))
+        if r:
+            r["posicion_abierta"] = False
 
     def registrar_autorizacion(self, lic, sim, tf, evento, chat_id, huella, ip, ua):
         self.autorizaciones = getattr(self, "autorizaciones", [])
@@ -379,9 +395,16 @@ class RepoPg:
 
     def robot(self, lic, sim, tf):
         with self._conn() as c:
-            f = c.execute("SELECT activo FROM master_robots WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s",
-                          (lic, sim, tf)).fetchone()
-        return {"activo": f[0]} if f else None
+            f = c.execute("""SELECT activo, estrategia, posicion_abierta FROM master_robots
+                             WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s""", (lic, sim, tf)).fetchone()
+        return {"activo": f[0], "estrategia": f[1], "posicion_abierta": f[2]} if f else None
+
+    def reconciliar_posicion(self, lic, sim, tf):
+        """Corrige posicion_abierta a False cuando el EA ya no reporta ninguna posicion (ver pulso()),
+        aunque el cierre no haya pasado por ordenar_cierre/aplicar_ack (cierre forzado, manual, expiracion)."""
+        with self._conn() as c:
+            c.execute("UPDATE master_robots SET posicion_abierta = false WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s",
+                      (lic, sim, tf))
 
     def crear_cierre(self, c):
         with self._conn() as conn:
@@ -467,11 +490,15 @@ class RepoPg:
                          actualizado_en = now()""", (cuenta, pico, halt))
 
     # -- admin
-    def activar(self, lic, sim, tf, activo: bool):
+    def activar(self, lic, sim, tf, activo: bool, estrategia: str | None = None):
+        """estrategia: None preserva la que ya tenga el robot (o 'estructural' si es nuevo); se usa para crear/
+        reactivar un robot Swing Express (ver api/master.py, accion 'activar')."""
         with self._conn() as c:
-            c.execute("""INSERT INTO master_robots (licencia_id, simbolo, temporalidad, activo) VALUES (%s, %s, %s, %s)
-                         ON CONFLICT (licencia_id, simbolo, temporalidad) DO UPDATE SET activo = EXCLUDED.activo""",
-                      (lic, sim, tf, activo))
+            c.execute("""INSERT INTO master_robots (licencia_id, simbolo, temporalidad, activo, estrategia)
+                         VALUES (%s, %s, %s, %s, COALESCE(%s, 'estructural'))
+                         ON CONFLICT (licencia_id, simbolo, temporalidad) DO UPDATE
+                         SET activo = EXCLUDED.activo, estrategia = COALESCE(%s, master_robots.estrategia)""",
+                      (lic, sim, tf, activo, estrategia, estrategia))
 
     def reanudar(self, cuenta):
         with self._conn() as c:
@@ -654,6 +681,18 @@ def demo() -> None:
     est_halt = {**est7, "racha": 5}  # 5 perdidas seguidas = freno duro en la compuerta
     r8 = pulso(repoP2, 6, 666, "XAUUSD", "Swing (S)", est_halt, ahora=t7)
     assert r8["estado"] == "bloqueada", r8
+    # 8b. pulso reconcilia posicion_abierta a False si el EA ya no reporta posiciones (cierre forzado -3%, manual o
+    # expiracion -- no por el Master): sin esto, recibir_tendencia_swing_express nunca volveria a abrir aunque la
+    # tendencia siga alcista, porque siempre veria posicion_abierta=True.
+    repoR = MemRepo(activados=[(10, "XAUUSD", "Swing (S)", 1010)])
+    repoR.robots[(10, "XAUUSD", "Swing (S)")]["estrategia"] = "swing_express"
+    repoR.robots[(10, "XAUUSD", "Swing (S)")]["posicion_abierta"] = True
+    pulso(repoR, 10, 1010, "XAUUSD", "Swing (S)", {**est7, "posiciones": 0}, ahora=t7)
+    assert repoR.robots[(10, "XAUUSD", "Swing (S)")]["posicion_abierta"] is False
+    # si el EA todavia reporta una posicion, no se toca
+    repoR.robots[(10, "XAUUSD", "Swing (S)")]["posicion_abierta"] = True
+    pulso(repoR, 10, 1010, "XAUUSD", "Swing (S)", {**est7, "posiciones": 1}, ahora=t7)
+    assert repoR.robots[(10, "XAUUSD", "Swing (S)")]["posicion_abierta"] is True
     # 9. ack de cierre con posiciones -> alimenta master_historial y cierra posicion_abierta
     repoH = MemRepo()
     repoH.robots[(9, "XAUUSD", "Swing (S)")] = {"licencia_id": 9, "cuenta": 999, "activo": True, "estrategia": "swing_express", "posicion_abierta": True}
@@ -682,6 +721,15 @@ def demo() -> None:
                             "posiciones": [{"ticket": 999, "precio_cierre": 1.0, "profit_usd": 0.0}]})
     assert repoNR.cierres["Chist3"]["estado"] == "ejecutado"
     assert repoNR.historial == []
+    # 11. activar() acepta estrategia -- crea/reactiva un robot swing_express; sin ella, preserva la estrategia actual
+    # (no rompe el flujo existente de Estructural/Vela de Medianoche, que nunca manda este parametro)
+    repoA = MemRepo()
+    repoA.activar(20, "XAUUSD", "Swing (S)", True, "swing_express")
+    assert repoA.robots[(20, "XAUUSD", "Swing (S)")]["activo"] is True
+    assert repoA.robots[(20, "XAUUSD", "Swing (S)")]["estrategia"] == "swing_express"
+    repoA.activar(20, "XAUUSD", "Swing (S)", False)   # desactivar sin mandar estrategia: no la borra
+    assert repoA.robots[(20, "XAUUSD", "Swing (S)")]["activo"] is False
+    assert repoA.robots[(20, "XAUUSD", "Swing (S)")]["estrategia"] == "swing_express"
     print("master.despachador.demo() OK")
 
 

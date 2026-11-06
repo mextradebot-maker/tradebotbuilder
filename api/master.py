@@ -7,7 +7,8 @@
           "orden": null | {"orden_id","direccion","entrada","stop","tp","lotes","ref_ts","ref_cierre"}}
        El cuerpo se escribe en el orden y con las llaves que lee el parser minimo del EA ("orden":{...} al final).
   POST /api/v1/master/oportunidad  (servicio) X-MTB-Service-Key  {"simbolo","temporalidad","setups_confirmados":[...],"ref_ts","ref_cierre"}
-  GET/POST /api/v1/master/admin    (admin)    X-Admin-Key: estado | {"accion":"activar|desactivar","licencia_id","simbolo","temporalidad"} | {"accion":"reanudar","cuenta"}
+  GET/POST /api/v1/master/admin    (admin)    X-Admin-Key: estado | {"accion":"activar|desactivar","licencia_id","simbolo","temporalidad","estrategia"} | {"accion":"reanudar","cuenta"}
+       "estrategia" (opcional, solo "activar"): "estructural" (default) | "vela_medianoche" | "swing_express" -- crea/reactiva el robot con esa estrategia; sin ella, preserva la que ya tenia.
 
 El Master solo entrega ordenes si MASTER_ACTIVO=1 en el entorno del servidor (apagado por defecto: los robots siguen con su
 camino de siempre, /api/setups a la vela nueva). Sin el interruptor, el pulso igual registra que el robot esta vivo.
@@ -92,7 +93,9 @@ def procesar_admin(metodo: str, datos: dict, headers: dict, repo=None) -> tuple[
             if accion == "activar" and r.ultima_autorizacion(lic, sim, tf) != "aceptada":
                 return 409, {"error": "sin_autorizacion",
                              "detalle": "El alumno debe aceptar por Telegram antes de activar (pide la autorizacion con accion 'solicitar')."}
-            r.activar(lic, sim, tf, accion == "activar")
+            # estrategia: opcional, p.ej. "swing_express" -- sin ella se preserva la actual (o 'estructural' si es
+            # nueva), asi que el flujo existente de Estructural/Vela de Medianoche no cambia.
+            r.activar(lic, sim, tf, accion == "activar", datos.get("estrategia"))
             return 200, {"ok": True}
         if accion == "reanudar":
             r.reanudar(int(datos["cuenta"]))
