@@ -221,12 +221,15 @@ class MemRepo:
                     r = self.robots.get((lic, c["simbolo"], c["temporalidad"]))
                     if r:
                         r["posicion_abierta"] = False
-                    for p in a.get("posiciones") or []:
-                        self.historial.append({
-                            "licencia_id": lic, "simbolo": c["simbolo"], "temporalidad": c["temporalidad"],
-                            "estrategia": (r or {}).get("estrategia"), "ticket": p.get("ticket"),
-                            "precio_cierre": p.get("precio_cierre"), "profit_usd": p.get("profit_usd"),
-                            "razon_cierre": c["motivo"]})
+                    # sin robot registrado no hay estrategia de referencia: no se agrega fila de historial para
+                    # esa posicion (espejo del null-guard de RepoPg cuando no encuentra la ultima orden 'colocada').
+                    if r:
+                        for p in a.get("posiciones") or []:
+                            self.historial.append({
+                                "licencia_id": lic, "simbolo": c["simbolo"], "temporalidad": c["temporalidad"],
+                                "estrategia": r.get("estrategia"), "ticket": p.get("ticket"),
+                                "precio_cierre": p.get("precio_cierre"), "profit_usd": p.get("profit_usd"),
+                                "razon_cierre": c["motivo"]})
             return
         o = self.ordenes.get(a.get("orden_id"))
         if o and o["licencia_id"] == lic:
@@ -316,6 +319,18 @@ def filtros_autorizaciones(desde=None, hasta=None, usuario=None, nombre=None, ac
     return ("WHERE " + " AND ".join(cond) if cond else ""), p
 
 
+def _filas_historial(lic, sim, tf, motivo, ult, posiciones):
+    """Filas (en orden de columnas de master_historial, sin id/cerrada_en) a insertar para un cierre ejecutado.
+    `ult` es la tupla (estrategia, direccion, lotes) de la ultima orden 'colocada' de esa licencia/simbolo/temporalidad,
+    o None si no se encontro ninguna. Sin ella no hay valor para columnas NOT NULL (estrategia/direccion/lotes):
+    devuelve [] en vez de filas con None, para no violar la restriccion al insertar."""
+    if not ult:
+        return []
+    estrategia, direccion, lotes = ult
+    return [(lic, sim, tf, estrategia, direccion, lotes, p.get("ticket"), p.get("precio_cierre"), p.get("profit_usd"), motivo)
+            for p in posiciones or []]
+
+
 class RepoPg:
     """Postgres (tablas master_* de persistencia/migraciones.py)."""
 
@@ -401,12 +416,10 @@ class RepoPg:
                     ult = c.execute("""SELECT estrategia, direccion, lotes FROM master_ordenes
                                         WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s AND estado = 'colocada'
                                         ORDER BY creada_en DESC LIMIT 1""", (lic, sim, tf)).fetchone()
-                    estrategia, direccion, lotes = ult or (None, None, None)
-                    for p in a.get("posiciones") or []:
+                    for fila in _filas_historial(lic, sim, tf, motivo, ult, a.get("posiciones")):
                         c.execute("""INSERT INTO master_historial
                                       (licencia_id, simbolo, temporalidad, estrategia, direccion, lotes, ticket, precio_cierre, profit_usd, razon_cierre)
-                                      VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                                  (lic, sim, tf, estrategia, direccion, lotes, p.get("ticket"), p.get("precio_cierre"), p.get("profit_usd"), motivo))
+                                      VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", fila)
             return
         estado = "colocada" if a.get("estado") == "colocada" else "rechazada"
         with self._conn() as c:
@@ -657,6 +670,18 @@ def demo() -> None:
     repoH.aplicar_ack(9, {"cierre_id": "Chist2", "estado": "ejecutado",
                           "posiciones": [{"ticket": 1, "precio_cierre": 1.0, "profit_usd": 1.0}, {"ticket": 2, "precio_cierre": 2.0, "profit_usd": 2.0}]})
     assert len(repoH.historial) == 3, repoH.historial
+    # 10. cierre ejecutado sin dato de referencia (RepoPg: sin orden 'colocada'; MemRepo: sin robot registrado) ->
+    # no revienta, no agrega fila de historial para esa posicion, pero el resto del ack (cierre ejecutado) si aplica
+    assert _filas_historial(9, "XAUUSD", "Swing (S)", "m", None, [{"ticket": 1, "precio_cierre": 1.0, "profit_usd": 1.0}]) == []
+    assert _filas_historial(9, "XAUUSD", "Swing (S)", "m", ("estructural", "long", 0.5), [{"ticket": 1, "precio_cierre": 1.0, "profit_usd": 1.0}]) \
+        == [(9, "XAUUSD", "Swing (S)", "estructural", "long", 0.5, 1, 1.0, 1.0, "m")]
+    repoNR = MemRepo()   # licencia 77 nunca tuvo robot registrado (equivalente a "nunca tuvo orden colocada")
+    repoNR.cierres["Chist3"] = {"cierre_id": "Chist3", "licencia_id": 77, "simbolo": "XAUUSD", "temporalidad": "Swing (S)",
+                                 "motivo": "freno", "estado": "pendiente", "expira_en": t0 + timedelta(seconds=300)}
+    repoNR.aplicar_ack(77, {"cierre_id": "Chist3", "estado": "ejecutado",
+                            "posiciones": [{"ticket": 999, "precio_cierre": 1.0, "profit_usd": 0.0}]})
+    assert repoNR.cierres["Chist3"]["estado"] == "ejecutado"
+    assert repoNR.historial == []
     print("master.despachador.demo() OK")
 
 
