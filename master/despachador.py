@@ -110,7 +110,7 @@ def _lotes(est: dict, orden: dict, riesgo_pct: float) -> tuple[float, str]:
 
 
 def _publica(o: dict) -> dict:
-    return {k: o.get(k) for k in ("orden_id", "direccion", "entrada", "stop", "tp", "lotes", "ref_ts", "ref_cierre")}
+    return {k: o.get(k) for k in ("orden_id", "direccion", "entrada", "stop", "tp", "lotes", "ref_ts", "ref_cierre", "estrategia")}
 
 
 def ordenar_cierre(repo, licencia_id: int, simbolo: str, temporalidad: str, motivo: str,
@@ -161,15 +161,18 @@ def pulso(repo, licencia_id: int, cuenta: int, simbolo: str, temporalidad: str, 
         return {"orden": _publica(orden), "cierre": None, "estado": "reentrega", "motivos": []}
 
     base = float(est.get("riesgo_pct") or PCT_MAX)
+    es_swing_express = orden.get("estrategia") == "swing_express"
+    riesgo_pct_compuerta = 0.0 if es_swing_express else min(base, PCT_MAX)
     rr = None
     if orden.get("tp") and orden["entrada"] != orden["stop"]:
         rr = abs(orden["tp"] - orden["entrada"]) / abs(orden["entrada"] - orden["stop"])
-    v = compuerta.evaluar(est, min(base, PCT_MAX), rr, cfg)
+    v = compuerta.evaluar(est, riesgo_pct_compuerta, rr, cfg)
     repo.guardar_cuenta(cuenta, pico, v["halt"] or c.get("halt"))
     if not v["ok"]:
         repo.marcar(orden["orden_id"], "bloqueada", "; ".join(v["motivos"]))
         return {"orden": None, "cierre": None, "estado": "bloqueada", "motivos": v["motivos"]}
-    lotes, motivo = _lotes(est, orden, min(base * v["factor"], PCT_MAX))
+    # ponytail: lote fijo para swing_express (sin SL real que dimensionar); _lotes() para el resto
+    lotes, motivo = (0.01, "") if es_swing_express else _lotes(est, orden, min(base * v["factor"], PCT_MAX))
     if lotes <= 0:
         repo.marcar(orden["orden_id"], "sin_lotes", motivo)
         return {"orden": None, "cierre": None, "estado": "sin_lotes", "motivos": [motivo]}
@@ -406,7 +409,7 @@ class RepoPg:
         with self._conn() as c:
             c.execute("UPDATE master_ordenes SET estado = 'expirada' WHERE estado IN ('pendiente','entregada') AND expira_en <= %s", (ahora,))
 
-    _COLS = "orden_id, estado, direccion, entrada, stop, tp, lotes, ref_ts, ref_cierre, licencia_id"
+    _COLS = "orden_id, estado, direccion, entrada, stop, tp, lotes, ref_ts, ref_cierre, licencia_id, estrategia"
 
     def _dict(self, f):
         return dict(zip(self._COLS.split(", "), f)) if f else None
@@ -605,6 +608,25 @@ def demo() -> None:
     # "sin_definir" nunca hace nada
     r6 = recibir_tendencia_swing_express(repoS, "XAUUSD", "Swing (S)", "sin_definir", 2655.0, t1 + timedelta(minutes=13))
     assert r6 == {"aperturas": 0, "cierres": 0, "robots": 1}, r6
+    # 7. pulso con estrategia swing_express: lote fijo 0.01, sin pasar por _lotes()
+    t7 = datetime(2026, 11, 6, 13, 0, tzinfo=timezone.utc)
+    repoP = MemRepo(activados=[(5, "XAUUSD", "Swing (S)", 555)])
+    repoP.robots[(5, "XAUUSD", "Swing (S)")]["estrategia"] = "swing_express"
+    repoP.crear_orden({"orden_id": "Mswe1", "licencia_id": 5, "cuenta": 555, "simbolo": "XAUUSD", "temporalidad": "Swing (S)",
+                       "direccion": "long", "entrada": 2650.0, "stop": 2650.0, "tp": None, "estrategia": "swing_express",
+                       "clave": "swing_express|1", "ref_ts": None, "ref_cierre": 2650.0, "expira_en": t7 + timedelta(seconds=300)})
+    est7 = {"balance": 10000, "equity": 10000, "pico_equity": 10000, "pnl_hoy": 0, "racha": 0, "riesgo_abierto_pct": 0, "posiciones": 0, "riesgo_pct": 2.0}
+    r7 = pulso(repoP, 5, 555, "XAUUSD", "Swing (S)", est7, ahora=t7)
+    assert r7["estado"] == "entregada" and r7["orden"]["lotes"] == 0.01, r7
+    # con freno duro activo, swing_express SI debe bloquearse (no se salta la compuerta completa)
+    repoP2 = MemRepo(activados=[(6, "XAUUSD", "Swing (S)", 666)])
+    repoP2.robots[(6, "XAUUSD", "Swing (S)")]["estrategia"] = "swing_express"
+    repoP2.crear_orden({"orden_id": "Mswe2", "licencia_id": 6, "cuenta": 666, "simbolo": "XAUUSD", "temporalidad": "Swing (S)",
+                        "direccion": "long", "entrada": 2650.0, "stop": 2650.0, "tp": None, "estrategia": "swing_express",
+                        "clave": "swing_express|2", "ref_ts": None, "ref_cierre": 2650.0, "expira_en": t7 + timedelta(seconds=300)})
+    est_halt = {**est7, "racha": 5}  # 5 perdidas seguidas = freno duro en la compuerta
+    r8 = pulso(repoP2, 6, 666, "XAUUSD", "Swing (S)", est_halt, ahora=t7)
+    assert r8["estado"] == "bloqueada", r8
     print("master.despachador.demo() OK")
 
 
