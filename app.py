@@ -227,23 +227,52 @@ def _segundo_plano(grupo: tuple[int, int] | None = None, solo_refresco: bool = F
     threading.Event().wait()  # los hilos son daemon: el hijo vive mientras ellos trabajan
 
 
+VIGILANCIA_HIJOS_S = 30  # cada cuanto revisa el vigilante si los procesos de fondo siguen vivos
+
+
+def _arrancar(ctx, target, args=(), kwargs=None, name=None) -> dict:
+    kwargs = kwargs or {}
+    proc = ctx.Process(target=target, args=args, kwargs=kwargs, name=name, daemon=True)
+    proc.start()
+    return {"target": target, "args": args, "kwargs": kwargs, "name": name, "proc": proc}
+
+
+def _revisar_hijos(ctx, specs: list[dict]) -> None:
+    """Una pasada: relanza con la misma receta cualquier hijo que ya no este vivo.
+    Antes nadie lo hacia (hallazgo 6 nov 2026: el refresco quedo caido en silencio varios dias
+    tras un solo fallo de conexion a Postgres) — el servidor web seguia respondiendo normal,
+    asi que nada lo delataba salvo revisar los logs a mano."""
+    for spec in specs:
+        if not spec["proc"].is_alive():
+            logging.warning("proceso de fondo '%s' murio (exitcode=%s); relanzando",
+                            spec["name"], spec["proc"].exitcode)
+            spec["proc"] = _arrancar(ctx, spec["target"], spec["args"], spec["kwargs"], spec["name"])["proc"]
+
+
+def _vigilar_hijos(ctx, specs: list[dict]) -> None:
+    while True:
+        time.sleep(VIGILANCIA_HIJOS_S)
+        _revisar_hijos(ctx, specs)
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    # ponytail: si el hijo muere (p. ej. OOM) nadie lo relanza; el sitio sigue y el siguiente deploy lo revive.
     ctx = multiprocessing.get_context("spawn")
     try:
         n = max(1, int(os.environ.get("REFRESCO_PROCESOS", "1")))
     except ValueError:
         n = 1
+    specs = []
     if n == 1 or os.environ.get("REFRESCO_ACTIVO", "1") == "0":
-        ctx.Process(target=_segundo_plano, name="segundo-plano", daemon=True).start()
+        specs.append(_arrancar(ctx, _segundo_plano, name="segundo-plano"))
     else:
         # n procesos de refresco, cada uno con su reparto de activos (el calculo es CPU: los hilos de un solo
         # proceso comparten GIL y solo solapan la espera de red), mas el hijo de carga historica y backtest largo.
         # Necesita CPU >= n en el contenedor.
         for i in range(n):
-            ctx.Process(target=_segundo_plano, args=((i, n), True), name=f"refresco-{i}", daemon=True).start()
-        ctx.Process(target=_segundo_plano, kwargs={"sin_refresco": True}, name="segundo-plano", daemon=True).start()
+            specs.append(_arrancar(ctx, _segundo_plano, args=((i, n), True), name=f"refresco-{i}"))
+        specs.append(_arrancar(ctx, _segundo_plano, kwargs={"sin_refresco": True}, name="segundo-plano"))
+    threading.Thread(target=_vigilar_hijos, args=(ctx, specs), name="vigilante-hijos", daemon=True).start()
     puerto = int(os.environ.get("PORT", 8000))
     logging.info("MexTradeBot escuchando en :%d", puerto)
     ThreadingHTTPServer(("0.0.0.0", puerto), Handler).serve_forever()
@@ -275,7 +304,31 @@ def demo() -> None:
     finally:
         servidor.shutdown()
 
-    print("app.demo() OK — limite por IP y cabeceras de seguridad funcionan")
+    # vigilante de hijos: un proceso "muerto" se relanza con la misma receta (sin multiprocessing real)
+    class _ProcesoFalso:
+        def __init__(self, vivo):
+            self._vivo = vivo
+            self.exitcode = None if vivo else 1
+
+        def is_alive(self):
+            return self._vivo
+
+        def start(self):
+            self._vivo = True
+
+    class _CtxFalso:
+        def Process(self, target, args=(), kwargs=None, name=None, daemon=None):
+            return _ProcesoFalso(vivo=False)  # el relanzado "nace" vivo via start()
+
+    vivo = _ProcesoFalso(vivo=True)
+    muerto = _ProcesoFalso(vivo=False)
+    specs = [{"target": lambda: None, "args": (), "kwargs": {}, "name": "vivo", "proc": vivo},
+             {"target": lambda: None, "args": (), "kwargs": {}, "name": "muerto", "proc": muerto}]
+    _revisar_hijos(_CtxFalso(), specs)
+    assert specs[0]["proc"] is vivo  # no se toca el que seguia vivo
+    assert specs[1]["proc"] is not muerto and specs[1]["proc"].is_alive()  # el muerto se reemplazo por uno vivo
+
+    print("app.demo() OK — limite por IP, cabeceras de seguridad y vigilante de hijos funcionan")
 
 
 if __name__ == "__main__":
