@@ -33,6 +33,13 @@
 //| venta, arriba de cada nuevo maximo mas bajo) de InpTF, si queda   |
 //| mejor que el escalon; nunca baja.                                 |
 //| OJO: backtesting/backtest.py NO simula esta gestion todavia.      |
+//| SWING EXPRESS A MERCADO (v1.23, revision final 6 nov 2026): el     |
+//| modo Master acepta ordenes "estrategia":"swing_express" -- entran |
+//| a mercado (TRADE_ACTION_DEAL), sin SL/TP, sin pasar por el chequeo |
+//| de geometria (entrada==stop a proposito, Swing Express no tiene   |
+//| SL real). CerrarTodoMaster/CountPositions/CountOrdenesPendientes   |
+//| filtran ademas por _Symbol (ver InpEstrategia) para no tocar otra  |
+//| estrategia en otro simbolo con el mismo InpMagicNumber.            |
 //| SWING SIN SL, SIEMPRE (v1.22, principio de Ricardo 30 oct 2026):  |
 //| Swing (S)/(M) no llevan stop loss ni al abrir ni despues -- se     |
 //| retira la escalera/trailing que la v1.17 (regla 5, 2 oct) les      |
@@ -68,7 +75,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.22"
+#property version   "1.23"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -98,6 +105,13 @@ input int    InpVelasExpiracion  = 20;            // Velas que la orden pendient
 input double InpPerdidaMaxPct    = 3.0;           // Cierre forzado: perdida flotante maxima (% del capital)
 input double InpAjusteMaxPct     = 5.0;           // Diferencia maxima broker vs motor (%) -- mas que esto = simbolo equivocado, no opera
 input int    InpMagicNumber      = 20260828;      // Numero magico unico del EA
+// ponytail: InpEstrategia es informativo (no se usa para filtrar); CountPositions/CountOrdenesPendientes/CerrarTodoMaster
+// filtran por magic+_Symbol. Eso aisla instancias en simbolos distintos, pero NO separa Estructural de Swing Express si
+// un alumno corriera ambas en el MISMO simbolo+temporalidad con el mismo InpMagicNumber -- la nomenclatura de licencia
+// (spec 2026-11-06 Sec. 4.6: 1 licencia = 1 bot = 1 simbolo+temporalidad+estrategia) es la que evita ese choque en la
+// practica. Si algun dia dos estrategias coexisten en el mismo simbolo+temporalidad, cada instancia necesitara su propio
+// InpMagicNumber (derivado de la licencia); no se construye ese mecanismo ahora por ser fuera de alcance.
+input string InpEstrategia       = "estructural"; // Estrategia de ESTA instancia (informativo: "estructural" | "vela_medianoche" | "swing_express")
 input string InpComment          = "MTB-SMC";     // Comentario en operaciones
 
 //--- ESTADO INTERNO
@@ -341,7 +355,8 @@ bool CerrarTodoMaster(const string motivo, string &posiciones_json)
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
       ulong ticket = PositionGetTicket(i);
-      if(ticket == 0 || !PositionSelectByTicket(ticket) || PositionGetInteger(POSITION_MAGIC) != InpMagicNumber) continue;
+      if(ticket == 0 || !PositionSelectByTicket(ticket) || PositionGetInteger(POSITION_MAGIC) != InpMagicNumber
+         || PositionGetString(POSITION_SYMBOL) != _Symbol) continue; // + simbolo: ver nota en InpEstrategia
       bool larga = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY;
       // profit neto de la posicion todavia abierta: mismo criterio que DealNeto() para deals ya cerrados
       double profit_usd = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP) + PositionGetDouble(POSITION_COMMISSION);
@@ -381,7 +396,7 @@ void MasterPulso()
 {
    string estado = StringFormat(
       "{\"balance\":%.2f,\"equity\":%.2f,\"pnl_hoy\":%.2f,\"racha\":%d,\"riesgo_abierto_pct\":%.4f,\"posiciones\":%d,\"pendientes\":%d,\"riesgo_pct\":%.4f,"
-      + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f,\"version\":\"1.22\"}",
+      + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f,\"version\":\"1.23\"}",
       CapitalEfectivo(), AccountInfoDouble(ACCOUNT_EQUITY), PnlHoy(), RachaPerdidas(), RiesgoAbiertoPct(), CountPositions(), CountOrdenesPendientes(),
       EsSwingSM() ? InpRiskPercentSwing : InpRiskPercent,
       SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE), SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE),
@@ -433,7 +448,7 @@ void MasterPulso()
 
    int pos = StringFind(cuerpo, "\"orden\":{");
    if(pos < 0) return; // sin orden
-   string orden_id, direccion;
+   string orden_id, direccion, estrategia = "";
    double entrada, stop, tp = 0, lotes, ajuste = 0;
    if(!ExtraerCampoStringDesde(cuerpo, "orden_id", pos, orden_id) || !ExtraerCampoStringDesde(cuerpo, "direccion", pos, direccion)
       || !ExtraerCampoNumeroDesde(cuerpo, "entrada", pos, entrada) || !ExtraerCampoNumeroDesde(cuerpo, "stop", pos, stop)
@@ -443,6 +458,8 @@ void MasterPulso()
       return;
    }
    ExtraerCampoNumeroDesde(cuerpo, "tp", pos, tp); // opcional
+   ExtraerCampoStringDesde(cuerpo, "estrategia", pos, estrategia); // opcional -- "" si el servidor no lo manda (version vieja)
+   bool es_swing_express = (estrategia == "swing_express");
    if(orden_id == g_master_orden_id) return;       // reentrega de una orden que ya procese
    g_master_orden_id = orden_id;
 
@@ -460,6 +477,24 @@ void MasterPulso()
    entrada += ajuste;
    stop    += ajuste;
    if(tp > 0) tp += ajuste;
+   g_ultimo_ticket = 0;
+
+   if(es_swing_express)
+   {
+      // Swing Express manda entrada==stop a proposito (sin SL real, spec Sec. 4.4): no tiene geometria que validar
+      // ni TP que calcular -- entra a mercado, ahora, y sale solo por el cierre que ordena el Master.
+      ENUM_ORDER_TYPE tipo_mercado = (direccion == "long") ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+      if(ColocarOrdenMercado(tipo_mercado, lotes))
+      {
+         g_ultima_entrada_operada = entrada_motor;
+         Print("MASTER: orden ", orden_id, " colocada (swing express, mercado) -- ", direccion, " ", _Symbol, " ", lotes, " lotes");
+         MasterAck(orden_id, "colocada", "");
+      }
+      else
+         MasterAck(orden_id, "rechazada", "el broker rechazo la orden");
+      return;
+   }
+
    double riesgo = MathAbs(entrada - stop);
    if(riesgo <= 0)
    {
@@ -471,7 +506,6 @@ void MasterPulso()
    ENUM_ORDER_TYPE tipo = (direccion == "long") ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_SELL_LIMIT;
    double sl_orden = EsSwingSM() ? 0.0 : stop; // Swing (S)/(M): sin SL en la orden, como en el modo normal
 
-   g_ultimo_ticket = 0;
    if(ColocarOrdenPendiente(tipo, entrada, sl_orden, tp_final, lotes))
    {
       g_ultima_entrada_operada = entrada_motor;
@@ -760,6 +794,40 @@ bool ColocarOrdenPendiente(ENUM_ORDER_TYPE tipo, double precio, double sl, doubl
 }
 
 //+------------------------------------------------------------------+
+//| ORDEN A MERCADO, SIN SL/TP (Swing Express)                         |
+//| Swing Express no tiene stop ni take profit por diseno (spec       |
+//| 2026-11-06 Sec. 4.4): entra ya al precio actual; su unica salida   |
+//| es el cierre que ordena el Master (cambio de tendencia) o el       |
+//| freno -InpPerdidaMaxPct%, igual que cualquier otra posicion.        |
+//+------------------------------------------------------------------+
+bool ColocarOrdenMercado(ENUM_ORDER_TYPE tipo, double lots)
+{
+   MqlTradeRequest request = {};
+   MqlTradeResult  result  = {};
+
+   request.action        = TRADE_ACTION_DEAL;
+   request.symbol        = _Symbol;
+   request.volume        = lots;
+   request.type          = tipo;
+   request.price         = (tipo == ORDER_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   request.sl             = 0.0;
+   request.tp             = 0.0;
+   request.deviation      = 50;
+   request.magic          = InpMagicNumber;
+   request.comment        = InpComment;
+   request.type_filling   = FillingDelSimbolo(_Symbol);
+
+   if(!OrderSend(request, result))
+   {
+      Print("ERROR al colocar orden a mercado (Swing Express): ", GetLastError());
+      return false;
+   }
+   g_ultimo_ticket = (long)result.order;
+   Print("Orden a mercado colocada (Swing Express): ", EnumToString(tipo), " | Precio: ", request.price, " | Lotes: ", lots);
+   return true;
+}
+
+//+------------------------------------------------------------------+
 //| CANCELAR ORDENES PENDIENTES YA VENCIDAS DE ESTE EA                |
 //| (por si el broker no expira automaticamente la orden)             |
 //+------------------------------------------------------------------+
@@ -803,7 +871,7 @@ void CancelarOrdenesPendientes(bool solo_vencidas)
    {
       ulong ticket = OrderGetTicket(i);
       if(!OrderSelect(ticket)) continue;
-      if(OrderGetInteger(ORDER_MAGIC) != InpMagicNumber) continue;
+      if(OrderGetInteger(ORDER_MAGIC) != InpMagicNumber || OrderGetString(ORDER_SYMBOL) != _Symbol) continue; // + simbolo: ver nota en InpEstrategia
       datetime expiracion = (datetime)OrderGetInteger(ORDER_TIME_EXPIRATION);
       if(!solo_vencidas || (expiracion > 0 && TimeCurrent() >= expiracion))
       {
@@ -975,7 +1043,8 @@ int CountPositions()
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
       ulong ticket = PositionGetTicket(i);
-      if(ticket > 0 && PositionSelectByTicket(ticket) && PositionGetInteger(POSITION_MAGIC) == InpMagicNumber)
+      if(ticket > 0 && PositionSelectByTicket(ticket) && PositionGetInteger(POSITION_MAGIC) == InpMagicNumber
+         && PositionGetString(POSITION_SYMBOL) == _Symbol) // + simbolo: ver nota en InpEstrategia
          count++;
    }
    return count;
@@ -987,7 +1056,8 @@ int CountOrdenesPendientes()
    for(int i = OrdersTotal() - 1; i >= 0; i--)
    {
       ulong ticket = OrderGetTicket(i);
-      if(ticket > 0 && OrderSelect(ticket) && OrderGetInteger(ORDER_MAGIC) == InpMagicNumber)
+      if(ticket > 0 && OrderSelect(ticket) && OrderGetInteger(ORDER_MAGIC) == InpMagicNumber
+         && OrderGetString(ORDER_SYMBOL) == _Symbol) // + simbolo: ver nota en InpEstrategia
          count++;
    }
    return count;
