@@ -179,10 +179,12 @@ def _avisar_master(simbolo: str, temporalidad: str, body: dict) -> None:
     """Receptor de oportunidades del Master Trader: cada refresco que trae un setup confirmado se lo pasa al despachador
     (master/despachador.py). Nunca propaga un fallo: el analisis sigue aunque el Master no responda."""
     try:
-        from master.despachador import RepoPg, recibir_oportunidades, vigentes
+        from master.despachador import RepoPg, recibir_oportunidades, recibir_tendencia_swing_express, vigentes
         confirmados = vigentes(body.get("setups_confirmados") or [], body.get("velas"), body.get("ref_cierre"))
         if confirmados:
             recibir_oportunidades(RepoPg(), simbolo, temporalidad, confirmados, body.get("ref_ts"), body.get("ref_cierre"))
+        if temporalidad in ("Swing (S)", "Swing (M)"):
+            recibir_tendencia_swing_express(RepoPg(), simbolo, temporalidad, body.get("tendencia_actual"), body.get("ref_cierre"))
     except Exception as e:
         print(f"[master] oportunidad {simbolo} {temporalidad} no despachada: {type(e).__name__}: {e}", flush=True)
 
