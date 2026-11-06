@@ -449,6 +449,38 @@ _SQL = [
     """
     DELETE FROM smc_snapshot WHERE temporalidad IN ('Scalping', 'Intraday', 'Swing (H)', 'Swing', '')
     """,
+
+    # ── Swing express: estrategia en Master Trader y tabla master_historial ──
+    # estrategia por robot y por orden ('estructural' por defecto para lo ya existente); posicion_abierta la mantiene el Master
+    # master_historial: una fila por operacion cerrada del Master (reportes y auditoria)
+    """
+    ALTER TABLE master_robots ADD COLUMN IF NOT EXISTS estrategia text NOT NULL DEFAULT 'estructural',
+        ADD COLUMN IF NOT EXISTS posicion_abierta boolean NOT NULL DEFAULT false
+    """,
+    """
+    ALTER TABLE master_ordenes ADD COLUMN IF NOT EXISTS estrategia text NOT NULL DEFAULT 'estructural'
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS master_historial (
+        id             bigserial   PRIMARY KEY,
+        licencia_id    bigint      NOT NULL REFERENCES licencias(id) ON DELETE CASCADE,
+        simbolo        text        NOT NULL,
+        temporalidad   text        NOT NULL,
+        estrategia     text        NOT NULL,
+        direccion      text        NOT NULL,
+        lotes          double precision NOT NULL,
+        ticket         bigint,
+        precio_entrada double precision,
+        precio_cierre  double precision,
+        profit_usd     double precision,
+        razon_cierre   text,
+        abierta_en     timestamptz,
+        cerrada_en     timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_master_historial_licencia ON master_historial (licencia_id, cerrada_en DESC)
+    """,
 ]
 
 # 34 simbolos × 7 temporalidades = 238 pares (Scalping 30m inactiva)
