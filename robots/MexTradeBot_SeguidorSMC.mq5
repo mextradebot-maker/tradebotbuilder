@@ -326,21 +326,25 @@ void MasterAck(const string orden_id, const string estado, const string motivo)
                                orden_id, estado, g_ultimo_ticket, motivo);
 }
 
-void MasterAckCierre(const string cierre_id, const string estado)
+void MasterAckCierre(const string cierre_id, const string estado, const string posiciones_json)
 {
-   g_master_ack = StringFormat("{\"cierre_id\":\"%s\",\"estado\":\"%s\"}", cierre_id, estado);
+   g_master_ack = StringFormat("{\"cierre_id\":\"%s\",\"estado\":\"%s\",\"posiciones\":[%s]}", cierre_id, estado, posiciones_json);
 }
 
 // El Master pide salir: cierra a mercado las posiciones de ESTE EA y cancela sus ordenes pendientes.
 // Salir nunca se bloquea. true = no quedo nada abierto de este EA.
-bool CerrarTodoMaster(const string motivo)
+// posiciones_json (salida): un objeto {"ticket":...,"precio_cierre":...,"profit_usd":...} por cada posicion cerrada, separados por coma ("" si no cerro ninguna).
+bool CerrarTodoMaster(const string motivo, string &posiciones_json)
 {
    Print("MASTER: cierre ordenado -- ", motivo);
+   posiciones_json = "";
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
       ulong ticket = PositionGetTicket(i);
       if(ticket == 0 || !PositionSelectByTicket(ticket) || PositionGetInteger(POSITION_MAGIC) != InpMagicNumber) continue;
       bool larga = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY;
+      // profit neto de la posicion todavia abierta: mismo criterio que DealNeto() para deals ya cerrados
+      double profit_usd = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP) + PositionGetDouble(POSITION_COMMISSION);
       MqlTradeRequest request = {};
       MqlTradeResult  result  = {};
       request.action    = TRADE_ACTION_DEAL;
@@ -354,7 +358,11 @@ bool CerrarTodoMaster(const string motivo)
       request.comment   = "MTB-master-cierre";
       request.type_filling = FillingDelSimbolo(request.symbol);
       if(OrderSend(request, result))
+      {
          Print("MASTER: posicion ", ticket, " cerrada");
+         if(StringLen(posiciones_json) > 0) posiciones_json += ",";
+         posiciones_json += StringFormat("{\"ticket\":%I64d,\"precio_cierre\":%.5f,\"profit_usd\":%.2f}", ticket, request.price, profit_usd);
+      }
       else
          Print("MASTER: ERROR cerrando ", ticket, ": ", GetLastError(), " retcode ", result.retcode);
    }
@@ -416,7 +424,9 @@ void MasterPulso()
       {
          ExtraerCampoStringDesde(cuerpo, "motivo", pc, motivo_cierre);
          g_master_cierre_id = cierre_id;
-         MasterAckCierre(cierre_id, CerrarTodoMaster(motivo_cierre) ? "ejecutado" : "fallido");
+         string posiciones_json;
+         bool cierre_ok = CerrarTodoMaster(motivo_cierre, posiciones_json);
+         MasterAckCierre(cierre_id, cierre_ok ? "ejecutado" : "fallido", posiciones_json);
       }
       return; // un cierre tiene prioridad sobre cualquier orden
    }

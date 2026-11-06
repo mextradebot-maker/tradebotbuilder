@@ -185,7 +185,7 @@ class MemRepo:
     """Repo en memoria: pruebas y demo."""
 
     def __init__(self, activados=()):
-        self.robots, self.ordenes, self.cuentas, self.cierres = {}, {}, {}, {}
+        self.robots, self.ordenes, self.cuentas, self.cierres, self.historial = {}, {}, {}, {}, []
         for lic, sim, tf, cuenta in activados:
             self.robots[(lic, sim, tf)] = {"licencia_id": lic, "cuenta": cuenta, "activo": True, "visto_en": None}
 
@@ -217,11 +217,16 @@ class MemRepo:
             c = self.cierres.get(a["cierre_id"])
             if c and c["licencia_id"] == lic:
                 c["estado"] = "ejecutado" if a.get("estado") == "ejecutado" else "fallido"
-                # ponytail: solo el toggle minimo para swing_express; historial completo de posiciones es Task 6
                 if c["estado"] == "ejecutado":
                     r = self.robots.get((lic, c["simbolo"], c["temporalidad"]))
                     if r:
                         r["posicion_abierta"] = False
+                    for p in a.get("posiciones") or []:
+                        self.historial.append({
+                            "licencia_id": lic, "simbolo": c["simbolo"], "temporalidad": c["temporalidad"],
+                            "estrategia": (r or {}).get("estrategia"), "ticket": p.get("ticket"),
+                            "precio_cierre": p.get("precio_cierre"), "profit_usd": p.get("profit_usd"),
+                            "razon_cierre": c["motivo"]})
             return
         o = self.ordenes.get(a.get("orden_id"))
         if o and o["licencia_id"] == lic:
@@ -388,11 +393,20 @@ class RepoPg:
             estado_c = "ejecutado" if a.get("estado") == "ejecutado" else "fallido"
             with self._conn() as c:
                 f = c.execute("""UPDATE master_cierres SET estado = %s WHERE cierre_id = %s AND licencia_id = %s
-                                  RETURNING simbolo, temporalidad""", (estado_c, a["cierre_id"], lic)).fetchone()
-                # ponytail: solo el toggle minimo para swing_express; historial completo de posiciones es Task 6
+                                  RETURNING simbolo, temporalidad, motivo""", (estado_c, a["cierre_id"], lic)).fetchone()
                 if f and estado_c == "ejecutado":
+                    sim, tf, motivo = f
                     c.execute("UPDATE master_robots SET posicion_abierta = false WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s",
-                              (lic, f[0], f[1]))
+                              (lic, sim, tf))
+                    ult = c.execute("""SELECT estrategia, direccion, lotes FROM master_ordenes
+                                        WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s AND estado = 'colocada'
+                                        ORDER BY creada_en DESC LIMIT 1""", (lic, sim, tf)).fetchone()
+                    estrategia, direccion, lotes = ult or (None, None, None)
+                    for p in a.get("posiciones") or []:
+                        c.execute("""INSERT INTO master_historial
+                                      (licencia_id, simbolo, temporalidad, estrategia, direccion, lotes, ticket, precio_cierre, profit_usd, razon_cierre)
+                                      VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                                  (lic, sim, tf, estrategia, direccion, lotes, p.get("ticket"), p.get("precio_cierre"), p.get("profit_usd"), motivo))
             return
         estado = "colocada" if a.get("estado") == "colocada" else "rechazada"
         with self._conn() as c:
@@ -627,6 +641,22 @@ def demo() -> None:
     est_halt = {**est7, "racha": 5}  # 5 perdidas seguidas = freno duro en la compuerta
     r8 = pulso(repoP2, 6, 666, "XAUUSD", "Swing (S)", est_halt, ahora=t7)
     assert r8["estado"] == "bloqueada", r8
+    # 9. ack de cierre con posiciones -> alimenta master_historial y cierra posicion_abierta
+    repoH = MemRepo()
+    repoH.robots[(9, "XAUUSD", "Swing (S)")] = {"licencia_id": 9, "cuenta": 999, "activo": True, "estrategia": "swing_express", "posicion_abierta": True}
+    repoH.cierres["Chist1"] = {"cierre_id": "Chist1", "licencia_id": 9, "simbolo": "XAUUSD", "temporalidad": "Swing (S)", "motivo": "tendencia cambio", "estado": "pendiente", "expira_en": t0 + timedelta(seconds=300)}
+    repoH.aplicar_ack(9, {"cierre_id": "Chist1", "estado": "ejecutado",
+                          "posiciones": [{"ticket": 555001, "precio_cierre": 2639.5, "profit_usd": -12.3}]})
+    assert repoH.cierres["Chist1"]["estado"] == "ejecutado"
+    assert repoH.robots[(9, "XAUUSD", "Swing (S)")]["posicion_abierta"] is False
+    fila = repoH.historial[-1]
+    assert fila["licencia_id"] == 9 and fila["ticket"] == 555001 and fila["profit_usd"] == -12.3, fila
+    # un cierre con 2 posiciones en la misma lista inserta 2 filas
+    repoH.cierres["Chist2"] = {"cierre_id": "Chist2", "licencia_id": 9, "simbolo": "XAUUSD", "temporalidad": "Swing (S)", "motivo": "freno", "estado": "pendiente", "expira_en": t0 + timedelta(seconds=300)}
+    repoH.robots[(9, "XAUUSD", "Swing (S)")]["posicion_abierta"] = True
+    repoH.aplicar_ack(9, {"cierre_id": "Chist2", "estado": "ejecutado",
+                          "posiciones": [{"ticket": 1, "precio_cierre": 1.0, "profit_usd": 1.0}, {"ticket": 2, "precio_cierre": 2.0, "profit_usd": 2.0}]})
+    assert len(repoH.historial) == 3, repoH.historial
     print("master.despachador.demo() OK")
 
 
