@@ -63,6 +63,18 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=PUBLICO, **kwargs)
 
+    def end_headers(self) -> None:
+        # Un solo punto para TODA respuesta (estaticos, API, descargas, HTML): send_response/send_header/
+        # end_headers es el flujo que usan por igual SimpleHTTPRequestHandler y los _responder* de arriba.
+        # Cabeceras que faltaban (auditoria de seguridad, 6 nov 2026). Sin CSP: el sitio usa scripts inline
+        # y CDNs (Tailwind, Google Fonts) y retocar eso a ciegas puede romper paginas; no se pidio en la auditoria.
+        self.send_header("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        super().end_headers()
+
     def _ruta(self) -> str:
         return urlsplit(self.path).path
 
@@ -247,7 +259,23 @@ def demo() -> None:
     assert _excedido("otra.ip", t0, limite=30, ventana=10) is False  # otra IP no comparte el cupo
     assert _excedido(ip, t0 + 11, limite=30, ventana=10) is False  # pasada la ventana, vuelve a dejar pasar
     _rate_marcas.clear()
-    print("app.demo() OK — limite por IP funciona")
+
+    # cabeceras de seguridad: servidor local real, una peticion de verdad
+    import urllib.request
+
+    servidor = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    hilo = threading.Thread(target=servidor.serve_forever, daemon=True)
+    hilo.start()
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{servidor.server_port}/salud") as r:
+            for cab, esperado in [("Strict-Transport-Security", "max-age"), ("X-Content-Type-Options", "nosniff"),
+                                   ("X-Frame-Options", "DENY"), ("Referrer-Policy", "strict-origin"),
+                                   ("Permissions-Policy", "camera=()")]:
+                assert esperado in r.headers.get(cab, ""), f"falta {cab} en la respuesta"
+    finally:
+        servidor.shutdown()
+
+    print("app.demo() OK — limite por IP y cabeceras de seguridad funcionan")
 
 
 if __name__ == "__main__":
