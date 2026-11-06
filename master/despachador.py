@@ -69,6 +69,36 @@ def recibir_oportunidades(repo, simbolo: str, temporalidad: str, confirmados: li
     return {"ordenes": nuevas, "robots": len(robots)}
 
 
+def recibir_tendencia_swing_express(repo, simbolo: str, temporalidad: str, direccion: str,
+                                     ref_cierre: float | None, ahora: datetime | None = None) -> dict:
+    """Swing Express no usa setups del motor SMC: abre/cierra segun la tendencia que manda refresco.py.
+    'compra' abre (si no hay ya posicion o algo en vuelo); 'venta' cierra (si hay posicion); cualquier otro valor no hace nada."""
+    ahora = ahora or _ahora()
+    if ref_cierre is None:
+        return {"aperturas": 0, "cierres": 0, "robots": 0}
+    robots = repo.robots_swing_express(simbolo, temporalidad)
+    aperturas = cierres = 0
+    for r in robots:
+        if direccion == "compra":
+            if r["posicion_abierta"] or repo.orden_para_entregar(r["licencia_id"], simbolo, temporalidad, ahora) is not None:
+                continue
+            if repo.crear_orden({
+                    "orden_id": "M" + uuid.uuid4().hex[:14], "licencia_id": r["licencia_id"], "cuenta": r.get("cuenta"),
+                    "simbolo": simbolo, "temporalidad": temporalidad, "direccion": "long",
+                    "entrada": float(ref_cierre), "stop": float(ref_cierre), "tp": None, "estrategia": "swing_express",
+                    "clave": f"swing_express|{int(ahora.timestamp())}", "ref_ts": None, "ref_cierre": ref_cierre,
+                    "expira_en": ahora + timedelta(seconds=TTL_ORDEN_S)}):
+                aperturas += 1
+        elif direccion == "venta":
+            if not r["posicion_abierta"]:
+                continue
+            if ordenar_cierre(repo, r["licencia_id"], simbolo, temporalidad,
+                               "Swing Express: tendencia cambió a venta", ahora) is not None:
+                cierres += 1
+        # cualquier otro valor de direccion ("sin_definir", etc.): no-op, el robot se cuenta pero no se toca
+    return {"aperturas": aperturas, "cierres": cierres, "robots": len(robots)}
+
+
 def _lotes(est: dict, orden: dict, riesgo_pct: float) -> tuple[float, str]:
     from conectividad.riesgo import dimensionar, tope_riesgo
     costo = abs(orden["entrada"] - orden["stop"]) / float(est["tick_size"]) * float(est["tick_value"])
@@ -168,7 +198,8 @@ class MemRepo:
     def crear_orden(self, o):
         if any(x["licencia_id"] == o["licencia_id"] and x["clave"] == o["clave"] for x in self.ordenes.values()):
             return False
-        self.ordenes[o["orden_id"]] = {**o, "estado": "pendiente", "lotes": None, "motivo": None, "ticket": None}
+        self.ordenes[o["orden_id"]] = {**o, "estrategia": o.get("estrategia") or "estructural",
+                                        "estado": "pendiente", "lotes": None, "motivo": None, "ticket": None}
         return True
 
     def upsert_robot(self, lic, sim, tf, cuenta, est, ahora):
@@ -183,11 +214,21 @@ class MemRepo:
             c = self.cierres.get(a["cierre_id"])
             if c and c["licencia_id"] == lic:
                 c["estado"] = "ejecutado" if a.get("estado") == "ejecutado" else "fallido"
+                # ponytail: solo el toggle minimo para swing_express; historial completo de posiciones es Task 6
+                if c["estado"] == "ejecutado":
+                    r = self.robots.get((lic, c["simbolo"], c["temporalidad"]))
+                    if r:
+                        r["posicion_abierta"] = False
             return
         o = self.ordenes.get(a.get("orden_id"))
         if o and o["licencia_id"] == lic:
             o["estado"] = "colocada" if a.get("estado") == "colocada" else "rechazada"
             o["ticket"], o["motivo"] = a.get("ticket"), a.get("motivo")
+            # ponytail: abrir posicion_abierta en el ack de apertura; Task 6 cierra el ciclo poniendola en False al cerrar
+            if o["estado"] == "colocada" and o.get("estrategia") == "swing_express":
+                r = self.robots.get((lic, o["simbolo"], o["temporalidad"]))
+                if r:
+                    r["posicion_abierta"] = True
 
     def crear_cierre(self, c):
         if any(x["licencia_id"] == c["licencia_id"] and x["simbolo"] == c["simbolo"] and x["temporalidad"] == c["temporalidad"]
@@ -293,12 +334,13 @@ class RepoPg:
         return [{"licencia_id": f[0], "cuenta": f[1], "posicion_abierta": f[2]} for f in filas]
 
     def crear_orden(self, o):
+        o = {**o, "estrategia": o.get("estrategia") or "estructural"}
         with self._conn() as c:
             n = c.execute(
                 """INSERT INTO master_ordenes (orden_id, licencia_id, cuenta, simbolo, temporalidad, direccion, entrada, stop, tp,
-                       clave, ref_ts, ref_cierre, expira_en)
+                       estrategia, clave, ref_ts, ref_cierre, expira_en)
                    VALUES (%(orden_id)s, %(licencia_id)s, %(cuenta)s, %(simbolo)s, %(temporalidad)s, %(direccion)s, %(entrada)s,
-                       %(stop)s, %(tp)s, %(clave)s, %(ref_ts)s, %(ref_cierre)s, %(expira_en)s)
+                       %(stop)s, %(tp)s, %(estrategia)s, %(clave)s, %(ref_ts)s, %(ref_cierre)s, %(expira_en)s)
                    ON CONFLICT (licencia_id, clave) DO NOTHING""", o).rowcount
         return n == 1
 
@@ -340,15 +382,25 @@ class RepoPg:
 
     def aplicar_ack(self, lic, a):
         if a.get("cierre_id"):
+            estado_c = "ejecutado" if a.get("estado") == "ejecutado" else "fallido"
             with self._conn() as c:
-                c.execute("UPDATE master_cierres SET estado = %s WHERE cierre_id = %s AND licencia_id = %s",
-                          ("ejecutado" if a.get("estado") == "ejecutado" else "fallido", a["cierre_id"], lic))
+                f = c.execute("""UPDATE master_cierres SET estado = %s WHERE cierre_id = %s AND licencia_id = %s
+                                  RETURNING simbolo, temporalidad""", (estado_c, a["cierre_id"], lic)).fetchone()
+                # ponytail: solo el toggle minimo para swing_express; historial completo de posiciones es Task 6
+                if f and estado_c == "ejecutado":
+                    c.execute("UPDATE master_robots SET posicion_abierta = false WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s",
+                              (lic, f[0], f[1]))
             return
+        estado = "colocada" if a.get("estado") == "colocada" else "rechazada"
         with self._conn() as c:
-            c.execute("""UPDATE master_ordenes SET estado = %s, ticket = %s, motivo = %s
-                         WHERE orden_id = %s AND licencia_id = %s""",
-                      ("colocada" if a.get("estado") == "colocada" else "rechazada", a.get("ticket"),
-                       (a.get("motivo") or None), a.get("orden_id"), lic))
+            f = c.execute("""UPDATE master_ordenes SET estado = %s, ticket = %s, motivo = %s
+                              WHERE orden_id = %s AND licencia_id = %s
+                              RETURNING simbolo, temporalidad, estrategia""",
+                          (estado, a.get("ticket"), (a.get("motivo") or None), a.get("orden_id"), lic)).fetchone()
+            # ponytail: abrir posicion_abierta en el ack de apertura; Task 6 cierra el ciclo poniendola en False al cerrar
+            if f and estado == "colocada" and f[2] == "swing_express":
+                c.execute("UPDATE master_robots SET posicion_abierta = true WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s",
+                          (lic, f[0], f[1]))
 
     def expirar(self, ahora):
         with self._conn() as c:
@@ -524,6 +576,35 @@ def demo() -> None:
     repoX.robots[(2, "EURUSD", "Scalping 15m")] = {"licencia_id": 2, "cuenta": 222, "activo": True, "estrategia": "swing_express"}
     assert [r["licencia_id"] for r in repoX.robots_activados("EURUSD", "Scalping 15m")] == [1], "swing_express no debe salir aqui"
     assert [r["licencia_id"] for r in repoX.robots_swing_express("EURUSD", "Scalping 15m")] == [2]
+    # 13. recibir_tendencia_swing_express: abre en "compra", cierra en "venta", nunca duplica, re-entra tras ciclo completo
+    t1 = datetime(2026, 11, 6, 12, 0, tzinfo=timezone.utc)
+    repoS = MemRepo()
+    repoS.robots[(9, "XAUUSD", "Swing (S)")] = {"licencia_id": 9, "cuenta": 999, "activo": True, "estrategia": "swing_express", "posicion_abierta": False}
+    # compra sin posicion abierta -> crea 1 orden
+    r1 = recibir_tendencia_swing_express(repoS, "XAUUSD", "Swing (S)", "compra", 2650.0, t1)
+    assert r1 == {"aperturas": 1, "cierres": 0, "robots": 1}, r1
+    orden = next(o for o in repoS.ordenes.values() if o["licencia_id"] == 9)
+    assert orden["estrategia"] == "swing_express" and orden["direccion"] == "long" and orden["entrada"] == orden["stop"] == 2650.0
+    # compra otra vez, misma posicion todavia no marcada abierta -> no debe duplicar
+    r2 = recibir_tendencia_swing_express(repoS, "XAUUSD", "Swing (S)", "compra", 2651.0, t1 + timedelta(seconds=5))
+    assert r2 == {"aperturas": 0, "cierres": 0, "robots": 1}, r2
+    # el robot "coloca" la orden (ack) y queda con posicion abierta
+    repoS.aplicar_ack(9, {"orden_id": orden["orden_id"], "estado": "colocada", "ticket": 777})
+    assert repoS.robots[(9, "XAUUSD", "Swing (S)")]["posicion_abierta"] is True
+    # venta con posicion abierta -> ordena cierre, nunca abre
+    r3 = recibir_tendencia_swing_express(repoS, "XAUUSD", "Swing (S)", "venta", 2640.0, t1 + timedelta(minutes=10))
+    assert r3 == {"aperturas": 0, "cierres": 1, "robots": 1}, r3
+    # venta de nuevo, sin posicion -> no-op (CerrarTodoMaster ya cerro, posicion_abierta ya en False tras el ack del cierre)
+    repoS.aplicar_ack(9, {"cierre_id": next(iter(repoS.cierres)), "estado": "ejecutado"})
+    assert repoS.robots[(9, "XAUUSD", "Swing (S)")]["posicion_abierta"] is False
+    r4 = recibir_tendencia_swing_express(repoS, "XAUUSD", "Swing (S)", "venta", 2639.0, t1 + timedelta(minutes=11))
+    assert r4 == {"aperturas": 0, "cierres": 0, "robots": 1}, r4
+    # re-entrada: compra de nuevo tras el ciclo completo -> SI debe poder abrir otra vez (clave distinta)
+    r5 = recibir_tendencia_swing_express(repoS, "XAUUSD", "Swing (S)", "compra", 2655.0, t1 + timedelta(minutes=12))
+    assert r5 == {"aperturas": 1, "cierres": 0, "robots": 1}, r5
+    # "sin_definir" nunca hace nada
+    r6 = recibir_tendencia_swing_express(repoS, "XAUUSD", "Swing (S)", "sin_definir", 2655.0, t1 + timedelta(minutes=13))
+    assert r6 == {"aperturas": 0, "cierres": 0, "robots": 1}, r6
     print("master.despachador.demo() OK")
 
 
