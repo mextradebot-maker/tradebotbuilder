@@ -20,6 +20,7 @@ import multiprocessing
 import os
 import sys
 import threading
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
@@ -30,6 +31,28 @@ N8N = urlsplit(os.environ.get("N8N_URL", "https://chatbotventas-n8n.h0w0dc.easyp
 RUTAS_N8N = {"/alumnos": "/webhook/panel-alumnos"}
 RUTAS_PANEL = {"/alumnos", "/webhook/panel-alumnos"}  # GET: la página la arma mtb-api; POST (registro) sigue a n8n
 _SIN_REENVIO = {"host", "connection", "keep-alive", "transfer-encoding", "content-length", "accept-encoding"}
+
+# Limite por IP para /api/* sin autenticar (analizar, tendencia, backtest, setups, catalogo...): sin esto
+# cualquiera podia automatizar llamadas sin freno (hallazgo de la auditoria de seguridad, 6 nov 2026).
+# Una peticion ya autenticada (cookie de alumno, Authorization del robot, o las X-* de servicio/admin/Hotmart)
+# no cuenta — ese llamador ya esta identificado y su propio endpoint decide si lo deja pasar.
+_RATE_LIMITE = int(os.environ.get("MTB_API_RATE_LIMIT", "30"))  # peticiones
+_RATE_VENTANA = int(os.environ.get("MTB_API_RATE_WINDOW", "10"))  # segundos
+_rate_lock = threading.Lock()
+_rate_marcas: dict[str, list[float]] = {}
+_CABECERAS_AUTH = ("authorization", "x-mtb-service-key", "x-admin-key", "x-hotmart-hottok", "cookie")
+
+
+def _excedido(ip: str, ahora: float, limite: int = _RATE_LIMITE, ventana: int = _RATE_VENTANA) -> bool:
+    """Ventana deslizante por IP, en memoria. Logica pura (sin tocar la peticion HTTP) para poder
+    probarla sin levantar un servidor; _limite_api la envuelve con la IP y el reloj reales."""
+    with _rate_lock:
+        marcas = [t for t in _rate_marcas.get(ip, ()) if ahora - t < ventana]
+        excedido = len(marcas) >= limite
+        if not excedido:
+            marcas.append(ahora)
+        _rate_marcas[ip] = marcas
+    return excedido
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -47,9 +70,31 @@ class Handler(SimpleHTTPRequestHandler):
         r = self._ruta().rstrip("/")
         return r in RUTAS_N8N or r.startswith("/webhook/")
 
+    def _ip(self) -> str:
+        return (self.headers.get("CF-Connecting-IP") or self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                or self.client_address[0])
+
+    def _limite_api(self) -> bool:
+        """True si hay que frenar esta peticion a /api/* (429). Deja pasar sin contar a quien ya trae
+        una cabecera de autenticacion; cada endpoint protegido sigue validandola por su cuenta."""
+        if any(self.headers.get(h) for h in _CABECERAS_AUTH):
+            return False
+        return _excedido(self._ip(), time.monotonic())
+
+    def _responder_limite(self) -> None:
+        cuerpo = json.dumps({"error": "demasiadas peticiones, intenta de nuevo en unos segundos"}).encode()
+        self.send_response(429)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Retry-After", str(_RATE_VENTANA))
+        self.send_header("Content-Length", str(len(cuerpo)))
+        self.end_headers()
+        self.wfile.write(cuerpo)
+
     def do_GET(self):
         ruta = self._ruta()
         if ruta.startswith("/api/"):
+            if self._limite_api():
+                return self._responder_limite()
             return ApiHandler.do_GET(self)
         if ruta.rstrip("/") == "/restablecer":  # enlace del correo de recuperacion de contrasena
             self.path = "/restablecer.html" + (f"?{urlsplit(self.path).query}" if urlsplit(self.path).query else "")
@@ -87,14 +132,14 @@ class Handler(SimpleHTTPRequestHandler):
             return self._auth(datos if isinstance(datos, dict) else {})
         if self._es_n8n():
             return self._a_n8n("POST")
+        if self._ruta().startswith("/api/") and self._limite_api():
+            return self._responder_limite()
         return ApiHandler.do_POST(self)
 
     def _auth(self, datos: dict) -> None:
         from api import auth_alumnos
 
-        ip = (self.headers.get("CF-Connecting-IP") or self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-              or self.client_address[0])
-        status, destino, cookie = auth_alumnos.procesar(self._ruta(), datos, ip)
+        status, destino, cookie = auth_alumnos.procesar(self._ruta(), datos, self._ip())
         self.send_response(status)
         self.send_header("Location", destino)
         if cookie:
@@ -190,6 +235,19 @@ def main() -> None:
     puerto = int(os.environ.get("PORT", 8000))
     logging.info("MexTradeBot escuchando en :%d", puerto)
     ThreadingHTTPServer(("0.0.0.0", puerto), Handler).serve_forever()
+
+
+def demo() -> None:
+    """Self-check del limite por IP (sin levantar servidor): python -c "import app; app.demo()" """
+    _rate_marcas.clear()
+    ip, t0 = "1.2.3.4", 1000.0
+    for _ in range(30):  # hasta el limite: pasa
+        assert _excedido(ip, t0, limite=30, ventana=10) is False
+    assert _excedido(ip, t0, limite=30, ventana=10) is True  # peticion 31: se frena
+    assert _excedido("otra.ip", t0, limite=30, ventana=10) is False  # otra IP no comparte el cupo
+    assert _excedido(ip, t0 + 11, limite=30, ventana=10) is False  # pasada la ventana, vuelve a dejar pasar
+    _rate_marcas.clear()
+    print("app.demo() OK — limite por IP funciona")
 
 
 if __name__ == "__main__":
