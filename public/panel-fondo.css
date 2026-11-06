@@ -9,6 +9,8 @@ html[data-theme=day] #fondo-img::after{background:linear-gradient(180deg,rgba(23
 #app,#wizard{position:relative;z-index:1}
 /* el pie de /legal.js no tiene posicion: sin esto el fondo fijo (z-index 0) lo tapa */
 .mtb-legal-footer{position:relative;z-index:1}
+/* franja extra al final del pie: el copyright queda por encima del boton fijo "Fondo 3D" (44px + 16px) */
+body .mtb-legal-footer{padding-bottom:84px}
 #wizard>div{background:color-mix(in srgb,var(--mt-panel) 66%,transparent);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3)}
 #wizard aside{background:color-mix(in srgb,var(--mt-aside) 72%,transparent)}
 #wizard aside+div>div:last-child{background:color-mix(in srgb,var(--mt-bg) 38%,transparent)}
