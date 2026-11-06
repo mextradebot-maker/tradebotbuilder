@@ -157,7 +157,13 @@ class MemRepo:
             self.robots[(lic, sim, tf)] = {"licencia_id": lic, "cuenta": cuenta, "activo": True, "visto_en": None}
 
     def robots_activados(self, simbolo, tf):
-        return [r for (_, s, t), r in self.robots.items() if s == simbolo and t == tf and r["activo"]]
+        return [r for (_, s, t), r in self.robots.items()
+                if s == simbolo and t == tf and r["activo"] and r.get("estrategia", "estructural") != "swing_express"]
+
+    def robots_swing_express(self, simbolo, tf):
+        return [{"licencia_id": r["licencia_id"], "cuenta": r["cuenta"], "posicion_abierta": r.get("posicion_abierta", False)}
+                for (_, s, t), r in self.robots.items()
+                if s == simbolo and t == tf and r["activo"] and r.get("estrategia", "estructural") == "swing_express"]
 
     def crear_orden(self, o):
         if any(x["licencia_id"] == o["licencia_id"] and x["clave"] == o["clave"] for x in self.ordenes.values()):
@@ -273,8 +279,18 @@ class RepoPg:
             filas = c.execute(
                 """SELECT m.licencia_id, l.cuenta FROM master_robots m JOIN licencias l ON l.id = m.licencia_id
                    WHERE m.simbolo = %s AND m.temporalidad = %s AND m.activo AND l.revocada_en IS NULL
+                     AND m.estrategia <> 'swing_express'
                      AND (l.expira_en IS NULL OR l.expira_en > now())""", (simbolo, tf)).fetchall()
         return [{"licencia_id": f[0], "cuenta": f[1]} for f in filas]
+
+    def robots_swing_express(self, simbolo, tf):
+        with self._conn() as c:
+            filas = c.execute(
+                """SELECT m.licencia_id, l.cuenta, m.posicion_abierta FROM master_robots m JOIN licencias l ON l.id = m.licencia_id
+                   WHERE m.simbolo = %s AND m.temporalidad = %s AND m.activo AND l.revocada_en IS NULL
+                     AND m.estrategia = 'swing_express'
+                     AND (l.expira_en IS NULL OR l.expira_en > now())""", (simbolo, tf)).fetchall()
+        return [{"licencia_id": f[0], "cuenta": f[1], "posicion_abierta": f[2]} for f in filas]
 
     def crear_orden(self, o):
         with self._conn() as c:
@@ -502,6 +518,12 @@ def demo() -> None:
     assert r["estado"] == "sin_orden", r  # apagado por defecto
     r = pulso(repo5, 7, 111, "EURUSD", "Scalping 15m", {**est, "posiciones": 1}, ahora=t0, cierre_auto=True)
     assert r["estado"] == "cierre" and "FRENO" in r["cierre"]["motivo"], r
+    # 12. robots_activados excluye swing_express; robots_swing_express solo trae esos
+    repoX = MemRepo(activados=[(1, "EURUSD", "Scalping 15m", 111)])
+    repoX.robots[(1, "EURUSD", "Scalping 15m")]["estrategia"] = "estructural"
+    repoX.robots[(2, "EURUSD", "Scalping 15m")] = {"licencia_id": 2, "cuenta": 222, "activo": True, "estrategia": "swing_express"}
+    assert [r["licencia_id"] for r in repoX.robots_activados("EURUSD", "Scalping 15m")] == [1], "swing_express no debe salir aqui"
+    assert [r["licencia_id"] for r in repoX.robots_swing_express("EURUSD", "Scalping 15m")] == [2]
     print("master.despachador.demo() OK")
 
 
