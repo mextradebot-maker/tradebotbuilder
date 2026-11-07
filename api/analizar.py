@@ -24,6 +24,7 @@ despacha por path hacia la lógica de cada endpoint:
   POST /api/v1/velas-xm — velas cerradas 15m/1H del MT5 de XM desde el colector del VPS (X-MTB-Service-Key), ver api/velas_xm.py
   POST /api/v1/velas-xm/carga — historial completo de XM por lotes (X-MTB-Service-Key), ver conectividad/historial_xm.py
   GET /api/v1/reporte-setups — setups vigentes de todos los activos para T-01 (X-MTB-Service-Key), ver api/reporte.py
+  POST /api/v1/leads — formulario público de la landing de ventas (nombre, correo, WhatsApp), ver api/leads.py
   POST /api/v1/hotmart (X-HOTMART-HOTTOK) — webhook de Hotmart: activa/pausa membresías, ver api/hotmart.py
   /api/setups pasa antes por api.licencias.gate_setups (licencia o clave de servicio)
 """
@@ -64,6 +65,7 @@ RUTA_HOTMART = "/api/v1/hotmart"
 RUTA_VELAS_XM = "/api/v1/velas-xm"
 RUTA_VELAS_XM_CARGA = "/api/v1/velas-xm/carga"
 RUTA_GRAFICA = "/api/v1/grafica"
+RUTA_LEADS = "/api/v1/leads"
 
 
 def procesar(payload: dict) -> tuple[int, dict]:
@@ -258,6 +260,10 @@ class handler(BaseHTTPRequestHandler):
             from api.catalogo import procesar as procesar_catalogo
 
             status, body = procesar_catalogo(payload)
+        elif ruta == RUTA_LEADS:
+            from api.leads import procesar as procesar_lead
+
+            status, body = procesar_lead(payload, getattr(self, "_ip", lambda: "")())
         else:
             status, body = procesar(payload)
         self._responder(status, body)
