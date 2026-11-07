@@ -142,8 +142,3 @@ def registrar_descarga(correo: str, modo: str, simbolo: str, temporalidad: str) 
                      (correo.strip().lower(), modo, simbolo, temporalidad))
 
 
-def renovar_demo(licencia_id: int) -> None:
-    """Miembros: su DEMO de registro no caduca a los 90 días mientras paguen."""
-    with get_conn() as conn:
-        conn.execute("UPDATE licencias SET expira_en = now() + make_interval(days => %s) WHERE id = %s AND revocada_en IS NULL",
-                     (VIGENCIA_DEMO_DIAS, licencia_id))
