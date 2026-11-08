@@ -266,6 +266,7 @@ class MemRepo:
                     r = self.robots.get((lic, c["simbolo"], c["temporalidad"]))
                     if r:
                         r["posicion_abierta"] = False
+                        r["posicion_abierta_en"] = None
                     # sin robot registrado no hay estrategia de referencia: no se agrega fila de historial para
                     # esa posicion (espejo del null-guard de RepoPg cuando no encuentra la ultima orden 'colocada').
                     if r:
@@ -281,10 +282,12 @@ class MemRepo:
             o["estado"] = "colocada" if a.get("estado") == "colocada" else "rechazada"
             o["ticket"], o["motivo"] = a.get("ticket"), a.get("motivo")
             # ponytail: abrir posicion_abierta en el ack de apertura; Task 6 cierra el ciclo poniendola en False al cerrar
-            if o["estado"] == "colocada" and o.get("estrategia") == "swing_express":
+            if o["estado"] == "colocada" and o.get("estrategia") in ("swing_express", "vela_medianoche"):
                 r = self.robots.get((lic, o["simbolo"], o["temporalidad"]))
                 if r:
                     r["posicion_abierta"] = True
+                    if o.get("estrategia") == "vela_medianoche":
+                        r["posicion_abierta_en"] = _ahora()
 
     def crear_cierre(self, c):
         if any(x["licencia_id"] == c["licencia_id"] and x["simbolo"] == c["simbolo"] and x["temporalidad"] == c["temporalidad"]
@@ -485,7 +488,8 @@ class RepoPg:
                                   RETURNING simbolo, temporalidad, motivo""", (estado_c, a["cierre_id"], lic)).fetchone()
                 if f and estado_c == "ejecutado":
                     sim, tf, motivo = f
-                    c.execute("UPDATE master_robots SET posicion_abierta = false WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s",
+                    c.execute("""UPDATE master_robots SET posicion_abierta = false, posicion_abierta_en = NULL
+                                  WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s""",
                               (lic, sim, tf))
                     ult = c.execute("""SELECT estrategia, direccion, lotes FROM master_ordenes
                                         WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s AND estado = 'colocada'
@@ -502,9 +506,13 @@ class RepoPg:
                               RETURNING simbolo, temporalidad, estrategia""",
                           (estado, a.get("ticket"), (a.get("motivo") or None), a.get("orden_id"), lic)).fetchone()
             # ponytail: abrir posicion_abierta en el ack de apertura; Task 6 cierra el ciclo poniendola en False al cerrar
-            if f and estado == "colocada" and f[2] == "swing_express":
-                c.execute("UPDATE master_robots SET posicion_abierta = true WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s",
-                          (lic, f[0], f[1]))
+            if f and estado == "colocada" and f[2] in ("swing_express", "vela_medianoche"):
+                if f[2] == "vela_medianoche":
+                    c.execute("""UPDATE master_robots SET posicion_abierta = true, posicion_abierta_en = now()
+                                  WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s""", (lic, f[0], f[1]))
+                else:
+                    c.execute("UPDATE master_robots SET posicion_abierta = true WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s",
+                              (lic, f[0], f[1]))
 
     def expirar(self, ahora):
         with self._conn() as c:
@@ -817,6 +825,29 @@ def demo() -> None:
     repoVM3.robots[(13, "XAUUSD", "Diario")]["posicion_abierta_en"] = tM - timedelta(hours=6)
     r = pulso(repoVM3, 13, 1313, "XAUUSD", "Diario", estVM, ahora=tM, cierre_auto=True)
     assert r["estado"] == "sin_orden", r
+    # 14. aplicar_ack: apertura de vela_medianoche marca posicion_abierta_en (swing_express NO la toca); el cierre
+    # ejecutado limpia ambos campos y sigue alimentando master_historial igual que siempre
+    repoVM4 = MemRepo()
+    repoVM4.robots[(14, "XAUUSD", "Diario")] = {"licencia_id": 14, "cuenta": 1414, "activo": True,
+                                                 "estrategia": "vela_medianoche", "posicion_abierta": False,
+                                                 "posicion_abierta_en": None}
+    repoVM4.crear_orden({"orden_id": "OVM1", "licencia_id": 14, "cuenta": 1414, "simbolo": "XAUUSD", "temporalidad": "Diario",
+                        "direccion": "long", "entrada": 2650.0, "stop": 2597.0, "tp": None, "estrategia": "vela_medianoche",
+                        "clave": "vela_medianoche|2026-11-06", "ref_ts": None, "ref_cierre": 2650.0, "expira_en": tM + timedelta(seconds=300)})
+    repoVM4.aplicar_ack(14, {"orden_id": "OVM1", "estado": "colocada", "ticket": 888})
+    rob14 = repoVM4.robots[(14, "XAUUSD", "Diario")]
+    assert rob14["posicion_abierta"] is True and rob14["posicion_abierta_en"] is not None, rob14
+    # swing_express sigue sin usar posicion_abierta_en (no se le agrega el campo)
+    assert "posicion_abierta_en" not in repoS.robots[(9, "XAUUSD", "Swing (S)")] \
+        or repoS.robots[(9, "XAUUSD", "Swing (S)")]["posicion_abierta_en"] is None
+    repoVM4.cierres["CVM1"] = {"cierre_id": "CVM1", "licencia_id": 14, "simbolo": "XAUUSD", "temporalidad": "Diario",
+                               "motivo": "Vela de Medianoche: 7 horas desde la entrada", "estado": "pendiente",
+                               "expira_en": tM + timedelta(seconds=300)}
+    repoVM4.aplicar_ack(14, {"cierre_id": "CVM1", "estado": "ejecutado",
+                             "posiciones": [{"ticket": 888, "precio_cierre": 2660.0, "profit_usd": 10.0}]})
+    assert rob14["posicion_abierta"] is False and rob14["posicion_abierta_en"] is None, rob14
+    fila14 = repoVM4.historial[-1]
+    assert fila14["licencia_id"] == 14 and fila14["ticket"] == 888 and fila14["profit_usd"] == 10.0, fila14
     print("master.despachador.demo() OK")
 
 
