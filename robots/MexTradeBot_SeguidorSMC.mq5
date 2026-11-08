@@ -48,7 +48,8 @@
 //| OffsetBarcelona/UltimoDomingo -- mismo calculo que                 |
 //| MexTradeBot_OroMedianoche.mq5, portado aqui). A diferencia de      |
 //| Swing (S)/(M), SI lleva su stop real (2% de emergencia) en la      |
-//| orden.                                                              |
+//| orden. Sin TP ni breakeven/trailing (EsVelaMedianoche): sale por  |
+//| el cierre de las 7h que ordena el Master o por el stop.            |
 //| SWING SIN SL, SIEMPRE (v1.22, principio de Ricardo 30 oct 2026):  |
 //| Swing (S)/(M) no llevan stop loss ni al abrir ni despues -- se     |
 //| retira la escalera/trailing que la v1.17 (regla 5, 2 oct) les      |
@@ -152,7 +153,7 @@ int OnInit()
    ENUM_TIMEFRAMES tf_esperado;
    if(!TimeframeEsperado(InpTemporalidad, tf_esperado))
    {
-      Print("ERROR: temporalidad desconocida '", InpTemporalidad, "'. Usa: Scalping 15m, Scalping 30m, Intraday 1H, Intraday 4H, Intraday D, Swing (S) o Swing (M).");
+      Print("ERROR: temporalidad desconocida '", InpTemporalidad, "'. Usa: Scalping 15m, Scalping 30m, Intraday 1H, Intraday 4H, Intraday D, Diario, Swing (S) o Swing (M).");
       return INIT_PARAMETERS_INCORRECT;
    }
    ENUM_TIMEFRAMES tf_grafico = (InpTF == PERIOD_CURRENT) ? (ENUM_TIMEFRAMES)Period() : InpTF;
@@ -190,6 +191,7 @@ bool TimeframeEsperado(string nombre, ENUM_TIMEFRAMES &tf)
    else if(nombre == "Intraday 1H" || nombre == "Intraday")                     tf = PERIOD_H1;
    else if(nombre == "Intraday 4H" || nombre == "Swing (H)" || nombre == "Swing") tf = PERIOD_H4;
    else if(nombre == "Intraday D")                                              tf = PERIOD_D1;
+   else if(nombre == "Diario")                                                  tf = PERIOD_H1;
    else if(nombre == "Swing (S)")                                               tf = PERIOD_W1;
    else if(nombre == "Swing (M)")                                               tf = PERIOD_MN1;
    else return false;
@@ -206,6 +208,15 @@ bool EsSwingSM()
 {
    ENUM_TIMEFRAMES tf;
    return TimeframeEsperado(InpTemporalidad, tf) && (tf == PERIOD_W1 || tf == PERIOD_MN1);
+}
+
+// "Diario" es exclusiva de Vela de Medianoche (ver TimeframeEsperado); las demas estrategias nunca la usan
+bool EsVelaMedianoche()
+{
+   string t = InpTemporalidad;
+   StringTrimLeft(t);
+   StringTrimRight(t);
+   return t == "Diario";
 }
 
 //+------------------------------------------------------------------+
@@ -512,7 +523,9 @@ void MasterPulso()
       return;
    }
    bool tp_ok = (tp > 0) && ((direccion == "long") ? (tp > entrada) : (tp < entrada));
-   double tp_final = tp_ok ? tp : ((direccion == "long") ? entrada + InpTakeProfitR * riesgo : entrada - InpTakeProfitR * riesgo);
+   // Vela de Medianoche: sin TP (la salida es el cierre a las 7h que ordena el Master, o el stop de emergencia)
+   double tp_final = es_vela_medianoche ? 0.0
+                   : (tp_ok ? tp : ((direccion == "long") ? entrada + InpTakeProfitR * riesgo : entrada - InpTakeProfitR * riesgo));
    ENUM_ORDER_TYPE tipo = es_vela_medianoche ? ORDER_TYPE_BUY_STOP : ((direccion == "long") ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_SELL_LIMIT);
    double sl_orden = EsSwingSM() ? 0.0 : stop; // Swing (S)/(M): sin SL en la orden; vela_medianoche SI lleva su stop real
    datetime vencimiento = es_vela_medianoche ? VencimientoVelaMedianoche() : 0;
@@ -986,6 +999,7 @@ void CerrarPorPerdidaMaxima()
 void MoverBreakeven()
 {
    if(EsSwingSM()) return; // v1.22: Swing (S)/(M) NUNCA llevan SL -- ni al abrir ni despues; solo TP, salida por estructura y cierre forzado
+   if(EsVelaMedianoche()) return; // Vela de Medianoche: sin breakeven ni trailing -- stop de emergencia fijo y cierre a las 7h
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
       ulong ticket = PositionGetTicket(i);

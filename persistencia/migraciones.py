@@ -505,9 +505,13 @@ _SQL_LIMPIEZA = [
       for t in ("catalogo_activos", "smc_snapshot", "backtest_largo", "historico_tendencias", "velas", "velas_carga")],
     *[f"DELETE FROM {t} WHERE simbolo = 'GOLD'"
       for t in ("catalogo_activos", "smc_snapshot", "backtest_largo", "velas", "velas_carga")],
+    # "Diario" es solo del Master (Vela de Medianoche): refresco.pendientes() no la conoce y avisaria 34 veces por
+    # ciclo. Corrige las filas ya sembradas activas antes de que estuviera en _TEMPORALIDADES_INACTIVAS.
+    "UPDATE catalogo_activos SET activo = false WHERE temporalidad = 'Diario' AND activo",
 ]
 _TEMPORALIDADES_SEED = ["Scalping 15m", "Scalping 30m", "Intraday 1H", "Intraday 4H", "Intraday D", "Swing (S)", "Swing (M)", "Diario"]
-_TEMPORALIDADES_INACTIVAS = {"Scalping 30m"}  # activar a mano tras medir tiempos en produccion
+# Scalping 30m: activar a mano tras medir tiempos en produccion. Diario: nunca la refresca el motor (ver arriba).
+_TEMPORALIDADES_INACTIVAS = {"Scalping 30m", "Diario"}
 _FECHA_SEED = "2026-09-20"
 
 
@@ -594,6 +598,8 @@ def demo() -> None:
     from conectividad.historico import TEMPORALIDADES
     # "Diario" es solo del Master (Vela de Medianoche): no existe en el mapa de Estructural (conectividad.historico)
     assert list(TEMPORALIDADES) == [t for t in _TEMPORALIDADES_SEED if t != "Diario"]
+    # ...por eso se siembra inactiva: refresco.pendientes() solo recorre filas activas
+    assert "Diario" in _TEMPORALIDADES_INACTIVAS and any("temporalidad = 'Diario'" in s for s in _SQL_LIMPIEZA)
     # catalogo de 34: limpieza borra retirados y GOLD huerfano de las tablas de analisis, no de cuentas_demo
     assert len(_SIMBOLOS_SEED) == 34 and not {"AMXL", "CEMEXCPO", "GOLD"} & set(_SIMBOLOS_SEED)
     db.execute("INSERT INTO cuentas_demo VALUES (9, 'Swing (S)')")

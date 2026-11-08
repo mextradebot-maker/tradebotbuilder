@@ -49,21 +49,25 @@ def _medianoche_barcelona(dia: date) -> datetime:
 
 
 def pdh_candidato(simbolo: str, ahora: datetime | None = None) -> dict | None:
+    """None si hoy no se opera: ventana de 9 h ya cerrada, dia anterior con < 12 velas, o el precio ya estaba en el PDH
+    o arriba al abrir hoy (regla 3 del spec: el BUY STOP ya no tendria sentido y el broker lo rechazaria)."""
     ahora_utc = _utc(ahora) if ahora is not None else datetime.now(timezone.utc)
     hoy = _dia_barcelona(ahora_utc)
     ayer = hoy - timedelta(days=1)
-    inicio = _medianoche_barcelona(ayer)
-    fin = _medianoche_barcelona(hoy) - timedelta(seconds=1)
+    medianoche_hoy = _medianoche_barcelona(hoy)
+    ventana_hasta = medianoche_hoy + timedelta(hours=HORAS_VENTANA)
+    if ahora_utc >= ventana_hasta:
+        return None
 
-    velas = almacen.leer(simbolo, SERIE, inicio, fin)
+    velas = almacen.leer(simbolo, SERIE, _medianoche_barcelona(ayer), medianoche_hoy - timedelta(seconds=1))
     if len(velas) < INP_MIN_VELAS_DIA:
         return None
-    return {
-        "simbolo": simbolo,
-        "pdh": float(velas["high"].max()),
-        "dia_anterior": ayer,
-        "ventana_hasta": _medianoche_barcelona(hoy) + timedelta(hours=HORAS_VENTANA),
-    }
+    pdh = float(velas["high"].max())
+    # ponytail: "precio a las 00:00" = apertura de la primera vela H1 de hoy; si aun no esta en el almacen no se descarta
+    hoy_velas = almacen.leer(simbolo, SERIE, medianoche_hoy, ahora_utc)
+    if len(hoy_velas) and float(hoy_velas["open"].iloc[0]) >= pdh:
+        return None
+    return {"simbolo": simbolo, "pdh": pdh, "dia_anterior": ayer, "ventana_hasta": ventana_hasta}
 
 
 def candidatos(ahora: datetime | None = None) -> list[dict]:
@@ -98,9 +102,13 @@ def demo() -> None:
         )
 
     ayer_inicio = datetime(2026, 11, 5, 23, 0, tzinfo=timezone.utc)  # 2026-11-06 00:00 Barcelona
+    hoy_inicio = datetime(2026, 11, 6, 23, 0, tzinfo=timezone.utc)   # 2026-11-07 00:00 Barcelona
     base = {
-        "ETHUSD": velas_de(ayer_inicio, 24, 2100.0),
+        # ETH: primera vela de hoy abre debajo del PDH -> sigue siendo candidato
+        "ETHUSD": pd.concat([velas_de(ayer_inicio, 24, 2100.0), velas_de(hoy_inicio, 1, 2091.0)]),
         "BTCUSD": velas_de(ayer_inicio, 5, 9999.0),
+        # XRP: hoy abre en 107 (open = high - 1), ya por encima del PDH de ayer (105) -> el nivel ya se rompio
+        "XRPUSD": pd.concat([velas_de(ayer_inicio, 24, 105.0), velas_de(hoy_inicio, 1, 108.0)]),
     }
     llamadas = []
 
@@ -114,7 +122,7 @@ def demo() -> None:
     original_leer = almacen.leer
     almacen.leer = leer_stub
     try:
-        ahora = datetime(2026, 11, 7, 9, 0, tzinfo=timezone.utc)  # 10:00 Barcelona
+        ahora = datetime(2026, 11, 7, 1, 0, tzinfo=timezone.utc)  # 02:00 Barcelona, dentro de la ventana de 9 h
 
         c = pdh_candidato("ETHUSD", ahora)
         assert c is not None
@@ -123,13 +131,22 @@ def demo() -> None:
         assert c["dia_anterior"] == date(2026, 11, 6)
         # ventana: medianoche Barcelona de hoy (2026-11-07 00:00 CET = 2026-11-06 23:00 UTC) + 9 h
         assert c["ventana_hasta"] == datetime(2026, 11, 7, 8, 0, tzinfo=timezone.utc)
-        # la consulta al almacen pide la serie H1 del dia de ayer en Barcelona
-        simbolo, serie, inicio, fin = llamadas[-1]
+        # la consulta al almacen pide la serie H1 del dia de ayer en Barcelona (y luego la de hoy hasta ahora)
+        simbolo, serie, inicio, fin = llamadas[-2]
         assert serie == "1H"
         assert inicio == ayer_inicio
         assert fin == datetime(2026, 11, 6, 22, 59, 59, tzinfo=timezone.utc)
+        assert llamadas[-1][2:] == (hoy_inicio, ahora)
 
         assert pdh_candidato("BTCUSD", ahora) is None  # 5 velas < 12
+        assert pdh_candidato("XRPUSD", ahora) is None  # hoy abrio por encima del PDH: el nivel ya se rompio
+
+        # ventana cerrada (10:00 Barcelona >= 09:00): ni siquiera consulta el almacen
+        n = len(llamadas)
+        assert pdh_candidato("ETHUSD", datetime(2026, 11, 7, 9, 0, tzinfo=timezone.utc)) is None
+        assert pdh_candidato("ETHUSD", datetime(2026, 11, 7, 8, 0, tzinfo=timezone.utc)) is None  # justo 09:00: cerrada
+        assert len(llamadas) == n
+        assert pdh_candidato("ETHUSD", datetime(2026, 11, 7, 7, 59, tzinfo=timezone.utc)) is not None  # 08:59: abierta
 
         # candidatos() corre sobre SIMBOLO_XM y descarta los None
         resultado = candidatos(ahora)
