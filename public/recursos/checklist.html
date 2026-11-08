@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Checklist de 7 preguntas | MexTradeBot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#060d24;--panel:#0d1838;--line:rgba(174,187,220,.18);--ink:#f3f6ff;--ink2:#aebbdc;--teal:#2dd4bf;--lime:#c6ea3b;--amber:#f5b94a;--red:#ff7a7a;--r:16px}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--ink);font:400 16px/1.6 'Lexend',system-ui,sans-serif;padding:0}
+.wrap{max-width:720px;margin:0 auto;padding:0 16px 8px}
+header{padding:40px 0 24px}
+.marca{display:inline-block;background:#fff;border-radius:12px;padding:8px 14px;margin-bottom:20px}
+.marca img{display:block;height:56px;width:auto}
+h1{font-size:clamp(26px,5vw,38px);line-height:1.15;font-weight:600;margin-bottom:12px}
+header p{color:var(--ink2)}
+.prog{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 0;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;font-size:14px;color:var(--ink2)}
+.barra{flex:1;height:6px;border-radius:6px;background:var(--line);overflow:hidden}
+.barra i{display:block;height:100%;width:100%;background:var(--teal);transform-origin:left;transform:scaleX(0);transition:transform .3s cubic-bezier(.23,1,.32,1)}
+.q{margin-top:18px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:22px;border:0;min-width:0}
+.q{border:1px solid var(--line)}
+.q legend{float:left;width:100%;padding:0}
+.n{font-size:13px;color:var(--teal);font-weight:600}
+.q h2{font-size:18px;line-height:1.35;font-weight:500;margin:2px 0 6px}
+.q p{font-size:14px;color:var(--ink2);margin-bottom:16px}
+.op{clear:both;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.op label{display:block;cursor:pointer}
+.op input{position:absolute;opacity:0;pointer-events:none}
+.op span{display:grid;place-items:center;min-height:48px;border-radius:12px;border:1.5px solid rgba(174,187,220,.3);background:var(--bg);font-weight:500;font-size:15px;transition:transform .16s,border-color .16s,background-color .16s}
+.op label:active span{transform:scale(.97)}
+.op input:checked+span{border-color:var(--teal);background:rgba(45,212,191,.12)}
+.op input:focus-visible+span{outline:2px solid var(--teal);outline-offset:2px}
+.res{margin-top:28px;background:var(--panel);border:1.5px solid var(--line);border-radius:var(--r);padding:26px}
+.res[hidden]{display:none}
+.score{display:flex;align-items:baseline;gap:8px}
+.score b{font-size:56px;line-height:1;font-weight:700}
+.score span{color:var(--ink2)}
+.res h3{font-size:20px;margin:10px 0 6px;font-weight:600}
+.res p{color:var(--ink2);font-size:15px}
+.falta{margin-top:18px;display:grid;gap:10px;list-style:none;padding:0}
+.falta li{padding:12px 14px;border-radius:12px;background:var(--bg);border:1px solid var(--line);font-size:15px}
+.falta li b{display:block;font-weight:600;margin-bottom:2px}
+.falta li small{color:var(--ink2);font-size:14px}
+.tag{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:99px;margin-bottom:6px}
+.t-no{background:rgba(255,122,122,.15);color:var(--red)}.t-ns{background:rgba(245,185,74,.15);color:var(--amber)}
+.acc{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 20px;border-radius:12px;font:500 15px 'Lexend',sans-serif;text-decoration:none;cursor:pointer;border:1.5px solid rgba(174,187,220,.4);background:transparent;color:var(--ink);transition:transform .16s}
+.btn:active{transform:scale(.97)}
+.btn.pri{background:var(--lime);border-color:var(--lime);color:#060d24;font-weight:600}
+.aviso{margin-top:28px;font-size:13px;line-height:1.55;color:var(--ink2);border:1px solid var(--line);border-radius:12px;padding:14px}
+@media (max-width:420px){.op span{font-size:14px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{.marca{background:none;padding:0}body{background:#fff;color:#000}.prog,.acc{display:none}.q,.res,.falta li{background:#fff;border-color:#999;color:#000}.q p,.res p,.falta li small,header p{color:#333}}
+.mtb-legal-footer{width:100%;margin-top:40px;padding:28px 20px 24px;border-top:1px solid #2a3a50;background:#080f1b;color:#a6b6cc;font:12px/1.6 "Lexend","Segoe UI",sans-serif}
+.mtb-legal-footer *{box-sizing:border-box}
+.mtb-legal-wrap{max-width:1440px;margin:0 auto;display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:28px}
+.mtb-legal-marca{color:#edf3fb;font-size:16px;font-weight:700;letter-spacing:-.4px}
+.mtb-legal-lema{color:#32c7df;font-size:10px;letter-spacing:2px;text-transform:uppercase;margin:4px 0 10px}
+.mtb-legal-footer h4{color:#edf3fb;font-size:11px;letter-spacing:1.4px;text-transform:uppercase;margin:0 0 10px;font-weight:600}
+.mtb-legal-footer ul{list-style:none;margin:0;padding:0}
+.mtb-legal-footer li{margin:0 0 6px}
+.mtb-legal-footer a{color:#a6b6cc;text-decoration:none}
+.mtb-legal-footer a:hover,.mtb-legal-footer a:focus-visible{color:#32c7df;text-decoration:underline}
+.mtb-legal-logo{background:#fff;border-radius:10px;padding:6px 10px;display:inline-block;margin-bottom:10px}.mtb-legal-logo img{display:block;width:96px;height:auto}
+.mtb-legal-redes{display:flex;gap:10px;margin-top:14px}.mtb-legal-redes a{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #2a3a50;border-radius:9px;color:#a6b6cc}.mtb-legal-redes a:hover,.mtb-legal-redes a:focus-visible{color:#32c7df;border-color:#32c7df;text-decoration:none}
+.mtb-legal-riesgo{max-width:1440px;margin:22px auto 0;padding-top:16px;border-top:1px solid #2a3a50;font-size:11px;color:#899db9}
+.mtb-legal-copy{max-width:1440px;margin:10px auto 0;font-size:11px;color:#899db9}
+@media(max-width:800px){.mtb-legal-wrap{grid-template-columns:1fr 1fr}.mtb-legal-wrap>div:first-child{grid-column:1/-1}}
+@media(max-width:480px){.mtb-legal-footer{padding:22px 16px}.mtb-legal-wrap{grid-template-columns:1fr;gap:18px}}
+.mtb-wa{position:fixed;right:16px;bottom:16px;z-index:9000;width:56px;height:56px;border-radius:50%;background:#25d366;color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px #0006;touch-action:manipulation;transition:transform .16s}.mtb-wa:hover,.mtb-wa:focus-visible{background:#1ebe5b;color:#fff}.mtb-wa:active{transform:scale(.95)}@media print{.mtb-wa{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="marca"><img src="../img/logo-mextradebot.png" alt="MexTradeBot" width="112" height="76"></div>
+  <h1>Checklist de 7 preguntas para evaluar un robot de trading</h1>
+  <p>Contesta con lo que sabes hoy del robot que quieres usar. Al final verás cuántos criterios cumple y qué te falta pedir antes de usarlo. Tus respuestas no salen de tu navegador.</p>
+</header>
+
+<div class="prog" aria-live="polite"><span id="cnt">0 de 7</span><div class="barra"><i id="bar"></i></div></div>
+
+<form id="f" onsubmit="return false"></form>
+
+<section class="res" id="res" hidden aria-live="polite">
+  <div class="score"><b id="sc">0</b><span>de 7 criterios cumplidos</span></div>
+  <h3 id="tit"></h3>
+  <p id="msg"></p>
+  <ul class="falta" id="falta"></ul>
+  <div class="acc">
+    <button class="btn" type="button" id="rep">Volver a empezar</button>
+    <button class="btn" type="button" onclick="print()">Imprimir resultado</button>
+    <a class="btn pri" href="https://mextradebot.com.mx/">Crear mi cuenta gratis en DEMO</a>
+  </div>
+</section>
+
+<div class="aviso"><strong>Aviso de riesgo.</strong> Esta checklist es una herramienta educativa. Cumplir los siete criterios no garantiza resultados ni ausencia de pérdidas. El trading conlleva riesgo de pérdida de capital, incluida la pérdida total, y los resultados pasados no garantizan resultados futuros. Esto no es asesoría financiera. MexTradeBot no es asesor de inversiones ni representante de XM.</div>
+
+</div>
+<footer class="mtb-legal-footer" role="contentinfo">
+<div class="mtb-legal-wrap">
+<div><div class="mtb-legal-logo"><img src="../img/logo-mtb.png" alt="" width="96" height="56"></div>
+<div class="mtb-legal-marca">MexTradeBot</div><div class="mtb-legal-lema">Trading agéntico</div>
+<p style="margin:0;max-width:420px">Robots de trading para MetaTrader 5, análisis de mercado y formación para operar con método.</p><div class="mtb-legal-redes"><a href="https://www.youtube.com/@mex_trade_bot/videos" target="_blank" rel="noopener" aria-label="MexTradeBot en YouTube" title="YouTube"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M22 8.2c0-1.6-1.3-2.9-2.9-3C17.3 5 14.6 5 12 5s-5.3 0-7.1.2C3.3 5.3 2 6.6 2 8.2 1.9 9.5 1.9 10.7 1.9 12s0 2.5.1 3.8c0 1.6 1.3 2.9 2.9 3 1.8.2 4.5.2 7.1.2s5.3 0 7.1-.2c1.6-.1 2.9-1.4 2.9-3 .1-1.3.1-2.5.1-3.8s0-2.5-.1-3.8zM10 15.2V8.8l5.5 3.2-5.5 3.2z"/></svg></a><a href="https://www.facebook.com/mextradebot/" target="_blank" rel="noopener" aria-label="MexTradeBot en Facebook" title="Facebook"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M13.5 22v-8.2h2.8l.4-3.3h-3.2V8.4c0-.9.3-1.6 1.6-1.6h1.7V3.9c-.3 0-1.3-.1-2.5-.1-2.5 0-4.2 1.5-4.2 4.3v2.4H7.3v3.3h2.8V22h3.4z"/></svg></a><a href="https://www.instagram.com/mextradebot/" target="_blank" rel="noopener" aria-label="MexTradeBot en Instagram" title="Instagram"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 7.3a4.7 4.7 0 1 0 0 9.4 4.7 4.7 0 0 0 0-9.4zm0 7.7a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm4.9-8.9a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2zM21.9 8c-.1-1.5-.4-2.8-1.5-3.9S17.9 2.6 16.4 2.5C14.8 2.4 9.2 2.4 7.6 2.5 6.1 2.6 4.8 2.9 3.7 4S2.2 6.5 2.1 8c-.1 1.6-.1 6.4 0 8 .1 1.5.4 2.8 1.5 3.9s2.4 1.4 3.9 1.5c1.6.1 7.2.1 8.8 0 1.5-.1 2.8-.4 3.9-1.5s1.4-2.4 1.5-3.9c.1-1.6.1-6.4 0-8zm-2 9.7a3.2 3.2 0 0 1-1.8 1.8c-1.3.5-4.3.4-5.7.4s-4.4.1-5.7-.4a3.2 3.2 0 0 1-1.8-1.8c-.5-1.3-.4-4.3-.4-5.7s-.1-4.4.4-5.7A3.2 3.2 0 0 1 6.7 4.5c1.3-.5 4.3-.4 5.7-.4s4.4-.1 5.7.4a3.2 3.2 0 0 1 1.8 1.8c.5 1.3.4 4.3.4 5.7s.1 4.4-.4 5.7z"/></svg></a><a href="https://www.tiktok.com/@tezcaltlibot" target="_blank" rel="noopener" aria-label="MexTradeBot en TikTok" title="TikTok"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M16.6 2h-3.4v13.2a2.9 2.9 0 1 1-2.9-2.9c.3 0 .6 0 .9.1V9a6.3 6.3 0 1 0 5.4 6.2V8.6a7.9 7.9 0 0 0 4.6 1.5V6.7a4.6 4.6 0 0 1-4.6-4.7z"/></svg></a><a href="https://x.com/tradingbotsmx" target="_blank" rel="noopener" aria-label="MexTradeBot en X" title="X"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a></div></div>
+<div><h4>Legal</h4><ul>
+<li><a href="https://mextradebot.com.mx/aviso-de-privacidad.html">Aviso de privacidad</a></li>
+<li><a href="https://mextradebot.com.mx/politica-de-cookies.html">Política de cookies</a></li>
+<li><a href="https://mextradebot.com.mx/aviso-de-riesgo.html">Aviso de riesgo y deslinde</a></li>
+<li><a href="https://mextradebot.com.mx/terminos-y-condiciones.html">Términos y condiciones</a></li>
+<li><a href="https://mextradebot.com.mx/reglas-del-afiliado.html">Reglas del afiliado</a></li>
+</ul></div>
+<div><h4>Contacto</h4><ul>
+<li><a href="https://t.me/ricardopenac" target="_blank" rel="noopener">Telegram</a></li>
+<li><a href="https://mextradebot.com.mx/">Panel de alumnos</a></li>
+</ul></div>
+</div>
+<p class="mtb-legal-riesgo">Operar instrumentos financieros apalancados implica un alto riesgo y puede ocasionar la pérdida total del capital. Los resultados pasados y los backtests no garantizan resultados futuros. MexTradeBot no es asesor de inversiones ni intermediario financiero. <a href="https://mextradebot.com.mx/aviso-de-riesgo.html">Lee el aviso de riesgo completo</a>.</p>
+<p class="mtb-legal-copy">© 2026 MexTradeBot. Todos los derechos reservados.</p>
+</footer>
+<a class="mtb-wa" href="https://wa.me/524421851478?text=Hola%2C%20quiero%20informaci%C3%B3n%20sobre%20MexTradeBot." target="_blank" rel="noopener" aria-label="Escríbenos por WhatsApp" title="WhatsApp"><svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor" aria-hidden="true"><path d="M12.04 2a9.9 9.9 0 0 0-8.5 14.9L2 22l5.2-1.5A9.9 9.9 0 1 0 12.04 2zm0 18.1a8.2 8.2 0 0 1-4.2-1.15l-.3-.18-3.1.9.9-3-.2-.3a8.2 8.2 0 1 1 6.9 3.73zm4.5-6.1c-.25-.12-1.46-.72-1.69-.8-.23-.08-.39-.12-.56.12-.16.25-.64.8-.78.96-.14.17-.29.19-.54.06a6.7 6.7 0 0 1-3.3-2.9c-.25-.43.25-.4.72-1.33.08-.16.04-.3-.02-.42-.06-.12-.56-1.35-.77-1.85-.2-.48-.4-.42-.56-.42h-.47c-.16 0-.43.06-.66.3-.23.25-.87.85-.87 2.07s.89 2.4 1.01 2.57c.12.16 1.75 2.67 4.24 3.75 1.58.68 2.2.74 3 .62.49-.07 1.46-.6 1.67-1.17.2-.58.2-1.07.14-1.17-.06-.1-.23-.16-.48-.28z"/></svg></a>
+
+<script>
+const Q=[
+["¿Puedo ver las reglas de entrada y salida del robot?","Si es una caja negra, no sabes qué hace ni por qué.","Pide que te expliquen cuándo abre, cuándo cierra y dónde pone el stop."],
+["¿La prueba tiene 30 operaciones o más?","Con muy pocas operaciones, el resultado puede ser pura suerte.","Pide el número total de operaciones de la prueba."],
+["¿Se probó en más de un activo y en dos periodos distintos?","Un robot que solo funciona en un activo o en una época pudo estar ajustado a ese caso.","Pide resultados en varios activos y separados en dos mitades de tiempo."],
+["¿La prueba incluye el spread y los costos reales del broker?","Sin costos, casi cualquier resultado se ve mejor de lo que sería en tu cuenta.","Pide que la prueba use el spread real de tu broker."],
+["¿Muestra las pérdidas largas y el peor tramo, no solo el promedio?","El promedio esconde las rachas malas, que son las que más cuestan.","Pide la caída máxima y la racha más larga de operaciones perdedoras."],
+["¿Puedo probarlo en DEMO antes de usar dinero real?","Verlo operar con dinero virtual te enseña cómo se comporta sin arriesgar capital.","Pide una cuenta DEMO y observa varias semanas antes de decidir."],
+["¿Evita prometer ganancias?","Quien promete ganancias fijas está vendiendo una ilusión, no una herramienta.","Desconfía de cualquier cifra garantizada, y de la presión para decidir rápido."]
+];
+const f=document.getElementById('f'),res=document.getElementById('res');
+f.innerHTML=Q.map((q,i)=>`<fieldset class="q"><legend><span class="n">Pregunta ${i+1} de 7</span><h2>${q[0]}</h2></legend><p>${q[1]}</p><div class="op">${[["si","Sí"],["no","No"],["ns","No sé"]].map(o=>`<label><input type="radio" name="q${i}" value="${o[0]}"><span>${o[1]}</span></label>`).join('')}</div></fieldset>`).join('');
+function upd(){
+  const a=Q.map((_,i)=>(f.querySelector(`input[name=q${i}]:checked`)||{}).value);
+  const done=a.filter(Boolean).length;
+  cnt.textContent=done+' de 7';bar.style.transform='scaleX('+done/7+')';
+  if(done<7){res.hidden=true;return}
+  const si=a.filter(v=>v==='si').length;
+  sc.textContent=si;
+  const [t,m]=si===7?['Cumple los 7 criterios','Es una buena base para seguir revisando. Aun así, empieza en DEMO: cumplir la checklist no garantiza resultados.']
+   :si>=4?['Cumple una parte, faltan criterios','Antes de usarlo con dinero real, consigue lo que falta en la lista de abajo.']
+   :['Faltan criterios clave','Con lo que sabes hoy no hay base suficiente para decidir. Pide la información de abajo antes de usarlo.'];
+  tit.textContent=t;msg.textContent=m;
+  falta.innerHTML=a.map((v,i)=>v==='si'?'':`<li><span class="tag ${v==='no'?'t-no':'t-ns'}">${v==='no'?'No cumple':'No lo sabes'}</span><b>${Q[i][0]}</b><small>${Q[i][2]}</small></li>`).join('');
+  res.hidden=false;
+  if(!matchMedia('(prefers-reduced-motion:reduce)').matches)res.scrollIntoView({behavior:'smooth',block:'start'});else res.scrollIntoView();
+}
+f.addEventListener('change',upd);
+rep.onclick=()=>{f.reset();upd();scrollTo({top:0})};
+</script>
+</body>
+</html>
