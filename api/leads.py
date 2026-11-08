@@ -119,6 +119,92 @@ def procesar(payload: dict, ip: str = "") -> tuple[int, dict]:
     return 200, {"ok": True, "formato": lead["formato"], "recurso": RECURSOS[lead["formato"]][0]}
 
 
+# ── solicitudes de afiliacion ────────────────────────────────────────────────
+_SI = ("1", "true", "True")
+
+
+def validar_afiliado(d: dict) -> tuple[dict | None, str | None]:
+    """Como validar(), para el formulario de la landing de afiliados. Logica pura."""
+    if (d.get("web") or "").strip():
+        return None, "bot"
+    base, motivo = validar({**d, "formato": "pdf", "acepta_correo": "1", "acepta_whatsapp": "1"})
+    if motivo:
+        return None, motivo
+    redes = " ".join(str(d.get("redes") or "").split())[:200]
+    como = " ".join(str(d.get("como") or "").split())[:600]
+    if len(redes) < 3:
+        return None, "redes"
+    if len(como) < 10:
+        return None, "como"
+    if str(d.get("acepta_reglas")) not in _SI or str(d.get("acepta_contacto")) not in _SI:
+        return None, "consentimiento"
+    return {"nombre": base["nombre"], "correo": base["correo"], "whatsapp": base["whatsapp"], "redes": redes, "como": como}, None
+
+
+def _guardar_afiliado(a: dict) -> None:
+    from persistencia.conexion import get_conn
+
+    with get_conn() as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS solicitudes_afiliado ("
+            " id bigserial PRIMARY KEY, creado timestamptz NOT NULL DEFAULT now(),"
+            " nombre text NOT NULL, correo text NOT NULL UNIQUE, whatsapp text NOT NULL, redes text NOT NULL, como text NOT NULL,"
+            " acepta_reglas boolean NOT NULL, acepta_contacto boolean NOT NULL, estado text NOT NULL DEFAULT 'nueva',"
+            " veces integer NOT NULL DEFAULT 1, ultima_vez timestamptz NOT NULL DEFAULT now())")
+        conn.execute(
+            "INSERT INTO solicitudes_afiliado (nombre, correo, whatsapp, redes, como, acepta_reglas, acepta_contacto)"
+            " VALUES (%s, %s, %s, %s, %s, true, true)"
+            " ON CONFLICT (correo) DO UPDATE SET nombre = EXCLUDED.nombre, whatsapp = EXCLUDED.whatsapp, redes = EXCLUDED.redes,"
+            " como = EXCLUDED.como, veces = solicitudes_afiliado.veces + 1, ultima_vez = now()",
+            (a["nombre"], a["correo"], a["whatsapp"], a["redes"], a["como"]))
+
+
+def correos_afiliado(a: dict) -> list[tuple[str, str, str]]:
+    """(destino, asunto, html): confirmacion para quien solicita y aviso a soporte con todos los datos."""
+    from api.auth_alumnos import _marco
+
+    primero = escape(a["nombre"].split(" ")[0])
+    confirmacion = ("Recibimos tu solicitud de afiliación | MexTradeBot", _marco(
+        "Recibimos tu solicitud",
+        f"<p>Hola {primero}, recibimos tu solicitud para el programa de afiliados de MexTradeBot.</p>"
+        "<p>Revisamos tu perfil y te respondemos en menos de 48 horas hábiles. Si te aprobamos, recibirás tu enlace de afiliado y el kit.</p>"
+        "<p>Mientras tanto, crea tu cuenta gratis en mextradebot.com.mx y prueba el producto en DEMO: recomiendas mejor lo que conoces.</p>"))
+    aviso = ("Nueva solicitud de afiliación | MexTradeBot", _marco(
+        "Nueva solicitud de afiliación",
+        f"<p><b>Nombre:</b> {escape(a['nombre'])}<br><b>Correo:</b> {escape(a['correo'])}<br><b>WhatsApp:</b> {escape(a['whatsapp'])}<br>"
+        f"<b>Redes o sitio:</b> {escape(a['redes'])}</p><p><b>Cómo piensa compartir MexTradeBot:</b><br>{escape(a['como'])}</p>"
+        "<p>Apruébala o recházala desde tu cuenta de productor en Hotmart (Afiliados → Solicitudes).</p>"))
+    return [(a["correo"], *confirmacion), ("soporte@mextradebot.com.mx", *aviso)]
+
+
+def procesar_afiliado(payload: dict, ip: str = "") -> tuple[int, dict]:
+    a, motivo = validar_afiliado(payload if isinstance(payload, dict) else {})
+    if motivo == "bot":
+        return 200, {"ok": True}
+    if motivo:
+        return 400, {"error": "datos_invalidos", "campo": motivo}
+    if _excedido("af:" + (ip or "?"), time.monotonic()):
+        return 429, {"error": "demasiados_intentos"}
+    try:
+        _guardar_afiliado(a)
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger("leads").exception("no se pudo guardar la solicitud de afiliado")
+        return 500, {"error": "no_se_pudo_guardar"}
+    from api.auth_alumnos import enviar_correo
+
+    for destino, asunto, html in correos_afiliado(a):
+        threading.Thread(target=enviar_correo, args=(destino, asunto, html), daemon=True).start()
+    try:
+        from slack_avisos import avisar
+
+        avisar(f"Nueva solicitud de afiliado: {a['nombre']} · {a['whatsapp']} · {a['redes']}")
+    except Exception:  # noqa: BLE001
+        pass
+    return 200, {"ok": True}
+
+
 def demo() -> None:
     ok = {"nombre": " Carlos  Pérez ", "correo": "Carlos@Example.com ", "whatsapp": "+52 1 442 123 4567",
           "formato": "dashboard", "acepta_correo": "1", "acepta_whatsapp": "1"}
@@ -140,6 +226,21 @@ def demo() -> None:
     asunto, html = correo_recurso("<b>Ana", "pdf")
     assert "Hola &lt;b&gt;Ana," in html and "Hola <b>" not in html  # el nombre se escapa en el correo
     assert "/recursos/checklist-7-preguntas-mextradebot.pdf" in html and "Descargar el PDF" in html
+    af = {"nombre": "Luis Mora", "correo": "luis@example.com", "whatsapp": "442 111 2233", "redes": "@luismora",
+          "como": "Videos en YouTube y mi grupo de Telegram", "acepta_reglas": "1", "acepta_contacto": "1"}
+    a, m = validar_afiliado(af)
+    assert m is None and a["whatsapp"] == "4421112233" and a["redes"] == "@luismora", (a, m)
+    assert validar_afiliado({**af, "redes": "x"})[1] == "redes"
+    assert validar_afiliado({**af, "como": "corto"})[1] == "como"
+    assert validar_afiliado({**af, "acepta_reglas": ""})[1] == "consentimiento"
+    assert validar_afiliado({**af, "correo": "mal"})[1] == "correo"
+    assert validar_afiliado({**af, "web": "spam"})[1] == "bot"
+    assert procesar_afiliado({**af, "web": "spam"}) == (200, {"ok": True})
+    assert procesar_afiliado({**af, "nombre": ""})[0] == 400
+    (d1, _, h1), (d2, _, h2) = correos_afiliado({**a, "nombre": "<b>Luis", "como": "<script>x</script> y más texto"})
+    assert d1 == "luis@example.com" and d2 == "soporte@mextradebot.com.mx"
+    assert "<script>" not in h2 and "&lt;script&gt;" in h2 and "Hola &lt;b&gt;Luis," in h1  # todo se escapa en los correos
+    print("api.leads (afiliados) OK")
     print("api.leads.demo() OK")
 
 
