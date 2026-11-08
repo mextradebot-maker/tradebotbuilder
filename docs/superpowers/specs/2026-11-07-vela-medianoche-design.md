@@ -120,9 +120,13 @@ el builder lo cuestione si ve un problema que no estoy viendo.
     el día completo); si tras los reintentos sigue sin respuesta, se fallan cerrado — no se coloca la
     orden — y se deja un log distinto ("sin respuesta del servidor", no "rechazada") para que quede
     claro en diagnóstico que no fue un freno de riesgo real.
-- **Ciclo de refresco del candidato de catálogo:** se recalcula una vez al día (no en cada refresco de
-  `refresco.py` como Swing Express), porque el PDH no cambia hasta la próxima medianoche Barcelona —
-  recalcularlo más seguido sería trabajo sin efecto visible.
+- **Ciclo de refresco del candidato de catálogo (corregido a pedido de Ricardo):** usa el MISMO ciclo
+  y la MISMA información de `refresco.py` que las otras estrategias — no un recálculo especial una
+  vez al día. `pdh_candidato()`/`candidatos()` (§5.1) se enganchan en `_avisar_master` igual que
+  `recibir_tendencia_swing_express`, así que se recalculan en cada refresco como todo lo demás.
+  Recalcular el PDH en cada ciclo no cuesta nada extra (es un max() sobre las mismas velas H1 que ya
+  están en `conectividad.almacen`) y mantiene una sola forma de actualizar el catálogo en todo el
+  sitio, en vez de una regla especial para esta estrategia.
 - **Caso de prueba DST:** el plan de implementación debe incluir un test explícito para los dos días
   del año en que cambia el horario de la UE (puerto de `OffsetBarcelona`/`UltimoDomingo`), para no
   desalinear "viable" en el catálogo vs. lo que el EA real decide ese día.
@@ -179,8 +183,8 @@ el builder lo cuestione si ve un problema que no estoy viendo.
 - `_robot_ficha` (api/alumnos.py) acepta `modo` igual que hoy, pero para `estrategia=vela_medianoche`
   el activo se elige libremente entre los 34 (sin selector de temporalidad — es "Diario" implícito).
 - El compilador (servicio externo en el VPS) necesita compilar `MexTradeBot_OroMedianoche.mq5` con el
-  token del alumno embebido — a confirmar con Ricardo si el compilador ya soporta múltiples archivos
-  fuente de EA o si hay que avisarle para que lo agregue (ver "Preguntas abiertas").
+  token del alumno embebido — ver §7 (debería funcionar sin tocar el VPS, se confirma con una prueba
+  real al final del plan).
 
 ## 6. No-metas
 
@@ -189,13 +193,24 @@ el builder lo cuestione si ve un problema que no estoy viendo.
 - No se construye expectativa/winrate para esta estrategia — explícitamente no aplica.
 - No se toca el flujo de Estructural ni Swing Express.
 
-## 7. Pendiente fuera de este trabajo
+## 7. Compilador del VPS — resuelto dentro de este trabajo
 
-- **Compilador del VPS:** no se sabe si ya compila `MexTradeBot_OroMedianoche.mq5` con token
-  embebido (hoy el EA no tiene ningún mecanismo de token; solo `MexTradeBot_SeguidorSMC.mq5` lo
-  tiene). Ricardo confirmó que aún no lo sabe y lo va a revisar aparte, en el VPS, en paralelo a este
-  trabajo. El plan de implementación debe tratar esto como una dependencia externa: todo lo demás
-  (motor de candidatos, despachador, EA, frontend) se construye y se verifica igual; **la entrega
-  real del .ex5 personalizado desde la ficha de descarga (§5.5) queda bloqueada hasta que el
-  compilador del VPS soporte este archivo**, y el plan debe decirlo explícitamente como el último
-  paso, no asumirlo resuelto.
+No hace falta tocar nada en el VPS. Hoy `MexTradeBot_OroMedianoche.mq5` no tiene NINGÚN mecanismo de
+token (el .mq5 actual ni siquiera declara la variable); `MexTradeBot_SeguidorSMC.mq5` sí la tiene,
+como un `input string MTB_LICENSE_TOKEN = "";` — el compilador del VPS, para generar un .ex5
+personalizado, toma ese .mq5, reemplaza esa declaración por el token del alumno y compila. Es un
+reemplazo de texto sobre una convención (el nombre `MTB_LICENSE_TOKEN`), no algo amarrado al nombre
+del archivo `SeguidorSMC`.
+
+La solución: en §5.4, al adaptar `MexTradeBot_OroMedianoche.mq5`, se le agrega **exactamente la misma
+declaración** `input string MTB_LICENSE_TOKEN = "";` (mismo nombre, mismo formato) que usa
+`MexTradeBot_SeguidorSMC.mq5`, además de `InpMasterUrl` con el mismo patrón de headers
+`Authorization: Bearer`. Así, el mismo mecanismo de reemplazo que ya usa el compilador para el otro
+EA funciona para este sin que el VPS necesite ningún cambio.
+
+Como no tengo acceso al VPS desde este entorno para confirmarlo con certeza total, el plan de
+implementación termina con una prueba real: descargar un robot de Vela de Medianoche desde la ficha
+en el laboratorio de principio a fin. Si el .ex5 llega bien, queda confirmado y resuelto. Si el
+compilador lo rechaza, el error que devuelva será concreto (no una suposición) y con eso sabré
+exactamente qué pedirte que ajustes en el VPS — pero la expectativa, dado cómo está hecho hoy el
+compilador, es que funcione sin tocar nada ahí.
