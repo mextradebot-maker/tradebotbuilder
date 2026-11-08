@@ -55,46 +55,52 @@ no algo que se reescribe desde cero.
   `temporalidad` de Vela de Medianoche (ver §5.1) no choque por accidente con la que ya usa
   Estructural para el mismo símbolo.
 
-## 4. Decisión de diseño (mía, a confirmar en el builder-check): arquitectura híbrida
+## 4. Arquitectura (revisada): reusar el mismo camino que ya usan Estructural y Swing Express
 
-El patrón que usan Estructural y Swing Express — el servidor calcula la señal y empuja UNA orden por
-pulso, que el EA coloca en el acto — **no encaja bien aquí** por dos razones:
+La primera versión de este documento proponía que el EA siguiera calculando y colocando su orden por
+su cuenta (modelo "híbrido", para no perder precisión de disparo). Al revisar `master/despachador.py`
+a fondo encontré que esa preocupación no aplica: `ColocarOrdenPendiente()` en el EA ya coloca una
+**orden pendiente nativa de MT5** (no una orden a mercado) — se llena en el mismo tick que el precio
+cruza el nivel, sea cual sea el tipo (LIMIT o STOP), con cero intervención del servidor en el momento
+del llenado. El servidor solo participa para decidir y entregar el nivel exacto, lo mismo que ya hace
+con Estructural. Como el PDH se fija una sola vez a medianoche y no cambia en todo el día, no hay
+ninguna urgencia real en que el servidor se lo entregue al robot en el primer segundo exacto — con que
+llegue dentro de la ventana de 9 horas (y el ciclo de pulso del robot es de segundos) sobra.
 
-1. **La precisión del disparo importa.** Ricardo fue explícito: "lo más importante... es que la señal
-   del momento en que supera el nivel sea lanzada al bot". Un BUY STOP nativo de MT5 se llena en el
-   mismo tick que cruza el precio; un servidor que sondea cada pocos segundos (`pulso`) y luego manda
-   una orden a mercado siempre llega tarde, y en huecos de apertura puede llenar a un precio peor que
-   el PDH exacto.
-2. **El ciclo de vida es diario y propio del símbolo**, no un evento único: cada día a medianoche se
-   cancela la orden de ayer (haya entrado o no) y se recalcula una nueva. Esto no encaja en el patrón
-   "un orden_id, se procesa una vez" que ya usan Estructural/Swing Express.
+**Por eso Vela de Medianoche reusa el mismo mecanismo que Estructural y Swing Express, de punta a
+punta, en vez de un camino propio:**
 
-**Por eso la propuesta es una arquitectura híbrida:**
+- El servidor calcula el PDH candidato por símbolo (§5.1) y, cuando es viable, crea una orden
+  pendiente igual que `recibir_tendencia_swing_express` — `recibir_candidato_vela_medianoche(repo,
+  simbolo, pdh, dia_anterior, ahora)` — con `direccion="long"`, `entrada=pdh`, `stop=pdh*0.98`,
+  `estrategia="vela_medianoche"`, y una clave de idempotencia `f"vela_medianoche|{dia_anterior}"`
+  (una sola orden por símbolo por día, aunque refresco corra varias veces).
+- `pulso()` la entrega igual que cualquier otra orden — **sin tocar la función**: como SÍ trae un stop
+  real (a diferencia de Swing Express), `_lotes()` ya calcula el lotaje por riesgo real (2% del
+  capital hasta el stop) sin ningún caso especial, igual que Estructural.
+- El EA, al recibir una orden con `estrategia=="vela_medianoche"`, usa `ORDER_TYPE_BUY_STOP` en vez de
+  `BUY_LIMIT` (una línea en el `if` que ya elige el tipo de orden) y, en vez del vencimiento basado en
+  velas que usa Estructural (`InpVelasExpiracion`), calcula su propio vencimiento a las 9 horas desde
+  medianoche de Barcelona — mismo cálculo de huso horario que ya tiene el EA independiente de hoy
+  (`OffsetBarcelona`/`UltimoDomingo`), portado como una función más dentro de `MexTradeBot_SeguidorSMC.mq5`.
+  El resto de `ColocarOrdenPendiente()` no cambia.
+- El cierre a las 7 horas de la entrada se resuelve **extendiendo el mecanismo que ya existe para el
+  freno de cuenta** (`cierre_auto` en `pulso()`, que ya ordena un cierre cuando corresponde sin que el
+  EA tenga que pedirlo): se agrega una columna `posicion_abierta_en` que se marca la primera vez que
+  `pulso()` ve pasar `posiciones` de 0 a 1 en un robot `vela_medianoche` (mismo punto donde ya se
+  reconcilia `posicion_abierta` para Swing Express), y `pulso()` pide `ordenar_cierre` cuando pasan 7
+  horas desde esa marca — ya existe el camino para "el servidor decide cerrar sin que el robot lo
+  pida", solo se agrega una segunda condición.
+- El stop de emergencia (2%) **no necesita código nuevo**: es el `stop` de la orden, MT5 lo ejecuta
+  solo, igual que cualquier SL de Estructural.
+- `/api/catalogo` usa la MISMA función (`motor_smc.vela_medianoche.candidatos()`) para mostrar el
+  candidato en el Catálogo de Estrategias — no hay dos cálculos del PDH que puedan desalinearse: es
+  literalmente la misma llamada que decide si se crea la orden.
 
-- **El EA mantiene su propia lógica día a día** (la que ya corre hoy en la cuenta demo, sin cambios de
-  comportamiento): calcula su propio PDH con sus propias velas H1, coloca el BUY STOP, lo cancela y
-  recalcula cada medianoche Barcelona, cierra por tiempo, aplica el stop de emergencia. Cero
-  dependencia del servidor para la precisión del disparo.
-- **Lo único que agrega el servidor es una autorización diaria + reporte de resultado:** antes de
-  colocar la orden del día, el EA consulta UNA vez a `despachador` (reusando el mismo patrón
-  `MasterPulso`/licencia/token que ya tienen los otros robots): "¿mi licencia sigue vigente y mi
-  cuenta no está en freno de riesgo?". Si el servidor dice que no, el EA no coloca la orden ese día.
-  Cuando la posición se cierra (por tiempo o por el stop de emergencia), el EA reporta el resultado
-  al servidor (mismo mecanismo de ack que ya existe) para que quede en `master_historial` y cuente
-  contra los límites de descarga de la membresía.
-- **El Catálogo de Estrategias calcula su propio candidato, de forma independiente**, puramente para
-  mostrarlo en la pantalla — usando las velas H1 que YA están en `conectividad.almacen` (las mismas
-  que usa Swing Express), replicando el mismo cálculo de PDH/ventana en Python. Esta copia del cálculo
-  es solo informativa (qué le mostramos al alumno para que decida si vale la pena activar el robot);
-  **no es la que dispara la orden real** — esa la calcula el EA con sus propios datos, como ya hace
-  hoy. Una pequeña discrepancia entre ambos cálculos (p. ej. un retraso de minutos en el candle store
-  del catálogo) no pone en riesgo dinero real: en el peor caso, el catálogo muestra un candidato que
-  ya no aplica, o se tarda un ciclo de refresco en mostrar uno nuevo.
-
-Este reparto evita reinventar lo que ya funciona (el EA probado en demo) y evita acoplar la precisión
-del disparo a la latencia del servidor, a cambio de que "licencia" y "candidato visible" vivan en dos
-cálculos independientes del mismo PDH en vez de uno solo compartido. Lo marco explícitamente para que
-el builder lo cuestione si ve un problema que no estoy viendo.
+Este cambio de enfoque es mío, decidido al escribir el plan — más simple que la versión híbrida,
+reusa código ya probado en producción (Estructural/Swing Express) en vez de construir un camino
+paralelo, y hace que "candidato visible" y "orden real" sean el mismo cálculo, no dos que puedan
+desalinearse.
 
 ## 5. Qué construye cada pieza
 
@@ -105,21 +111,14 @@ el builder lo cuestione si ve un problema que no estoy viendo.
   5; Vela de Medianoche usa "un día calendario de Barcelona" como su propio ciclo fijo). Esto también
   evita que `robots_descargados` confunda una descarga de Estructural-D1 con una de Vela de
   Medianoche en el mismo símbolo al compartir cupo (§3).
-- **Mecánica de la autorización diaria:** el EA sigue con su `EventSetTimer(5)` actual (no cambia a
-  sondear todo el tiempo como `SeguidorSMC`); dentro de `Ciclo()`, justo antes de
-  `ColocarOrdenDelDia`, hace UNA llamada HTTP al servidor (mismo patrón de headers
-  `Authorization: Bearer <token>` que ya usan los otros EAs) pidiendo autorización para hoy.
-  Es una llamada puntual de una vez al día, no un pulso continuo — más simple y consistente con que
-  esta estrategia ya no necesita que el servidor le entregue una orden (la calcula ella misma).
-- **Si el servidor no autoriza vs. si no responde:** son casos distintos y se tratan distinto.
-  - **No autorizado** (freno de riesgo activo o licencia inválida, respuesta 200 con `autorizado:false`
-    o 401/403): no se coloca la orden ese día, se registra motivo explícito en el log del EA
-    (`Print`) y se avisa igual que los otros EAs avisan sus bloqueos.
-  - **Sin respuesta** (timeout, error de red, 5xx): se reintenta con backoff corto DENTRO de la
-    ventana de 9 h (no se da por vencido en el primer intento, un error transitorio no debe costar
-    el día completo); si tras los reintentos sigue sin respuesta, se fallan cerrado — no se coloca la
-    orden — y se deja un log distinto ("sin respuesta del servidor", no "rechazada") para que quede
-    claro en diagnóstico que no fue un freno de riesgo real.
+- **Autorización diaria:** ya no es un mecanismo aparte (ver §4) — el robot de Vela de Medianoche
+  corre igual que SeguidorSMC en modo Master: `MasterPulso()` cada pocos segundos, mismo
+  `MTB_LICENSE_TOKEN`. La licencia y el freno de riesgo se verifican donde ya se verifican para
+  Estructural y Swing Express (`compuerta.evaluar()` dentro de `pulso()`); si la cuenta está en
+  freno, la orden del día simplemente no se entrega — mismo comportamiento que ya tienen las otras 2
+  estrategias, sin lógica nueva. Si el servidor no responde, el EA ya tiene su propio manejo de
+  reintento/standby para `MasterPulso` (ver `EntrarStandby`/`MasterAviso`) — tampoco hace falta nada
+  nuevo ahí.
 - **Ciclo de refresco del candidato de catálogo (corregido a pedido de Ricardo):** usa el MISMO ciclo
   y la MISMA información de `refresco.py` que las otras estrategias — no un recálculo especial una
   vez al día. `pdh_candidato()`/`candidatos()` (§5.1) se enganchan en `_avisar_master` igual que
@@ -131,7 +130,7 @@ el builder lo cuestione si ve un problema que no estoy viendo.
   del año en que cambia el horario de la UE (puerto de `OffsetBarcelona`/`UltimoDomingo`), para no
   desalinear "viable" en el catálogo vs. lo que el EA real decide ese día.
 
-### 5.1 Motor de candidatos (nuevo, para el catálogo — solo lectura)
+### 5.1 Motor de candidatos (nuevo — lo usan tanto el catálogo como el despachador)
 
 `motor_smc/vela_medianoche.py`:
 - `pdh_candidato(simbolo: str, ahora: datetime | None = None) -> dict | None`
@@ -140,11 +139,11 @@ el builder lo cuestione si ve un problema que no estoy viendo.
     puerto directo de `OffsetBarcelona`/`UltimoDomingo` del .mq5 a Python).
   - Si el día anterior tuvo < 12 velas H1 → `None` (no viable).
   - Si no → `{"simbolo", "pdh", "dia_anterior", "ventana_hasta"}` (el PDH y hasta qué hora de hoy
-    sigue viva la ventana de 9 h), sin tocar precio actual en vivo (el catálogo no tiene feed de tick;
-    "viable" aquí significa "el día anterior califica y la ventana de hoy no ha cerrado", no "ya se
-    activó" — eso el EA lo decide con precio real).
+    sigue viva la ventana de 9 h).
 - `candidatos(ahora=None) -> list[dict]`: corre `pdh_candidato` sobre los 34 símbolos de
-  `api.catalogo.SIMBOLO_XM`.
+  `api.catalogo.SIMBOLO_XM`. **Una sola función, dos consumidores** (§4): `refresco.py` la llama para
+  decidir si crea la orden del día; `/api/catalogo` la llama para pintar el catálogo. Nunca pueden
+  desalinearse porque es el mismo cálculo.
 
 ### 5.2 Catálogo / frontend
 
@@ -152,39 +151,48 @@ el builder lo cuestione si ve un problema que no estoy viendo.
   `ag-grid`/`ag-asset` igual a la de Swing Express, pero con sus propias columnas: "Nivel a romper
   (PDH)", "Día de referencia", "Ventana válida hasta" — **nunca** "Expectativa" ni "Tu posición"
   (no aplican aquí; no se inventan).
-- Fuente de datos: un campo nuevo en la respuesta de `/api/catalogo` (o un endpoint propio, a decidir
-  en el plan) con la lista de `candidatos()`.
+- Fuente de datos: nuevo campo en la respuesta de `/api/catalogo` (p. ej. `vela_medianoche_todos`)
+  con la lista que da `candidatos()`, igual de fresca que el resto del catálogo porque sale de la
+  misma llamada HTTP.
 
-### 5.3 despachador.py (autorización diaria + historial)
+### 5.3 despachador.py
 
-- `robots_vela_medianoche(simbolo)`: lista de robots VIVOS y activados con `estrategia='vela_medianoche'`
-  para ese símbolo (mismo patrón que `robots_swing_express`).
-- Nuevo campo en el `estado` que manda el EA en `MasterPulso` (o un pulso específico, a decidir en el
-  plan): el EA avisa "voy a abrir mi orden del día" y el servidor responde autorizado/no-autorizado
-  corriendo `compuerta.evaluar()` igual que las otras dos estrategias (freno de cuenta: drawdown,
-  racha, pérdida diaria) — sin inventar un segundo sistema de riesgo.
-- Ack de cierre: mismo mecanismo que ya existe (`aplicar_ack`/`_filas_historial`) para registrar la
-  operación en `master_historial` cuando el EA reporta que cerró (por tiempo o por el stop de
-  emergencia).
+- `recibir_candidato_vela_medianoche(repo, simbolo, pdh, dia_anterior, ahora)`: mismo patrón que
+  `recibir_tendencia_swing_express` — busca robots vivos y activados con `estrategia='vela_medianoche'`
+  para ese símbolo (`robots_vela_medianoche(simbolo)`, nuevo, mismo patrón que `robots_swing_express`)
+  y, si no tienen ya una orden/posición de hoy (clave `f"vela_medianoche|{dia_anterior}"`), crea la
+  orden con `crear_orden({..., "direccion":"long", "entrada":pdh, "stop":pdh*0.98, "estrategia":
+  "vela_medianoche", ...})`. `pulso()` la entrega y la dimensiona sin ningún caso especial (§4).
+- `pulso()` (se modifica, no se reescribe): cuando `robot.get("estrategia")=="vela_medianoche"` y
+  `posicion_abierta` pasa a verdadero (mismo punto donde ya se reconcilia Swing Express), se marca
+  `posicion_abierta_en=ahora` en el robot; la condición de `cierre_auto` se extiende para también
+  pedir `ordenar_cierre` cuando `ahora - posicion_abierta_en >= 7h` para un robot `vela_medianoche`
+  — reusa el camino que ya existe para el freno de cuenta, con una segunda razón para activarse.
+- Ack de cierre: mismo mecanismo que ya existe (`aplicar_ack`/`_filas_historial`) — no cambia.
+- `persistencia/migraciones.py`: nueva columna `master_robots.posicion_abierta_en` (timestamp,
+  nullable).
 
-### 5.4 EA
+### 5.4 EA (dentro de `MexTradeBot_SeguidorSMC.mq5` — mismo archivo, no uno aparte)
 
-- Se parte de `robots/MexTradeBot_OroMedianoche.mq5` (hoy fuera de git) tal cual — **se sube a git en
-  este trabajo** — y se le agrega: lectura de `MTB_LICENSE_TOKEN`/`InpMasterUrl` (mismas constantes que
-  `MexTradeBot_SeguidorSMC.mq5`), la llamada de autorización diaria antes de `ColocarOrdenDelDia`, y el
-  reporte de cierre vía ack. El resto de su lógica (cálculo de PDH, BuyStop, cierre por tiempo, stop de
-  emergencia) **no cambia**.
-- Queda como archivo propio (no se mezcla con `MexTradeBot_SeguidorSMC.mq5`): su ciclo de vida
-  (orden diaria recalculada, no "una orden por señal") es demasiado distinto para compartir el mismo
-  flujo de `MasterPulso` sin complicarlo para las otras dos estrategias.
+- En `MasterPulso()`, junto al `if(es_swing_express)`, se agrega `bool es_vela_medianoche =
+  (estrategia == "vela_medianoche")`.
+- Si es vela_medianoche: `tipo = ORDER_TYPE_BUY_STOP` (en vez de `BUY_LIMIT`/`SELL_LIMIT`), y el
+  vencimiento de la orden pendiente ya no usa `InpVelasExpiracion` sino una función nueva
+  `VencimientoVelaMedianoche()` — puerto de `OffsetBarcelona`/`UltimoDomingo`/el cálculo de "9 horas
+  desde medianoche" del `MexTradeBot_OroMedianoche.mq5` existente, ahora como funciones dentro de
+  `SeguidorSMC.mq5`. El resto de `ColocarOrdenPendiente()` no cambia.
+- `MexTradeBot_OroMedianoche.mq5` (el EA independiente de hoy, fuera de git) **no se sube ni se usa**
+  — su lógica de PDH/horario se porta a Python (§5.1) y a las dos funciones nuevas del EA de arriba;
+  el archivo en sí queda obsoleto, Ricardo puede quitarlo de la cuenta demo cuando el robot licenciado
+  esté probado.
 
 ### 5.5 Ficha de descarga / licencias
 
 - `_robot_ficha` (api/alumnos.py) acepta `modo` igual que hoy, pero para `estrategia=vela_medianoche`
-  el activo se elige libremente entre los 34 (sin selector de temporalidad — es "Diario" implícito).
-- El compilador (servicio externo en el VPS) necesita compilar `MexTradeBot_OroMedianoche.mq5` con el
-  token del alumno embebido — ver §7 (debería funcionar sin tocar el VPS, se confirma con una prueba
-  real al final del plan).
+  el activo se elige libremente entre los 34 (sin selector de temporalidad — se guarda como
+  `"Diario"`, ver §5.0).
+- El compilador **no necesita ningún cambio** (§7): sigue siendo el mismo `MexTradeBot_SeguidorSMC.mq5`
+  de siempre, con el mismo token embebido de siempre.
 
 ## 6. No-metas
 
@@ -192,25 +200,15 @@ el builder lo cuestione si ve un problema que no estoy viendo.
   breakeven (Ricardo ya decidió eso el 31 de octubre).
 - No se construye expectativa/winrate para esta estrategia — explícitamente no aplica.
 - No se toca el flujo de Estructural ni Swing Express.
+- No se sube `MexTradeBot_OroMedianoche.mq5` a git ni se mantiene como archivo aparte — su lógica
+  queda portada dentro de `SeguidorSMC.mq5` y de `motor_smc/vela_medianoche.py` (§5.4).
 
-## 7. Compilador del VPS — resuelto dentro de este trabajo
+## 7. Compilador del VPS — ya no aplica
 
-No hace falta tocar nada en el VPS. Hoy `MexTradeBot_OroMedianoche.mq5` no tiene NINGÚN mecanismo de
-token (el .mq5 actual ni siquiera declara la variable); `MexTradeBot_SeguidorSMC.mq5` sí la tiene,
-como un `input string MTB_LICENSE_TOKEN = "";` — el compilador del VPS, para generar un .ex5
-personalizado, toma ese .mq5, reemplaza esa declaración por el token del alumno y compila. Es un
-reemplazo de texto sobre una convención (el nombre `MTB_LICENSE_TOKEN`), no algo amarrado al nombre
-del archivo `SeguidorSMC`.
-
-La solución: en §5.4, al adaptar `MexTradeBot_OroMedianoche.mq5`, se le agrega **exactamente la misma
-declaración** `input string MTB_LICENSE_TOKEN = "";` (mismo nombre, mismo formato) que usa
-`MexTradeBot_SeguidorSMC.mq5`, además de `InpMasterUrl` con el mismo patrón de headers
-`Authorization: Bearer`. Así, el mismo mecanismo de reemplazo que ya usa el compilador para el otro
-EA funciona para este sin que el VPS necesite ningún cambio.
-
-Como no tengo acceso al VPS desde este entorno para confirmarlo con certeza total, el plan de
-implementación termina con una prueba real: descargar un robot de Vela de Medianoche desde la ficha
-en el laboratorio de principio a fin. Si el .ex5 llega bien, queda confirmado y resuelto. Si el
-compilador lo rechaza, el error que devuelva será concreto (no una suposición) y con eso sabré
-exactamente qué pedirte que ajustes en el VPS — pero la expectativa, dado cómo está hecho hoy el
-compilador, es que funcione sin tocar nada ahí.
+Con la arquitectura revisada (§4), Vela de Medianoche es una estrategia más dentro de
+`MexTradeBot_SeguidorSMC.mq5` — el mismo archivo que el compilador ya sabe compilar con el token del
+alumno embebido, sin ningún archivo nuevo. No hay nada que coordinar en el VPS: `compilador.py`
+(`FUENTE = .../MexTradeBot_SeguidorSMC.mq5`) no cambia. El plan de implementación igual termina con
+una prueba real de descarga en el laboratorio, por el mismo rigor que todo lo demás en este proyecto,
+pero no por una duda de arquitectura — por confirmar que el .ex5 resultante realmente coloca el
+BUY STOP como se espera.
