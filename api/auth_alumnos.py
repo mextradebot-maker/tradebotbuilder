@@ -135,22 +135,16 @@ def _marco(titulo: str, cuerpo: str) -> str:
 
 
 def correo_recuperacion(nombre: str, enlace: str) -> tuple[str, str]:
-    # El enlace va como TEXTO, no como <a>: el SMTP de Brevo reescribe los <a> con un rastreador de clics y el enlace
-    # de recuperacion (con su token) pasaria por ese redireccionador. Gmail y los demas lo vuelven clicable solos.
-    primero = escape((nombre or "").split(" ")[0] or "hola")
-    cuerpo = (f"<p>Hola {primero}, recibimos una solicitud para restablecer la contraseña de tu panel de alumnos.</p>"
-              "<p>Abre este enlace para crear una contraseña nueva (si no se abre al tocarlo, cópialo y pégalo en tu navegador):</p>"
-              f"<p style=\"background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:12px 14px;word-break:break-all;font-family:monospace;font-size:13px\">{escape(enlace)}</p>"
-              "<p>El enlace funciona una sola vez y vence en 1 hora. Si no fuiste tú, ignora este mensaje: tu contraseña actual no cambia.</p>")
-    return "Restablece tu contraseña | MexTradeBot", _marco("Restablece tu contraseña", cuerpo)
+    """Correo de recuperación de contraseña con la plantilla común (api/correos_ecosistema.py). El enlace va como texto, no como <a>."""
+    from api.correos_ecosistema import recuperacion
+
+    return recuperacion(nombre, enlace)
 
 
 def correo_bienvenida(nombre: str) -> tuple[str, str]:
-    primero = escape((nombre or "").split(" ")[0] or "hola")
-    cuerpo = (f"<p>Hola {primero}, tu cuenta del panel de alumnos ya está creada.</p>"
-              f"<p>Entra cuando quieras en <a href=\"{BASE}/alumnos\">mextradebot.com.mx/alumnos</a> con este correo y la contraseña que elegiste. "
-              "Por seguridad no te enviamos la contraseña por correo; si la olvidas, usa «¿Olvidaste tu contraseña?» en la pantalla de inicio de sesión.</p>")
-    return "Tu cuenta del panel MexTradeBot está lista", _marco("Tu cuenta está lista", cuerpo)
+    from api.correos_ecosistema import panel_bienvenida
+
+    return panel_bienvenida(nombre)
 
 
 def enviar_correo(para: str, asunto: str, html: str) -> bool:

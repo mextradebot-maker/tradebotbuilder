@@ -52,19 +52,28 @@ def caja(html: str) -> str:
             f'<td bgcolor="#f1f4fb" style="border-left:4px solid {TEAL};border-radius:6px;padding:14px 18px;font:15px/1.6 Arial,Helvetica,sans-serif;color:{INK}">{html}</td></tr></table>')
 
 
-def firma() -> str:
+def firma(tipo: str = "ricardo") -> str:
+    """Firma con foto y datos. 'ricardo' = personal (bienvenidas, seguimiento); 'soporte' = equipo (seguridad, pagos, cancelaciones)."""
     b = base()
     enlaces = " &nbsp;·&nbsp; ".join(
         f'<a href="{u}" style="color:{NAVY};text-decoration:underline">{t}</a>'
         for t, u in (("mextradebot.com.mx", b + "/"), ("WhatsApp", WHATSAPP), ("Telegram", TELEGRAM), (SOPORTE, "mailto:" + SOPORTE)))
+    if tipo == "soporte":
+        avatar = (f'<img src="{b}/img/logo-mtb.png" width="76" height="76" alt="MexTradeBot" '
+                  f'style="display:block;width:76px;height:76px;border-radius:14px;border:1px solid #e1e6f2;background:#ffffff;border-width:1px">')
+        texto = (f'<span style="font:15px/1.5 Arial,Helvetica,sans-serif;color:{MUTED}">Estamos para ayudarte,</span><br>'
+                 f'<b style="font-size:17px">Equipo de soporte de MexTradeBot</b><br>'
+                 f'<span style="color:{MUTED}">Respondemos en días hábiles</span><br>')
+    else:
+        avatar = (f'<img src="{b}/img/email/ricardo.jpg" width="76" height="76" alt="Ricardo Peña" '
+                  f'style="display:block;width:76px;height:76px;border-radius:38px;border:0">')
+        texto = (f'<span style="font:15px/1.5 Arial,Helvetica,sans-serif;color:{MUTED}">Un abrazo,</span><br>'
+                 f'<b style="font-size:17px">Ricardo Peña Covarrubias</b><br>'
+                 f'Fundador de MexTradeBot<br>'
+                 f'<span style="color:{MUTED}">Ponente invitado en The Trading Festival México</span><br>')
     return (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:30px;border-top:1px solid #e1e6f2"><tr>'
-            f'<td width="92" valign="top" style="padding:22px 16px 0 0"><img src="{b}/img/email/ricardo.jpg" width="76" height="76" alt="Ricardo Peña" '
-            f'style="display:block;width:76px;height:76px;border-radius:38px;border:0"></td>'
-            f'<td valign="top" style="padding:22px 0 0;font:14px/1.6 Arial,Helvetica,sans-serif;color:{INK}">'
-            f'<span style="font:15px/1.5 Arial,Helvetica,sans-serif;color:{MUTED}">Un abrazo,</span><br>'
-            f'<b style="font-size:17px">Ricardo Peña Covarrubias</b><br>'
-            f'Fundador de MexTradeBot<br>'
-            f'<span style="color:{MUTED}">Ponente invitado en The Trading Festival México</span><br>'
+            f'<td width="92" valign="top" style="padding:22px 16px 0 0">{avatar}</td>'
+            f'<td valign="top" style="padding:22px 0 0;font:14px/1.6 Arial,Helvetica,sans-serif;color:{INK}">{texto}'
             f'<span style="font-size:13px">{enlaces}</span></td></tr></table>')
 
 
@@ -80,7 +89,7 @@ def pie(motivo: str, extra: str = "") -> str:
             f'MexTradeBot · Querétaro, Qro., México · {SOPORTE}</td></tr>')
 
 
-def plantilla(preheader: str, kicker: str, h1: str, subtitulo: str, cuerpo: str, motivo: str, extra_pie: str = "") -> str:
+def plantilla(preheader: str, kicker: str, h1: str, subtitulo: str, cuerpo: str, motivo: str, extra_pie: str = "", firma_tipo: str = "ricardo") -> str:
     b = base()
     oculto = "&#8199;&#65279;&#847; " * 30
     return (
@@ -94,6 +103,6 @@ def plantilla(preheader: str, kicker: str, h1: str, subtitulo: str, cuerpo: str,
         f'<div style="font:bold 12px Arial,Helvetica,sans-serif;letter-spacing:2px;color:{TEAL};text-transform:uppercase;margin-bottom:10px">{kicker}</div>'
         f'<h1 style="margin:0 0 10px;font:bold 28px/1.2 Arial,Helvetica,sans-serif;color:#ffffff">{h1}</h1>'
         f'<div style="font:17px/1.5 Arial,Helvetica,sans-serif;color:#b9c5e3">{subtitulo}</div></td></tr>'
-        f'<tr><td style="padding:30px 32px 34px">{cuerpo}{firma()}</td></tr>'
+        f'<tr><td style="padding:30px 32px 34px">{cuerpo}{firma(firma_tipo)}</td></tr>'
         f'{pie(motivo, extra_pie)}'
         f'</table></td></tr></table>')
