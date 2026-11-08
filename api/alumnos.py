@@ -162,10 +162,14 @@ def _robot_ficha(datos: dict, headers: dict) -> tuple[int, dict]:
     from persistencia import licencias, membresias
 
     modo = str(datos.get("modo") or "").lower()
+    estrategia = str(datos.get("estrategia") or "estructural")  # mismo campo que activar() en api/master.py
     try:
         if modo not in ("demo", "real"):
             raise ValueError("modo debe ser demo o real")
-        simbolo, temporalidad, capital = validar_presets(datos.get("simbolo"), datos.get("temporalidad"), datos.get("capital"))
+        temporalidad = datos.get("temporalidad")
+        if estrategia == "vela_medianoche":  # el alumno nunca elige la temporalidad de esta estrategia
+            temporalidad = "Diario"
+        simbolo, temporalidad, capital = validar_presets(datos.get("simbolo"), temporalidad, datos.get("capital"))
     except ValueError as e:
         return 400, {"error": str(e)}
 
@@ -173,9 +177,9 @@ def _robot_ficha(datos: dict, headers: dict) -> tuple[int, dict]:
     nivel = _nivel(alumno["correo"], ahora)
     if modo == "demo":
         lic = licencias.asegurar_licencia_demo(alumno["correo"], alumno["nombre"])
-        if nivel and _estado(lic, ahora) == "expirada":  # mientras paguen, su DEMO no caduca
-            membresias.renovar_demo(lic["id"])
-            lic = {**lic, "expira_en": None}
+        if nivel and _estado(lic, ahora) != "activa":  # mientras paguen, su DEMO no caduca ni queda revocada
+            licencias.reautorizar(lic["id"], membresias.VIGENCIA_DEMO_DIAS)
+            lic = {**lic, "expira_en": None, "revocada_en": None}
         if _estado(lic, ahora) != "activa":
             return 403, {"error": "licencia_no_vigente"}
     else:
@@ -327,21 +331,23 @@ def demo() -> None:
     vieja = {**mia, "id": 6, "revocada_en": ahora}
     creadas, vinculados = [], []
     estado = {"demo": mia, "extra": []}  # lo que devuelve asegurar_licencia_demo / licencias reales del alumno
+    reautorizadas = []
     falso = types.SimpleNamespace(
         alumno_por_sesion=lambda t: {"id": 1, "correo": "ana@x.com", "nombre": "Ana </script>"} if t == "ok" else None,
         licencias_de_correo=lambda c: [*estado["extra"], mia, vieja] if c == "ana@x.com" else [],
         asegurar_licencia_demo=lambda c, n: (creadas.append(c), estado["demo"])[1],
         token_de_licencia=lambda i: f"MTB-TOKEN-{i}",
         vincular_telegram=lambda a, c: vinculados.append((a, c)),
+        reautorizar=lambda i, d: reautorizadas.append(i),
     )
     LIMITES = {None: {"demo": 3, "real": 0}, "trader": {"demo": None, "real": 5}, "vip": {"demo": None, "real": None}}
-    mem = {"nivel": None, "bajadas": {}, "renovadas": []}
+    mem = {"nivel": None, "bajadas": {}}
     falso_mem = types.SimpleNamespace(
         LIMITES=LIMITES,
+        VIGENCIA_DEMO_DIAS=90,
         nivel_de=lambda c: mem["nivel"],
         robots_descargados=lambda c, m: set(mem["bajadas"].get((c, m), set())),
         registrar_descarga=lambda c, m, s, t: mem["bajadas"].setdefault((c, m), set()).add((s, t)),
-        renovar_demo=lambda i: mem["renovadas"].append(i),
         robots_de_correos=lambda cs: [{"correo": c, "modo": m, "simbolo": s, "temporalidad": t}
                                       for (c, m), robots in mem["bajadas"].items() if c in cs for s, t in sorted(robots)],
     )
@@ -420,6 +426,19 @@ def demo() -> None:
             ("demo", "Oro (XAUUSD) · Intraday 1H"), ("demo", "Dow Jones 30 (US30) · Swing (M)"),
             ("real", "Oro (XAUUSD) · Intraday 1H")}, robots
         assert all(r["simbolo_xm"] for r in robots) and "correo" not in robots[0]
+
+        # ── vela_medianoche: la temporalidad siempre es "Diario", el cliente mande lo que mande ──
+        pedidos.clear()
+        vm = {"simbolo": "EURJPY", "modo": "demo", "estrategia": "vela_medianoche"}
+        st, body = procesar_mi_robot(vm, con)
+        assert st == 200 and len(pedidos) == 1 and pedidos[0][1] == {"simbolo": "EURJPY", "temporalidad": "Diario", "capital": None}, pedidos
+        pedidos.clear()
+        vm_otra_tf = {**vm, "temporalidad": "Swing (S)"}  # el cliente manda otra TF: se ignora, se usa "Diario"
+        st, body = procesar_mi_robot(vm_otra_tf, con)
+        assert st == 200 and len(pedidos) == 1 and pedidos[0][1] == {"simbolo": "EURJPY", "temporalidad": "Diario", "capital": None}, pedidos
+        mem["bajadas"][("ana@x.com", "demo")].discard(("EURJPY", "Diario"))  # no contamina los limites de abajo
+        reautorizadas.clear()  # idem para el chequeo mas abajo de reautorizadas == [5]
+
         admin_vip, estado["extra"], estado["demo"] = estado["extra"], [], mia  # Gratis: sin licencias pagadas
         def bajar(simbolo, temporalidad="Intraday 4H", modo="demo"):
             return procesar_mi_robot({**ficha, "simbolo": simbolo, "temporalidad": temporalidad, "modo": modo}, con)
@@ -441,12 +460,12 @@ def demo() -> None:
         assert st == 402 and body["limite"] == 5 and "VIP" in body["mensaje"]
         assert bajar("EURUSD", modo="real")[0] == 200
         estado["demo"] = {**mia, "expira_en": ahora}                         # DEMO de registro caducada
-        assert bajar("EURUSD")[0] == 200 and mem["renovadas"] == [5]          # miembro: se renueva
+        assert bajar("EURUSD")[0] == 200 and reautorizadas == [5]            # miembro: se renueva
         mem["nivel"] = "vip"
         estado["extra"] = [{**mia, "id": 11, "tipo": "vip", "origen": "hotmart"}]
         assert bajar("NZDUSD", modo="real")[0] == 200                        # VIP: ilimitado
         mem["nivel"], estado["extra"] = None, []
-        assert bajar("EURUSD")[0] == 403 and mem["renovadas"] == [5]          # sin membresía: no se renueva
+        assert bajar("EURUSD")[0] == 403 and reautorizadas == [5]            # sin membresía: no se renueva
         estado["extra"], estado["demo"] = admin_vip, mia
         assert bajar("NZDUSD", "Swing (S)")[0] == 200                        # licencia manual: sin límites
 
