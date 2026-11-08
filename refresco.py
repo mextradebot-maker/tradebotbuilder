@@ -189,6 +189,20 @@ def _avisar_master(simbolo: str, temporalidad: str, body: dict) -> None:
         print(f"[master] oportunidad {simbolo} {temporalidad} no despachada: {type(e).__name__}: {e}", flush=True)
 
 
+def _avisar_vela_medianoche() -> None:
+    """Igual que _avisar_master pero para Vela de Medianoche: candidatos() ya cubre los 34 simbolos,
+    asi que se llama UNA sola vez por ciclo (no por simbolo/temporalidad). Nunca propaga un fallo: el
+    resto del refresco sigue aunque el Master no responda."""
+    try:
+        from master.despachador import RepoPg, recibir_candidato_vela_medianoche
+        from motor_smc.vela_medianoche import candidatos
+        repo = RepoPg()
+        for c in candidatos():
+            recibir_candidato_vela_medianoche(repo, c["simbolo"], c["pdh"], c["dia_anterior"])
+    except Exception as e:
+        print(f"[master] vela de medianoche no despachada: {type(e).__name__}: {e}", flush=True)
+
+
 def refrescar_uno(simbolo: str, temporalidad: str) -> tuple:
     """(simbolo, temporalidad, status, error); status None si procesar lanzó. procesar abre su propia
     conexión a Postgres por llamada (seguro entre hilos)."""
@@ -285,6 +299,8 @@ def ciclo(presupuesto: float = PRESUPUESTO_CICLO_S, grupo: tuple[int, int] | Non
         if status != 200:
             logging.warning("refresco %s %s -> %s %s", simbolo, temporalidad, status, error)
         hechos += 1
+    if os.environ.get("MASTER_ACTIVO") == "1":
+        _avisar_vela_medianoche()
     return hechos
 
 
@@ -437,6 +453,41 @@ def demo() -> None:
         assert ciclo() == len(orden) and llamadas == orden
     finally:
         g.update(orig)
+
+    # ciclo() avisa Vela de Medianoche UNA sola vez por ciclo (no por simbolo/temporalidad), solo si
+    # MASTER_ACTIVO=1, y un fallo de candidatos()/recibir_candidato_vela_medianoche no tumba el ciclo
+    import datetime as _dt
+
+    from master import despachador as _desp
+    from motor_smc import vela_medianoche as _vm
+    orig2 = {n: g[n] for n in ("pendientes", "refrescar_uno")}
+    orig_candidatos, orig_recibir, orig_repopg = _vm.candidatos, _desp.recibir_candidato_vela_medianoche, _desp.RepoPg
+    llamadas_vm = []
+    e0v = dict(os.environ)
+    try:
+        g["pendientes"] = lambda ahora: orden
+        g["refrescar_uno"] = lambda s, t: (s, t, 200, None)
+        _desp.RepoPg = lambda: "repo-falso"  # sin esto, RepoPg() real dispara persistencia/migraciones (necesita DB)
+        _vm.candidatos = lambda: [{"simbolo": "XAUUSD", "pdh": 2100.0, "dia_anterior": _dt.date(2026, 11, 6),
+                                    "ventana_hasta": _dt.datetime(2026, 11, 7, 7, 0, tzinfo=_dt.timezone.utc)},
+                                   {"simbolo": "EURUSD", "pdh": 1.1, "dia_anterior": _dt.date(2026, 11, 6),
+                                    "ventana_hasta": _dt.datetime(2026, 11, 7, 7, 0, tzinfo=_dt.timezone.utc)}]
+        _desp.recibir_candidato_vela_medianoche = lambda repo, s, pdh, dia: llamadas_vm.append((s, pdh, dia))
+        os.environ.pop("MASTER_ACTIVO", None)
+        ciclo()
+        assert llamadas_vm == [], llamadas_vm  # sin MASTER_ACTIVO=1: no se avisa
+        os.environ["MASTER_ACTIVO"] = "1"
+        ciclo()
+        assert llamadas_vm == [("XAUUSD", 2100.0, _dt.date(2026, 11, 6)), ("EURUSD", 1.1, _dt.date(2026, 11, 6))], llamadas_vm
+        llamadas_vm.clear()
+        _vm.candidatos = lambda: (_ for _ in ()).throw(RuntimeError("almacen sin datos"))
+        assert ciclo() == len(orden) and llamadas_vm == []  # falla Vela de Medianoche: el resto del ciclo sigue
+    finally:
+        g.update(orig2)
+        _vm.candidatos = orig_candidatos
+        _desp.recibir_candidato_vela_medianoche = orig_recibir
+        _desp.RepoPg = orig_repopg
+        os.environ.clear(); os.environ.update(e0v)
     _cerrar_pool()
     e0 = dict(os.environ)
     try:  # env: HILOS manda; WORKERS es alias obsoleto; por defecto 6
