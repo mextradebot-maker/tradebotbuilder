@@ -1027,6 +1027,7 @@ window.cargarResumen = function(forzar){ return window.renderResumenDashboard(fo
   function numeric(v){if(v===null||v===undefined||v===''||typeof v==='boolean')return null;const n=Number(String(v).replace(/[%R]/g,'').trim());return Number.isFinite(n)?n:null;}
   function percentage(v){const n=numeric(v);return n===null?'Sin datos':(String(v).includes('%')?n:n<=1?n*100:n).toLocaleString('es-MX',{maximumFractionDigits:1})+'%';}
   function number(v,suffix=''){const n=numeric(v);return n===null?'Sin datos':n.toLocaleString('es-MX',{maximumFractionDigits:2})+suffix;}
+  function price(v){const n=numeric(v);return n===null?'Sin datos':n.toLocaleString('es-MX',{maximumFractionDigits:5});} // precios: 2 decimales redondean EURUSD 1.08523 a 1.09
   function trend(value){const t=String(value||'').toLowerCase();if(['compra','alcista','buy','bullish'].includes(t))return ['up','↗ Alcista'];if(['venta','bajista','sell','bearish'].includes(t))return ['down','↘ Bajista'];if(['lateral','neutral','rango'].includes(t))return ['flat','→ Lateral'];return ['unknown','— Sin datos'];}
   function badge(value){const [c,t]=trend(value);return `<span class="ag-trend ag-${c}">${t}</span>`;}
   function periodKey(value){
@@ -1110,7 +1111,7 @@ window.cargarResumen = function(forzar){ return window.renderResumenDashboard(fo
     if(catEstrategiasVista==='velaMedianoche'){renderVelaMedianoche(host);return;}
     const n=swingExpressFilas().length;
     const nvm=(window.MTB_FILAS_VELA_MEDIANOCHE||[]).length;
-    host.innerHTML=`<p class="ag-eyebrow">CATÁLOGO DE ESTRATEGIAS</p><h2 class="ag-title">Elige cómo quieres operar.</h2><p class="ag-muted">Cada estrategia es un ángulo distinto sobre el mismo catálogo de activos — solo muestra los que, ahora mismo, cumplen su condición de entrada. La lista se actualiza con cada refresco, igual que Catálogo de activos.</p><div class="strat-grid"><div class="strat-card" data-ag="abrir-estructural"><div class="ag-row"><span class="ag-symbol" style="font-size:16px">Estructural</span></div><p class="ag-muted" style="margin:10px 0 16px">Entra en cambios de tendencia confirmados por el motor SMC (reversión y continuación), con stop loss y take profit calculados por zona de Order Block / FVG.</p><div class="ag-row" style="font-size:11px;color:var(--mt-muted)"><span>5 temporalidades</span><span>Compra y venta</span></div></div><div class="strat-card" data-ag="abrir-vela-medianoche"><div class="ag-row"><span class="ag-symbol" style="font-size:16px">Vela de Medianoche</span><span class="ag-trend ag-up">${nvm} candidato${nvm===1?'':'s'}</span></div><p class="ag-muted" style="margin:10px 0 16px">Aprovecha el patrón de apertura diaria en el oro, con su propia gestión de stop y objetivo — exclusiva de XAUUSD en Diario.</p><div class="ag-row" style="font-size:11px;color:var(--mt-muted)"><span>1 temporalidad</span><span>Solo XAUUSD</span></div></div><div class="strat-card" data-ag="abrir-swing-express"><div class="ag-row"><span class="ag-symbol" style="font-size:16px">Swing Express</span><span class="ag-trend ag-up">${n} candidato${n===1?'':'s'}</span></div><p class="ag-muted" style="margin:10px 0 16px">Se llama "Express" porque solo requiere ver al activo en tendencia alcista para entrar — sin esperar un setup. Lote fijo, sin stop loss, cierra al cambiar la tendencia.</p><div class="ag-row" style="font-size:11px;color:var(--mt-muted)"><span>Semanal / Mensual</span><span>Solo compra</span></div></div></div>`;
+    host.innerHTML=`<p class="ag-eyebrow">CATÁLOGO DE ESTRATEGIAS</p><h2 class="ag-title">Elige cómo quieres operar.</h2><p class="ag-muted">Cada estrategia es un ángulo distinto sobre el mismo catálogo de activos — solo muestra los que, ahora mismo, cumplen su condición de entrada. La lista se actualiza con cada refresco, igual que Catálogo de activos.</p><div class="strat-grid"><div class="strat-card" data-ag="abrir-estructural"><div class="ag-row"><span class="ag-symbol" style="font-size:16px">Estructural</span></div><p class="ag-muted" style="margin:10px 0 16px">Entra en cambios de tendencia confirmados por el motor SMC (reversión y continuación), con stop loss y take profit calculados por zona de Order Block / FVG.</p><div class="ag-row" style="font-size:11px;color:var(--mt-muted)"><span>5 temporalidades</span><span>Compra y venta</span></div></div><div class="strat-card" data-ag="abrir-vela-medianoche"><div class="ag-row"><span class="ag-symbol" style="font-size:16px">Vela de Medianoche</span><span class="ag-trend ag-up">${nvm} candidato${nvm===1?'':'s'}</span></div><p class="ag-muted" style="margin:10px 0 16px">A medianoche (hora de Barcelona) coloca una compra en el máximo del día anterior. Si entra, cierra 7 horas después — sin take profit, solo un stop de emergencia al 2%.</p><div class="ag-row" style="font-size:11px;color:var(--mt-muted)"><span>Diario (gráfica H1)</span><span>34 activos · solo compra</span></div></div><div class="strat-card" data-ag="abrir-swing-express"><div class="ag-row"><span class="ag-symbol" style="font-size:16px">Swing Express</span><span class="ag-trend ag-up">${n} candidato${n===1?'':'s'}</span></div><p class="ag-muted" style="margin:10px 0 16px">Se llama "Express" porque solo requiere ver al activo en tendencia alcista para entrar — sin esperar un setup. Lote fijo, sin stop loss, cierra al cambiar la tendencia.</p><div class="ag-row" style="font-size:11px;color:var(--mt-muted)"><span>Semanal / Mensual</span><span>Solo compra</span></div></div></div>`;
   }
   function renderSwingExpress(host){
     const filas=swingExpressFilas();
@@ -1118,7 +1119,7 @@ window.cargarResumen = function(forzar){ return window.renderResumenDashboard(fo
   }
   function renderVelaMedianoche(host){
     const filas=window.MTB_FILAS_VELA_MEDIANOCHE||[];
-    host.innerHTML=`<button class="ag-btn" data-ag="volver-catalogo-estrategias">← Volver al catálogo de estrategias</button><div class="ag-detail-header"><p class="ag-eyebrow">VELA DE MEDIANOCHE / RESEÑA</p><h2 class="ag-title">El patrón de apertura diaria en el oro.</h2><p class="ag-muted" style="max-width:640px">Exclusiva de XAUUSD en la temporalidad Diario: opera el patrón de la vela de apertura, con su propia gestión de stop loss y take profit.</p></div><p class="ag-status" role="status">Fuente: motor de Vela de Medianoche de MexTradeBot. Se actualiza con cada refresco.</p><h3 style="font-size:14px;font-weight:500;margin:24px 0 12px">Activos candidatos — rompen su máximo del día anterior ahora mismo</h3><div class="ag-grid">${filas.map(f=>{const symbol=String(f.simbolo||'').toUpperCase();return `<a class="ag-asset" href="#activo/${escape(symbol)}" data-symbol="${escape(symbol)}" aria-label="Abrir ficha de ${escape(symbol)}"><div class="ag-row"><span class="ag-symbol">${escape(symbol)}</span></div><span class="ag-name">${escape(f.nombre||symbol)}</span><div class="ag-metrics"><div><small>Nivel a romper (PDH)</small><strong>${number(f.pdh)}</strong></div><div><small>Día de referencia</small><strong>${escape(timestamp({actualizado_en:f.dia_anterior}))}</strong></div><div><small>Ventana válida hasta</small><strong>${escape(timestamp({actualizado_en:f.ventana_hasta}))}</strong></div></div><div class="ag-foot ag-row"><span>Diario</span><span>Ver ficha ↗</span></div></a>`;}).join('')||'<p class="ag-empty">Ningún activo rompe su máximo del día anterior ahora mismo.</p>'}</div>`;
+    host.innerHTML=`<button class="ag-btn" data-ag="volver-catalogo-estrategias">← Volver al catálogo de estrategias</button><div class="ag-detail-header"><p class="ag-eyebrow">VELA DE MEDIANOCHE / RESEÑA</p><h2 class="ag-title">Compra la ruptura del máximo de ayer.</h2><p class="ag-muted" style="max-width:640px">A las 00:00 de Barcelona coloca una orden de compra (BUY STOP) exactamente en el máximo del día anterior. La orden vive hasta las 09:00; si entra, la posición se cierra 7 horas después. Sin take profit ni breakeven: solo un stop de emergencia al 2% bajo la entrada. Es un disparador mecánico — no tiene expectativa medida por activo.</p></div><p class="ag-status" role="status">Fuente: motor de Vela de Medianoche de MexTradeBot (velas H1, hora de Barcelona). Se actualiza con cada refresco.</p><h3 style="font-size:14px;font-weight:500;margin:24px 0 12px">Activos candidatos hoy — orden de compra en su máximo de ayer</h3><div class="ag-grid">${filas.map(f=>{const symbol=String(f.simbolo||'').toUpperCase();return `<div class="ag-asset"><div class="ag-row"><span class="ag-symbol">${escape(symbol)}</span></div><span class="ag-name">${escape(f.nombre||symbol)}</span><div class="ag-metrics"><div><small>Nivel a romper (PDH)</small><strong>${price(f.pdh)}</strong></div><div><small>Día de referencia</small><strong>${escape(timestamp({actualizado_en:f.dia_anterior}))}</strong></div><div><small>Ventana válida hasta</small><strong>${escape(timestamp({actualizado_en:f.ventana_hasta}))}</strong></div></div><div class="ag-foot ag-row"><span>Diario · gráfica H1</span><button type="button" class="ag-btn ag-primary" data-ficha-simbolo="${escape(symbol)}" data-ficha-temporalidad="Diario" aria-label="Descargar robot de Vela de Medianoche para ${escape(symbol)}">Descargar robot ↓</button></div></div>`;}).join('')||'<p class="ag-empty">Ningún activo es candidato hoy: la ventana de las 09:00 ya cerró o el precio abrió por encima de su máximo de ayer.</p>'}</div>`;
   }
   function renderCatalog(){
     const container=el('catalogoTopContenido');
@@ -1314,7 +1315,8 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
     const p = c.periods.find(([n, l]) => n.toLowerCase() === s || l.toLowerCase() === s);
     return p ? p[0] : (estricto ? '' : (c.periodKey(t) || ''));
   }
-  const tf = name => (ctx().periods.find(p => p[0] === name) || [, ''])[1];
+  const VM = 'vela_medianoche', TEMP_VM = 'Diario'; // "Diario" es exclusiva de Vela de Medianoche (mismo criterio que el despachador)
+  const tf = name => name === TEMP_VM ? 'H1' : (ctx().periods.find(p => p[0] === name) || [, ''])[1];
   const tfLegible = name => { const l = tf(name); return l === 'W1' ? 'W1 (Weekly)' : l; };
   function fila(temp) { // fila real del catálogo; sin fila o sin setups = "Sin datos"
     const r = st.simbolo && temp ? ctx().current(st.simbolo, temp) : null;
@@ -1338,7 +1340,8 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
     const c = ctx(); extra = extra || {};
     const s = String(simbolo || '').toUpperCase();
     const modo = extra.modo === 'real' ? 'real' : 'demo';
-    st = { simbolo: c.known(s) ? s : '', temporalidad: normTemp(temporalidad, extra.estricto), modo,
+    const vm = extra.estrategia === VM || String(temporalidad || '').trim() === TEMP_VM;
+    st = { simbolo: c.known(s) ? s : '', temporalidad: vm ? TEMP_VM : normTemp(temporalidad, extra.estricto), modo, estrategia: vm ? VM : '',
            monto: extra.monto != null ? String(extra.monto) : (modo === 'demo' ? String(MONTO_DEMO) : ''),
            montoEditado: !!extra.montoEditado, riesgoOk: false, lic: null, bloqueoReal: false, vista: 'form', error: '' };
     if (!ov || ov.hidden) opener = document.activeElement;
@@ -1437,6 +1440,11 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
   }
   function renderTemps() {
     const c = ctx(), box = $('mfTemps'); if (!box) return;
+    if (st.estrategia === VM) { // temporalidad fija: el alumno no la elige
+      box.innerHTML = `<label class="mf-opt"><input type="radio" name="mfTemp" value="${TEMP_VM}" checked><span class="mf-opt-body"><span class="mf-opt-top"><strong>Vela de Medianoche · ${TEMP_VM} (gráfica H1)</strong></span><span class="mf-opt-stats">Fija para esta estrategia</span></span></label>`;
+      $('mfCatEstado').textContent = '';
+      return;
+    }
     box.innerHTML = c.periods.map(([name, label]) => {
       const f = fila(name), [cls, txt] = c.trend(f && (f.tendencia || f.direccion));
       const stats = !st.simbolo ? 'Elige un activo para ver sus datos' : f ? lineaStats(f) : 'Sin datos';
@@ -1450,8 +1458,10 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
     const elegido = !!(st.simbolo && st.temporalidad), f = elegido ? fila(st.temporalidad) : null;
     const noRec = elegido && (!f || f.viable !== true);
     $('mfRiesgo').hidden = !noRec;
-    if (noRec) $('mfRiesgoTxt').innerHTML = f
-      ? `<strong>${st.simbolo} en ${esc(st.temporalidad)} tiene expectativa negativa en su histórico.</strong> ${lineaStats(f)} · Resultado histórico: ${esc(veredicto(f))}. Puedes descargarlo, pero el riesgo de perder es mayor.`
+    if (noRec) $('mfRiesgoTxt').innerHTML = st.estrategia === VM
+      ? `<strong>Vela de Medianoche no tiene expectativa medida para ${st.simbolo}.</strong> Es un disparador mecánico (compra la ruptura del máximo de ayer), sin backtest que lo respalde en este activo. Puedes descargarlo, pero opera sin esa referencia.`
+      : f
+      ?`<strong>${st.simbolo} en ${esc(st.temporalidad)} tiene expectativa negativa en su histórico.</strong> ${lineaStats(f)} · Resultado histórico: ${esc(veredicto(f))}. Puedes descargarlo, pero el riesgo de perder es mayor.`
       : `<strong>No hay datos de backtest para ${st.simbolo} en ${esc(st.temporalidad)}.</strong> No sabemos cómo se ha comportado esta combinación; trátala como sin información suficiente.`;
     // licencia: REAL sin membresía bloquea; DEMO amarrada avisa
     const bloqueo = st.modo === 'real' && (st.bloqueoReal || (st.lic && st.lic.real === false));
@@ -1467,7 +1477,15 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
     const M = monto();
     $('mfMontoErr').hidden = st.monto === '' || !!M;
     const swing = st.temporalidad.startsWith('Swing'), pr = swing ? 1 : 2, m = v => M ? dinero(M * v) : '—';
-    const filas = [
+    const filas = st.estrategia === VM ? [
+      ['Entrada', 'Compra (BUY STOP) en el máximo del día anterior, colocada a las 00:00 de Barcelona'],
+      ['Vencimiento de la orden', 'A las 09:00 de Barcelona, si no se llenó'],
+      ['Riesgo por operación', `2% = ${m(0.02)} hasta el stop de emergencia`],
+      ['Stop Loss', 'Solo de emergencia: 2% bajo la entrada'],
+      ['Take Profit', 'Ninguno: la posición se cierra 7 horas después de la entrada'],
+      ['Lotaje', 'Lo calcula el servidor para no arriesgar más del 2%'],
+      ['Protección de ganancia', 'Ninguna (sin breakeven ni trailing)']
+    ] : [
       ['Riesgo por operación', `${pr}% = ${m(pr / 100)}${swing ? ' (Swing: provisional, sin SL fijo)' : ''}`],
       ['Stop Loss', 'El del motor SMC en cada setup'],
       ['Take Profit', 'Objetivo del motor (respaldo 2R)'],
@@ -1484,12 +1502,12 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
   async function descargar() {
     if (!st || $('mfAceptar').disabled) return;
     const yo = st, M = monto();
-    const sel = { simbolo: st.simbolo, temporalidad: st.temporalidad, modo: st.modo, monto: st.monto, montoEditado: st.montoEditado };
+    const sel = { simbolo: st.simbolo, temporalidad: st.temporalidad, modo: st.modo, monto: st.monto, montoEditado: st.montoEditado, estrategia: st.estrategia };
     st.vista = 'generando'; st.error = '';
     $('mfCuerpo').innerHTML = '<div class="mf-wait" role="status"><div class="mf-spin" aria-hidden="true"></div><p class="mf-wait-t">Generando tu robot…</p><p class="ag-muted">Lo compilamos con tu licencia y tus datos. Puede tardar hasta 2 minutos; no cierres esta ventana.</p><div class="mf-actions" style="justify-content:center"><button type="button" class="ag-btn" data-mf="cerrar">Cancelar</button></div></div>';
     ov.querySelector('.mf-dialog').focus();
     const mio = ctrl = new AbortController(), timer = setTimeout(() => mio.abort(), TIMEOUT_MS);
-    const q = `simbolo=${encodeURIComponent(sel.simbolo)}&temporalidad=${encodeURIComponent(sel.temporalidad)}&modo=${sel.modo}&capital=${encodeURIComponent(String(M))}`;
+    const q = `simbolo=${encodeURIComponent(sel.simbolo)}&temporalidad=${encodeURIComponent(sel.temporalidad)}&modo=${sel.modo}&capital=${encodeURIComponent(String(M))}${sel.estrategia ? '&estrategia=' + encodeURIComponent(sel.estrategia) : ''}`;
     let res = null, data = {};
     try {
       res = await fetch('/api/v1/mi-robot?' + q, { credentials: 'same-origin', cache: 'no-store', signal: mio.signal });
