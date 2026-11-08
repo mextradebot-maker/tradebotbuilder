@@ -267,6 +267,16 @@ footer.pie p+p{margin-top:8px}
 .tabla-com td.g{color:#0a8f80}
 .tabla-wrap{overflow-x:auto}
 .tabla-com{min-width:640px}
+@media(max-width:640px){
+.tabla-com{min-width:0}
+.tabla-com thead{display:none}
+.tabla-com,.tabla-com tbody,.tabla-com tr,.tabla-com td{display:block;width:100%}
+.tabla-com tr{border:1px solid var(--paper-line);border-radius:12px;padding:6px 0;margin-bottom:14px}
+.tabla-com td{display:flex;justify-content:space-between;gap:16px;border-bottom:1px solid var(--paper-line);padding:10px 16px;text-align:right}
+.tabla-com td:last-child{border-bottom:0}
+.tabla-com td::before{content:attr(data-l);font-size:13px;font-weight:700;color:var(--paper-ink2);text-align:left;flex:0 0 42%}
+.tabla-com td:first-child{font-size:18px;font-weight:700}
+}
 .chico{font-size:14px;color:var(--paper-ink2);max-width:80ch}
 .sino{display:grid;grid-template-columns:1fr 1fr;gap:22px}
 .sino>div{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:26px 28px}
@@ -405,8 +415,8 @@ footer.pie p+p{margin-top:8px}
       <div class="tabla-wrap"><table class="tabla-com">
         <thead><tr><th>Plan</th><th>Mensual (sin IVA)</th><th>Anual (sin IVA)</th><th>Comisión</th><th>Cobras hasta por venta*</th></tr></thead>
         <tbody>
-          <tr><td>Trader</td><td>$169.83</td><td>$1,698.28</td><td>40 % inicial · 25 % renovación</td><td class="g">$611.66</td></tr>
-          <tr><td>VIP</td><td>$284.48</td><td>$2,844.83</td><td>40 % inicial · 25 % renovación</td><td class="g">$1,024.88</td></tr>
+          <tr><td data-l="Plan">Trader</td><td data-l="Mensual (sin IVA)">$169.83</td><td data-l="Anual (sin IVA)">$1,698.28</td><td data-l="Comisión">40 % inicial · 25 % renovación</td><td class="g" data-l="Cobras hasta por venta*">$611.66</td></tr>
+          <tr><td data-l="Plan">VIP</td><td data-l="Mensual (sin IVA)">$284.48</td><td data-l="Anual (sin IVA)">$2,844.83</td><td data-l="Comisión">40 % inicial · 25 % renovación</td><td class="g" data-l="Cobras hasta por venta*">$1,024.88</td></tr>
         </tbody></table></div>
       <p class="chico">*Monto máximo que Hotmart muestra en la página de captación de cada producto (venta del plan anual), en pesos mexicanos. Hotmart calcula la comisión sobre el valor neto de la venta, después de sus propias tarifas, y el monto final lo ves en tu panel de afiliado. Es una ilustración del esquema, no una proyección de ingresos: la comisión depende de ventas efectivas. Si hay reembolso o contracargo, la comisión de esa venta se ajusta.</p>
     </div>
