@@ -198,7 +198,7 @@ def _avisar_vela_medianoche() -> None:
         from motor_smc.vela_medianoche import candidatos
         repo = RepoPg()
         for c in candidatos():
-            recibir_candidato_vela_medianoche(repo, c["simbolo"], c["pdh"], c["dia_anterior"])
+            recibir_candidato_vela_medianoche(repo, c["simbolo"], c["pdh"], c["dia_anterior"], c["ventana_hasta"])
     except Exception as e:
         print(f"[master] vela de medianoche no despachada: {type(e).__name__}: {e}", flush=True)
 
@@ -472,13 +472,15 @@ def demo() -> None:
                                     "ventana_hasta": _dt.datetime(2026, 11, 7, 7, 0, tzinfo=_dt.timezone.utc)},
                                    {"simbolo": "EURUSD", "pdh": 1.1, "dia_anterior": _dt.date(2026, 11, 6),
                                     "ventana_hasta": _dt.datetime(2026, 11, 7, 7, 0, tzinfo=_dt.timezone.utc)}]
-        _desp.recibir_candidato_vela_medianoche = lambda repo, s, pdh, dia: llamadas_vm.append((s, pdh, dia))
+        _desp.recibir_candidato_vela_medianoche = lambda repo, s, pdh, dia, hasta: llamadas_vm.append((s, pdh, dia, hasta))
         os.environ.pop("MASTER_ACTIVO", None)
         ciclo()
         assert llamadas_vm == [], llamadas_vm  # sin MASTER_ACTIVO=1: no se avisa
         os.environ["MASTER_ACTIVO"] = "1"
         ciclo()
-        assert llamadas_vm == [("XAUUSD", 2100.0, _dt.date(2026, 11, 6)), ("EURUSD", 1.1, _dt.date(2026, 11, 6))], llamadas_vm
+        hasta = _dt.datetime(2026, 11, 7, 7, 0, tzinfo=_dt.timezone.utc)   # la ventana viaja hasta el despachador (expira_en)
+        assert llamadas_vm == [("XAUUSD", 2100.0, _dt.date(2026, 11, 6), hasta),
+                               ("EURUSD", 1.1, _dt.date(2026, 11, 6), hasta)], llamadas_vm
         llamadas_vm.clear()
         _vm.candidatos = lambda: (_ for _ in ()).throw(RuntimeError("almacen sin datos"))
         assert ciclo() == len(orden) and llamadas_vm == []  # falla Vela de Medianoche: el resto del ciclo sigue
