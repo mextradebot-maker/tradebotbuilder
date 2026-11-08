@@ -40,6 +40,15 @@
 //| SL real). CerrarTodoMaster/CountPositions/CountOrdenesPendientes   |
 //| filtran ademas por _Symbol (ver InpEstrategia) para no tocar otra  |
 //| estrategia en otro simbolo con el mismo InpMagicNumber.            |
+//| VELA DE MEDIANOCHE (v1.24, 7 nov 2026): el modo Master acepta      |
+//| ordenes "estrategia":"vela_medianoche" -- BUY STOP (solo compra;   |
+//| el nivel lo manda el Master, este EA no calcula PDH) cuyo          |
+//| vencimiento NO es InpVelasExpiracion velas sino las 9h de la       |
+//| medianoche de Barcelona (hora de verano UE, cambio automatico via  |
+//| OffsetBarcelona/UltimoDomingo -- mismo calculo que                 |
+//| MexTradeBot_OroMedianoche.mq5, portado aqui). A diferencia de      |
+//| Swing (S)/(M), SI lleva su stop real (2% de emergencia) en la      |
+//| orden.                                                              |
 //| SWING SIN SL, SIEMPRE (v1.22, principio de Ricardo 30 oct 2026):  |
 //| Swing (S)/(M) no llevan stop loss ni al abrir ni despues -- se     |
 //| retira la escalera/trailing que la v1.17 (regla 5, 2 oct) les      |
@@ -75,7 +84,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.23"
+#property version   "1.24"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -396,7 +405,7 @@ void MasterPulso()
 {
    string estado = StringFormat(
       "{\"balance\":%.2f,\"equity\":%.2f,\"pnl_hoy\":%.2f,\"racha\":%d,\"riesgo_abierto_pct\":%.4f,\"posiciones\":%d,\"pendientes\":%d,\"riesgo_pct\":%.4f,"
-      + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f,\"version\":\"1.23\"}",
+      + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f,\"version\":\"1.24\"}",
       CapitalEfectivo(), AccountInfoDouble(ACCOUNT_EQUITY), PnlHoy(), RachaPerdidas(), RiesgoAbiertoPct(), CountPositions(), CountOrdenesPendientes(),
       EsSwingSM() ? InpRiskPercentSwing : InpRiskPercent,
       SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE), SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE),
@@ -460,6 +469,7 @@ void MasterPulso()
    ExtraerCampoNumeroDesde(cuerpo, "tp", pos, tp); // opcional
    ExtraerCampoStringDesde(cuerpo, "estrategia", pos, estrategia); // opcional -- "" si el servidor no lo manda (version vieja)
    bool es_swing_express = (estrategia == "swing_express");
+   bool es_vela_medianoche = (estrategia == "vela_medianoche");
    if(orden_id == g_master_orden_id) return;       // reentrega de una orden que ya procese
    g_master_orden_id = orden_id;
 
@@ -503,10 +513,11 @@ void MasterPulso()
    }
    bool tp_ok = (tp > 0) && ((direccion == "long") ? (tp > entrada) : (tp < entrada));
    double tp_final = tp_ok ? tp : ((direccion == "long") ? entrada + InpTakeProfitR * riesgo : entrada - InpTakeProfitR * riesgo);
-   ENUM_ORDER_TYPE tipo = (direccion == "long") ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_SELL_LIMIT;
-   double sl_orden = EsSwingSM() ? 0.0 : stop; // Swing (S)/(M): sin SL en la orden, como en el modo normal
+   ENUM_ORDER_TYPE tipo = es_vela_medianoche ? ORDER_TYPE_BUY_STOP : ((direccion == "long") ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_SELL_LIMIT);
+   double sl_orden = EsSwingSM() ? 0.0 : stop; // Swing (S)/(M): sin SL en la orden; vela_medianoche SI lleva su stop real
+   datetime vencimiento = es_vela_medianoche ? VencimientoVelaMedianoche() : 0;
 
-   if(ColocarOrdenPendiente(tipo, entrada, sl_orden, tp_final, lotes))
+   if(ColocarOrdenPendiente(tipo, entrada, sl_orden, tp_final, lotes, vencimiento))
    {
       g_ultima_entrada_operada = entrada_motor;
       Print("MASTER: orden ", orden_id, " colocada -- ", direccion, " ", _Symbol, " ", lotes, " lotes");
@@ -610,6 +621,48 @@ bool CalcularAjuste(const string &json, double entrada, double &ajuste)
    Print("Ajuste de precio ", _Symbol, ": ", DoubleToString(ajuste, _Digits), " (", DoubleToString(pct, 3), "%) -- motor ",
          ref_cierre, " vs broker ", cierre_broker, " en la vela ", TimeToString(t_broker));
    return true;
+}
+
+//+------------------------------------------------------------------+
+//| VELA DE MEDIANOCHE -- hora de Barcelona y vencimiento a las 9h    |
+//| Portado 1:1 de MexTradeBot_OroMedianoche.mq5 (lineas 42-58); ese   |
+//| archivo no se toca ni se referencia desde aqui, solo se copia la  |
+//| logica de cambio de horario UE.                                   |
+//+------------------------------------------------------------------+
+datetime UltimoDomingo(int anio, int mes)
+{
+   MqlDateTime d;
+   d.year = anio; d.mon = mes; d.day = 31; d.hour = 1; d.min = 0; d.sec = 0;
+   datetime t = StructToTime(d);
+   TimeToStruct(t, d);
+   return t - (datetime)(d.day_of_week * 86400);
+}
+
+long OffsetBarcelona(datetime gmt)
+{
+   MqlDateTime d;
+   TimeToStruct(gmt, d);
+   bool verano = (gmt >= UltimoDomingo(d.year, 3) && gmt < UltimoDomingo(d.year, 10));
+   return verano ? 7200 : 3600;
+}
+
+// Medianoche de HOY en Barcelona + 9h, convertida a hora de servidor (mismo patron de
+// conversion que CalcularAjuste: GMT <-> servidor redondeado a 15 min).
+datetime VencimientoVelaMedianoche()
+{
+   datetime ahora_gmt = TimeGMT();
+   long     offset_bcn = OffsetBarcelona(ahora_gmt);
+   datetime ahora_bcn = ahora_gmt + (datetime)offset_bcn; // "hora Barcelona" en campos UTC (truco de epoch desplazado)
+
+   MqlDateTime m;
+   TimeToStruct(ahora_bcn, m);
+   m.hour = 0; m.min = 0; m.sec = 0;
+   datetime medianoche_bcn   = StructToTime(m);           // medianoche de hoy en Barcelona (desplazada)
+   datetime vencimiento_bcn  = medianoche_bcn + 9 * 3600;  // +9h, sigue desplazada
+   datetime vencimiento_gmt  = vencimiento_bcn - (datetime)offset_bcn; // de vuelta a GMT real
+
+   long desfase_servidor = (long)MathRound((double)(TimeTradeServer() - TimeGMT()) / 900.0) * 900;
+   return vencimiento_gmt + (datetime)desfase_servidor;
 }
 
 //+------------------------------------------------------------------+
@@ -766,7 +819,9 @@ bool ExtraerUltimoSetupConfirmado(const string &json, string &direccion, double 
 //+------------------------------------------------------------------+
 //| ORDEN PENDIENTE (limite en el punto medio del FVG)                |
 //+------------------------------------------------------------------+
-bool ColocarOrdenPendiente(ENUM_ORDER_TYPE tipo, double precio, double sl, double tp, double lots)
+// vencimiento: 0 (default) conserva el calculo de siempre (InpVelasExpiracion velas de InpTF);
+// > 0 lo fija el llamador -- vela_medianoche manda aqui las 9h desde medianoche Barcelona.
+bool ColocarOrdenPendiente(ENUM_ORDER_TYPE tipo, double precio, double sl, double tp, double lots, datetime vencimiento = 0)
 {
    MqlTradeRequest request = {};
    MqlTradeResult  result  = {};
@@ -781,7 +836,7 @@ bool ColocarOrdenPendiente(ENUM_ORDER_TYPE tipo, double precio, double sl, doubl
    request.magic          = InpMagicNumber;
    request.comment        = InpComment;
    request.type_time      = ORDER_TIME_SPECIFIED;
-   request.expiration     = TimeCurrent() + InpVelasExpiracion * PeriodSeconds(InpTF);
+   request.expiration     = (vencimiento > 0) ? vencimiento : TimeCurrent() + InpVelasExpiracion * PeriodSeconds(InpTF);
 
    if(!OrderSend(request, result))
    {
