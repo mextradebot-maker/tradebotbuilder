@@ -152,7 +152,7 @@ int OnInit()
    ENUM_TIMEFRAMES tf_esperado;
    if(!TimeframeEsperado(InpTemporalidad, tf_esperado))
    {
-      Print("ERROR: temporalidad desconocida '", InpTemporalidad, "'. Usa: Scalping 15m, Scalping 30m, Intraday 1H, Intraday 4H, Intraday D, Swing (S) o Swing (M).");
+      Print("ERROR: temporalidad desconocida '", InpTemporalidad, "'. Usa: Scalping 15m, Scalping 30m, Intraday 1H, Intraday 4H, Intraday D, Diario, Swing (S) o Swing (M).");
       return INIT_PARAMETERS_INCORRECT;
    }
    ENUM_TIMEFRAMES tf_grafico = (InpTF == PERIOD_CURRENT) ? (ENUM_TIMEFRAMES)Period() : InpTF;
@@ -190,6 +190,7 @@ bool TimeframeEsperado(string nombre, ENUM_TIMEFRAMES &tf)
    else if(nombre == "Intraday 1H" || nombre == "Intraday")                     tf = PERIOD_H1;
    else if(nombre == "Intraday 4H" || nombre == "Swing (H)" || nombre == "Swing") tf = PERIOD_H4;
    else if(nombre == "Intraday D")                                              tf = PERIOD_D1;
+   else if(nombre == "Diario")                                                  tf = PERIOD_H1;
    else if(nombre == "Swing (S)")                                               tf = PERIOD_W1;
    else if(nombre == "Swing (M)")                                               tf = PERIOD_MN1;
    else return false;
