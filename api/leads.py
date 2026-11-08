@@ -75,20 +75,44 @@ def _guardar(lead: dict) -> None:
 
 
 def correo_recurso(nombre: str, formato: str) -> tuple[str, str]:
-    import os
-
-    from api.auth_alumnos import BASE, _marco
+    """Correo de la landing de ventas: entrega la checklist en el formato elegido (y ofrece el otro)."""
+    from api import correos_landing as c
 
     ruta, boton, descripcion = RECURSOS[formato]
-    enlace = f"{os.environ.get(BASE_ENV, BASE)}{ruta}"
-    primero = escape(nombre.split(" ")[0])
-    cuerpo = (f"<p>Hola {primero}, aquí está tu <b>Checklist de 7 preguntas para evaluar un robot de trading</b> ({descripcion}).</p>"
-              f"<p style=\"text-align:center;margin:24px 0\"><a href=\"{enlace}\" style=\"background:#c6ea3b;color:#060d24;font-weight:bold;"
-              f"text-decoration:none;padding:14px 24px;border-radius:10px;display:inline-block\">{boton}</a></p>"
-              "<p>Úsala antes de usar cualquier robot, también los que te venden o te recomiendan. "
-              "Cumplir los siete criterios no garantiza resultados.</p>"
-              "<p>Cuando quieras, crea tu cuenta gratis en mextradebot.com.mx y prueba tu primer robot en DEMO, con dinero virtual.</p>")
-    return "Tu checklist de 7 preguntas | MexTradeBot", _marco("Tu checklist está lista", cuerpo)
+    b = c.base()
+    enlace = f"{b}{ruta}"
+    otro = "dashboard" if formato == "pdf" else "pdf"
+    ruta_o, _, desc_o = RECURSOS[otro]
+    nombre_1 = nombre.split(" ")[0]
+    primero = escape(nombre_1)
+    cuerpo = (
+        c.parrafo(f"Hola <b>{primero}</b>, gracias por pedir la checklist. Ya está lista: es un {descripcion} para que revises cualquier robot de trading antes de confiar en él.")
+        + c.boton(boton, enlace)
+        + f'<p style="margin:12px 0 0;text-align:center;font:13px/1.5 Arial,Helvetica,sans-serif;color:{c.MUTED}">Si el botón no abre, copia este enlace:<br>'
+          f'<a href="{enlace}" style="color:{c.MUTED}">{enlace}</a></p>'
+        + c.titulo("Qué vas a encontrar")
+        + '<ul style="margin:0 0 6px;padding-left:20px;font:15px/1.6 Arial,Helvetica,sans-serif;color:' + c.INK + '">'
+          "<li style=\"margin-bottom:6px\"><b>7 preguntas clave</b> para cualquier robot: reglas de entrada y salida, número de operaciones, activos y periodos, costos reales, pérdidas, prueba en DEMO y promesas de ganancias.</li>"
+          "<li style=\"margin-bottom:6px\"><b>Qué pedir en cada punto</b>, para que sepas exactamente qué información exigir.</li>"
+          "<li><b>Cómo leer tu resultado</b>, sin veredictos de «bueno» o «malo».</li></ul>"
+        + c.titulo("Cómo usarla en 3 pasos")
+        + c.pasos([("Ten a la mano el robot", "El tuyo, o uno que te estén vendiendo o recomendando."),
+                   ("Contesta Sí, No o No sé", "Con lo que sabes hoy. Lo que no sepas es justo lo que debes pedir."),
+                   ("Pide lo que falte", "Un robot serio responde estas preguntas sin rodeos.")])
+        + c.caja(f'<b>También tienes la otra versión:</b> {desc_o}. <a href="{b}{ruta_o}" style="color:{c.NAVY}">Ábrela aquí</a>.')
+        + c.titulo("Siguiente paso: pruébalo sin arriesgar dinero")
+        + c.parrafo("Crea tu cuenta gratis, genera tu primer robot y míralo operar en DEMO, con dinero virtual. No necesitas tarjeta.")
+        + c.boton("Crear mi cuenta gratis", f"{b}/", relleno=False)
+        + f'<p style="margin:22px 0 0;font:15px/1.6 Arial,Helvetica,sans-serif;color:{c.INK}">¿Dudas? Escríbenos por <a href="{c.WHATSAPP}" style="color:{c.NAVY}">WhatsApp</a> '
+          f'o a <a href="mailto:{c.SOPORTE}" style="color:{c.NAVY}">{c.SOPORTE}</a>. Respondemos en días hábiles.</p>')
+    html = c.plantilla(
+        preheader="Úsala antes de confiar en cualquier robot de trading, el tuyo o el que te vendan.",
+        kicker="Recurso gratuito",
+        h1="Tu checklist de 7 preguntas para evaluar un robot de trading",
+        subtitulo="Antes de usar un robot, hazle estas 7 preguntas. Te toma unos minutos.",
+        cuerpo=cuerpo,
+        motivo=f"Recibes este correo porque pediste la checklist en mextradebot.com.mx y aceptaste recibir correos de MexTradeBot. Si no quieres recibir más, escribe a {c.SOPORTE}.")
+    return f"{nombre_1}, tu checklist de 7 preguntas está lista", html
 
 
 def procesar(payload: dict, ip: str = "") -> tuple[int, dict]:
@@ -160,20 +184,54 @@ def _guardar_afiliado(a: dict) -> None:
 
 
 def correos_afiliado(a: dict) -> list[tuple[str, str, str]]:
-    """(destino, asunto, html): confirmacion para quien solicita y aviso a soporte con todos los datos."""
-    from api.auth_alumnos import _marco
+    """(destino, asunto, html): confirmación para quien solicita y aviso a soporte con todos los datos."""
+    from api import correos_landing as c
 
-    primero = escape(a["nombre"].split(" ")[0])
-    confirmacion = ("Recibimos tu solicitud de afiliación | MexTradeBot", _marco(
-        "Recibimos tu solicitud",
-        f"<p>Hola {primero}, recibimos tu solicitud para el programa de afiliados de MexTradeBot.</p>"
-        "<p>Revisamos tu perfil y te respondemos en menos de 48 horas hábiles. Si te aprobamos, recibirás tu enlace de afiliado y el kit.</p>"
-        "<p>Mientras tanto, crea tu cuenta gratis en mextradebot.com.mx y prueba el producto en DEMO: recomiendas mejor lo que conoces.</p>"))
-    aviso = ("Nueva solicitud de afiliación | MexTradeBot", _marco(
-        "Nueva solicitud de afiliación",
-        f"<p><b>Nombre:</b> {escape(a['nombre'])}<br><b>Correo:</b> {escape(a['correo'])}<br><b>WhatsApp:</b> {escape(a['whatsapp'])}<br>"
-        f"<b>Redes o sitio:</b> {escape(a['redes'])}</p><p><b>Cómo piensa compartir MexTradeBot:</b><br>{escape(a['como'])}</p>"
-        "<p>Apruébala o recházala desde tu cuenta de productor en Hotmart (Afiliados → Solicitudes).</p>"))
+    nombre_1 = a["nombre"].split(" ")[0]
+    primero = escape(nombre_1)
+    b = c.base()
+    resumen = (f'<b>Nombre:</b> {escape(a["nombre"])}<br><b>Correo:</b> {escape(a["correo"])}<br><b>WhatsApp:</b> {escape(a["whatsapp"])}<br>'
+               f'<b>Tus redes o sitio:</b> {escape(a["redes"])}<br><b>Cómo piensas compartir MexTradeBot:</b> {escape(a["como"])}')
+    cuerpo = (
+        c.parrafo(f"Hola <b>{primero}</b>, gracias por querer recomendar MexTradeBot. Esto fue lo que nos enviaste:")
+        + c.caja(resumen)
+        + c.titulo("Qué sigue")
+        + c.pasos([("Revisamos tu perfil", "Aprobamos cada solicitud a mano, en menos de 48 horas hábiles."),
+                   ("Completa tu afiliación en Hotmart", "La aprobación y tu enlace salen de Hotmart. Pide la afiliación al plan que quieras recomendar:"),
+                   ("Recibes tu enlace y el kit", "Guía en PDF, banners en varios formatos y textos con el aviso de riesgo incluido.")])
+        + c.boton("Afiliarme al plan Trader", c.HOTMART_TRADER, ancho=280)
+        + '<div style="height:10px;line-height:10px">&nbsp;</div>'
+        + c.boton("Afiliarme al plan VIP", c.HOTMART_VIP, ancho=280)
+        + c.titulo("Lo que ganas, en claro")
+        + c.caja("<b>40 %</b> de la primera compra y <b>25 %</b> de cada renovación, mientras tu referido siga suscrito. Atribución permanente. "
+                 "Hotmart calcula el monto final sobre el valor neto de la venta, y la comisión depende de ventas efectivas: no es un ingreso garantizado.")
+        + c.titulo("Mientras esperas")
+        + c.parrafo("Prueba MexTradeBot en DEMO: recomiendas mejor lo que conoces. Y lee las reglas, que son cortas y claras.")
+        + c.boton("Probar MexTradeBot en DEMO", f"{b}/", relleno=False)
+        + f'<p style="margin:18px 0 0;text-align:center;font:14px/1.6 Arial,Helvetica,sans-serif;color:{c.MUTED}">'
+          f'<a href="{b}/reglas-del-afiliado.html" style="color:{c.NAVY}">Reglas del afiliado</a> &nbsp;·&nbsp; '
+          f'<a href="{b}/afiliados.html" style="color:{c.NAVY}">Cómo funciona el programa</a></p>')
+    confirmacion = (f"{nombre_1}, recibimos tu solicitud de afiliación", c.plantilla(
+        preheader="Respondemos en menos de 48 horas hábiles. Esto es lo que sigue.",
+        kicker="Programa de afiliados",
+        h1="Recibimos tu solicitud",
+        subtitulo="Revisamos tu perfil y te respondemos en menos de 48 horas hábiles.",
+        cuerpo=cuerpo,
+        motivo="Recibes este correo porque enviaste una solicitud de afiliación en mextradebot.com.mx y aceptaste que te contactemos.",
+        extra_pie="Los afiliados son terceros independientes: no son empleados, representantes ni asesores de MexTradeBot y no están autorizados a prometer resultados.<br><br>"))
+    interno = (
+        c.parrafo(f"<b>{escape(a['nombre'])}</b> pidió afiliarse. Estos son sus datos:")
+        + c.caja(resumen)
+        + c.parrafo("Revísala y apruébala o recházala desde tu cuenta de productor en Hotmart:")
+        + c.boton("Solicitudes del plan Trader", "https://app.hotmart.com/products/manage/8655745/affiliation-setup", ancho=280)
+        + '<div style="height:10px;line-height:10px">&nbsp;</div>'
+        + c.boton("Solicitudes del plan VIP", "https://app.hotmart.com/products/manage/8655789/affiliation-setup", ancho=280)
+        + '<div style="height:10px;line-height:10px">&nbsp;</div>'
+        + c.boton("Escribirle por WhatsApp", f"https://wa.me/52{a['whatsapp'][-10:]}", relleno=False, ancho=280))
+    aviso = (f"Nueva solicitud de afiliación: {a['nombre']}", c.plantilla(
+        preheader=f"{a['nombre']} · {a['redes']}", kicker="Aviso interno", h1="Nueva solicitud de afiliación",
+        subtitulo="Llegó desde la landing de afiliados.", cuerpo=interno,
+        motivo="Aviso automático de mextradebot.com.mx para el equipo."))
     return [(a["correo"], *confirmacion), ("soporte@mextradebot.com.mx", *aviso)]
 
 
@@ -224,8 +282,11 @@ def demo() -> None:
         assert not _excedido("1.2.3.4", 100.0)
     assert _excedido("1.2.3.4", 101.0) and not _excedido("5.6.7.8", 101.0)
     asunto, html = correo_recurso("<b>Ana", "pdf")
-    assert "Hola &lt;b&gt;Ana," in html and "Hola <b>" not in html  # el nombre se escapa en el correo
+    assert "&lt;b&gt;Ana" in html and "<b>Ana" not in html  # el nombre se escapa en el correo
     assert "/recursos/checklist-7-preguntas-mextradebot.pdf" in html and "Descargar el PDF" in html
+    assert "/recursos/checklist.html" in html  # ofrece también la otra versión
+    assert "img/email/hero.jpg" in html and "Ricardo Peña Covarrubias" in html and "Aviso de riesgo" in html
+    assert asunto == "<b>Ana, tu checklist de 7 preguntas está lista"
     af = {"nombre": "Luis Mora", "correo": "luis@example.com", "whatsapp": "442 111 2233", "redes": "@luismora",
           "como": "Videos en YouTube y mi grupo de Telegram", "acepta_reglas": "1", "acepta_contacto": "1"}
     a, m = validar_afiliado(af)
@@ -239,7 +300,9 @@ def demo() -> None:
     assert procesar_afiliado({**af, "nombre": ""})[0] == 400
     (d1, _, h1), (d2, _, h2) = correos_afiliado({**a, "nombre": "<b>Luis", "como": "<script>x</script> y más texto"})
     assert d1 == "luis@example.com" and d2 == "soporte@mextradebot.com.mx"
-    assert "<script>" not in h2 and "&lt;script&gt;" in h2 and "Hola &lt;b&gt;Luis," in h1  # todo se escapa en los correos
+    assert "<script>" not in h1 + h2 and "&lt;script&gt;" in h1 and "&lt;script&gt;" in h2 and "&lt;b&gt;Luis" in h1  # todo se escapa
+    assert "affiliate-recruiting/view/9438M107884215" in h1 and "affiliate-recruiting/view/9612M107884304" in h1
+    assert "Ricardo Peña Covarrubias" in h1 and "app.hotmart.com/products/manage/8655789" in h2 and "wa.me/524421112233" in h2
     print("api.leads (afiliados) OK")
     print("api.leads.demo() OK")
 
