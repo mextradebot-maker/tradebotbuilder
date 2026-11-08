@@ -265,7 +265,7 @@ footer.pie p+p{margin-top:8px}
 .tabla-com td:nth-child(n+2){font-variant-numeric:tabular-nums;font-weight:600}
 .tabla-com td.g{color:#0a8f80}
 .tabla-wrap{overflow-x:auto}
-.tabla-com{min-width:560px}
+.tabla-com{min-width:640px}
 .chico{font-size:14px;color:var(--paper-ink2);max-width:80ch}
 .sino{display:grid;grid-template-columns:1fr 1fr;gap:22px}
 .sino>div{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:26px 28px}
@@ -276,6 +276,7 @@ footer.pie p+p{margin-top:8px}
 .sino .no li::before{background:var(--down)}
 @media (max-width:760px){.sino{grid-template-columns:1fr}}
 .captura textarea{width:100%;min-height:96px;border-radius:10px;border:1.5px solid rgba(174,187,220,.4);background:var(--bg);color:var(--ink);font:400 16px 'Lexend',sans-serif;padding:12px 14px;margin-bottom:14px;resize:vertical}
+.bonos.dos{grid-template-columns:repeat(2,1fr)}@media (max-width:900px){.bonos.dos{grid-template-columns:1fr}}
 .bonos.cuatro{grid-template-columns:repeat(2,1fr)}@media (max-width:900px){.bonos.cuatro{grid-template-columns:1fr}}
 .kit{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:8px}
 .kit a{display:block;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;text-decoration:none;color:var(--ink);transition:transform 200ms var(--ease),border-color 200ms var(--ease)}
@@ -299,6 +300,9 @@ footer.pie p+p{margin-top:8px}
 .vid .play svg{width:26px;height:26px;fill:var(--lime-ink);margin-left:3px}
 .vid figcaption{margin-top:12px;font-size:15px;font-weight:600}
 .vid figcaption small{display:block;font-weight:400;font-size:13px;color:var(--ink2);margin-top:2px}
+.hm{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#fff;flex:none}
+.hm svg{width:13px;height:18px}
+.btn:has(.hm){gap:10px;padding-left:16px}
 .obligatorio{margin-top:22px;font-size:14.5px;color:#d9e1f5;border-left:3px solid var(--teal);padding:4px 0 4px 16px;max-width:80ch}
 </style>
 </head>
@@ -306,6 +310,7 @@ footer.pie p+p{margin-top:8px}
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="ck" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7.5 12.4l3 3 6-6.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="hm" viewBox="0 0 27 37"><path fill="#FF4000" d="M25.7756 17.3698C25.2893 15.6249 24.5666 13.9548 23.6276 12.4058H23.6296C23.6296 12.4058 22.7026 10.8678 22.3136 10.4028H22.3106C22.2146 10.2818 22.0216 10.4158 22.0956 10.5538C22.2046 10.7828 22.3036 11.0648 22.2346 11.3398C22.1206 11.6758 21.7456 11.9088 21.4006 11.7898C21.3051 11.7512 21.2186 11.6933 21.1466 11.6198C20.7936 11.2548 20.6096 10.6508 20.3806 9.8838C20.1746 9.2008 19.9196 8.35279 19.4596 7.43479C18.7116 5.94279 17.8266 5.25279 17.7906 5.22379C17.7686 5.20662 17.7416 5.19721 17.7137 5.19703C17.6859 5.19685 17.6587 5.20591 17.6366 5.2228C17.6142 5.23992 17.5976 5.26346 17.5891 5.29028C17.5805 5.31709 17.5803 5.34588 17.5886 5.3728C17.5926 5.3848 17.9646 6.61479 17.2466 7.54579C16.9606 7.91679 16.5256 8.1408 16.0186 8.1728C15.5086 8.2058 15.0036 8.0368 14.7006 7.7328C13.9496 6.9778 13.8616 5.63979 13.8756 4.90979C13.9226 2.47579 14.6576 0.770795 15.0406 0.209795C15.0567 0.185815 15.0649 0.157376 15.064 0.12849C15.0631 0.0996036 15.0532 0.071728 15.0356 0.048795C15.018 0.0265184 14.9936 0.0106996 14.9661 0.00382184C14.9385 -0.00305591 14.9095 -0.000603202 14.8836 0.010795C11.9096 1.2998 9.75456 3.50679 8.65356 6.38379C8.03456 8.09479 7.76456 8.8748 7.54556 9.3658C7.34356 9.8148 7.15656 10.0218 6.96556 10.1358C6.86056 10.1998 6.73256 10.2358 6.60056 10.2408C6.40656 10.2208 5.44656 10.0448 6.28256 8.4388C6.35156 8.3038 6.16856 8.1698 6.06656 8.2788L5.40856 9.0058C5.37923 9.0378 5.3499 9.0698 5.32056 9.1018L5.21156 9.2228C5.1929 9.24413 5.1759 9.2648 5.16056 9.2848C3.08056 11.6618 1.62756 14.7038 0.790564 17.5138C0.0405639 20.2138 -0.00643612 22.3708 0.000563879 23.1908L0.00156388 23.3728C0.00156388 27.0068 1.38356 30.4228 3.89256 32.9928C6.40156 35.5628 9.73956 36.9778 13.2876 36.9778C16.8356 36.9778 20.1736 35.5628 22.6826 32.9928C25.1926 30.4228 26.5736 27.0058 26.5736 23.3728C26.5736 21.0578 26.2756 19.1718 25.7706 17.3698H25.7756ZM13.2896 30.4168C9.49156 30.4168 6.41056 27.2648 6.41056 23.3738C6.41056 19.4828 9.49056 16.3298 13.2896 16.3298C17.0886 16.3298 20.1686 19.4838 20.1686 23.3738C20.1686 27.2638 17.0886 30.4168 13.2896 30.4168Z"/></symbol>
   <symbol id="scale" viewBox="0 0 24 24"><path d="M12 3v18M5 7h14M7 7l-3.5 7a3.5 3.5 0 007 0L7 7zm10 0l-3.5 7a3.5 3.5 0 007 0L17 7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 </svg>
 
@@ -391,16 +396,14 @@ footer.pie p+p{margin-top:8px}
     <div class="oferta">
       <p class="eyebrow">Comisiones</p>
       <h2>Así se calcula cada venta</h2>
-      <p class="lead">El 40 % de la primera compra y el 25 % de cada renovación, sobre el valor del plan antes de IVA.</p>
+      <p class="lead">El 40 % de la primera compra y el 25 % de cada renovación, mientras tu referido siga suscrito.</p>
       <div class="tabla-wrap"><table class="tabla-com">
-        <thead><tr><th>Plan</th><th>Valor sin IVA</th><th>1.ª compra (40 %)</th><th>Cada renovación (25 %)</th></tr></thead>
+        <thead><tr><th>Plan</th><th>Mensual (sin IVA)</th><th>Anual (sin IVA)</th><th>Comisión</th><th>Cobras hasta por venta*</th></tr></thead>
         <tbody>
-          <tr><td>Trader mensual</td><td>$169.83</td><td class="g">$67.93</td><td class="g">$42.46</td></tr>
-          <tr><td>Trader anual</td><td>$1,698.28</td><td class="g">$679.31</td><td class="g">$424.57</td></tr>
-          <tr><td>VIP mensual</td><td>$284.48</td><td class="g">$113.79</td><td class="g">$71.12</td></tr>
-          <tr><td>VIP anual</td><td>$2,844.83</td><td class="g">$1,137.93</td><td class="g">$711.21</td></tr>
+          <tr><td>Trader</td><td>$169.83</td><td>$1,698.28</td><td>40 % inicial · 25 % renovación</td><td class="g">$611.66</td></tr>
+          <tr><td>VIP</td><td>$284.48</td><td>$2,844.83</td><td>40 % inicial · 25 % renovación</td><td class="g">$1,024.88</td></tr>
         </tbody></table></div>
-      <p class="chico">Cifras en pesos mexicanos por suscriptor, como referencia de cálculo. Es una ilustración del esquema, no una proyección de ingresos: la comisión depende de ventas efectivas, Hotmart calcula el monto final y lo ves en tu panel de afiliado. Si hay reembolso o contracargo, la comisión de esa venta se ajusta.</p>
+      <p class="chico">*Monto máximo que Hotmart muestra en la página de captación de cada producto (venta del plan anual), en pesos mexicanos. Hotmart calcula la comisión sobre el valor neto de la venta, después de sus propias tarifas, y el monto final lo ves en tu panel de afiliado. Es una ilustración del esquema, no una proyección de ingresos: la comisión depende de ventas efectivas. Si hay reembolso o contracargo, la comisión de esa venta se ajusta.</p>
     </div>
   </div>
 </section>
@@ -408,9 +411,9 @@ footer.pie p+p{margin-top:8px}
 <section class="sec alt" id="planes-af">
   <div class="wrap">
     <div class="sec-head"><p class="eyebrow">Qué vas a recomendar</p><h2>Dos planes, un mismo método</h2></div>
-    <div class="bonos">
-      <div class="bono"><div class="bono-top"><span class="k">Plan Trader</span></div><h3>Para empezar con método</h3><p class="num" style="font-size:28px;font-weight:700;color:var(--ink);margin-top:2px">$197 <span style="font-size:15px;font-weight:400;color:var(--ink2)">MXN / mes · IVA incluido</span></p><p>Robots DEMO ilimitados, 5 robots en cuenta real, backtesting en 34 activos y alertas en Telegram.</p><div class="cta-row" style="justify-content:flex-start;margin-top:18px"><a class="btn pri" href="https://affiliate.hotmart.com/affiliate-recruiting/view/9438M107884215" target="_blank" rel="noopener">Afiliarme al plan Trader</a><a class="btn ghost" href="https://go.hotmart.com/B107884194O?dp=1" target="_blank" rel="noopener">Ver el producto</a></div></div>
-      <div class="bono"><div class="bono-top"><span class="k">Plan VIP</span></div><h3>Para operar con soporte técnico</h3><p class="num" style="font-size:28px;font-weight:700;color:var(--ink);margin-top:2px">$330 <span style="font-size:15px;font-weight:400;color:var(--ink2)">MXN / mes · IVA incluido</span></p><p>Robots DEMO y REAL ilimitados, soporte técnico para conectarlos, revisión de tu configuración, backtesting y alertas.</p><div class="cta-row" style="justify-content:flex-start;margin-top:18px"><a class="btn pri" href="https://affiliate.hotmart.com/affiliate-recruiting/view/9612M107884304" target="_blank" rel="noopener">Afiliarme al plan VIP</a><a class="btn ghost" href="https://go.hotmart.com/M107884283P?dp=1" target="_blank" rel="noopener">Ver el producto</a></div></div>
+    <div class="bonos dos">
+      <div class="bono"><div class="bono-top"><span class="k">Plan Trader</span></div><h3>Para empezar con método</h3><p class="num" style="font-size:28px;font-weight:700;color:var(--ink);margin-top:2px">$197 <span style="font-size:15px;font-weight:400;color:var(--ink2)">MXN / mes · IVA incluido</span></p><p>Robots DEMO ilimitados, 5 robots en cuenta real, backtesting en 34 activos y alertas en Telegram.</p><div class="cta-row" style="justify-content:flex-start;margin-top:18px"><a class="btn pri" href="https://affiliate.hotmart.com/affiliate-recruiting/view/9438M107884215" target="_blank" rel="noopener"><span class="hm" aria-hidden="true"><svg viewBox="0 0 27 37"><use href="#hm"/></svg></span>Afiliarme al plan Trader</a><a class="btn ghost" href="https://go.hotmart.com/B107884194O?dp=1" target="_blank" rel="noopener">Ver el producto</a></div></div>
+      <div class="bono"><div class="bono-top"><span class="k">Plan VIP</span></div><h3>Para operar con soporte técnico</h3><p class="num" style="font-size:28px;font-weight:700;color:var(--ink);margin-top:2px">$330 <span style="font-size:15px;font-weight:400;color:var(--ink2)">MXN / mes · IVA incluido</span></p><p>Robots DEMO y REAL ilimitados, soporte técnico para conectarlos, revisión de tu configuración, backtesting y alertas.</p><div class="cta-row" style="justify-content:flex-start;margin-top:18px"><a class="btn pri" href="https://affiliate.hotmart.com/affiliate-recruiting/view/9612M107884304" target="_blank" rel="noopener"><span class="hm" aria-hidden="true"><svg viewBox="0 0 27 37"><use href="#hm"/></svg></span>Afiliarme al plan VIP</a><a class="btn ghost" href="https://go.hotmart.com/M107884283P?dp=1" target="_blank" rel="noopener">Ver el producto</a></div></div>
     </div>
     <p class="micro" style="margin-top:20px">Los dos planes tienen 7 días de garantía y pago anual con 10 meses por 12. Las comisiones del 40 % y 25 % aplican a ambos.</p>
   </div>
@@ -546,7 +549,7 @@ footer.pie p+p{margin-top:8px}
       <button class="btn pri block" type="submit" id="btnAf">Enviar mi solicitud</button>
       <p id="msgAf" role="status" aria-live="polite" style="margin-top:14px;font-size:15px"></p>
     </form>
-    <div class="cta-row" style="margin-top:26px"><a class="btn ghost" href="https://affiliate.hotmart.com/affiliate-recruiting/view/9438M107884215" target="_blank" rel="noopener">Afiliarme en Hotmart · Trader</a><a class="btn ghost" href="https://affiliate.hotmart.com/affiliate-recruiting/view/9612M107884304" target="_blank" rel="noopener">Afiliarme en Hotmart · VIP</a></div>
+    <div class="cta-row" style="margin-top:26px"><a class="btn ghost" href="https://affiliate.hotmart.com/affiliate-recruiting/view/9438M107884215" target="_blank" rel="noopener"><span class="hm" aria-hidden="true"><svg viewBox="0 0 27 37"><use href="#hm"/></svg></span>Afiliarme en Hotmart · Trader</a><a class="btn ghost" href="https://affiliate.hotmart.com/affiliate-recruiting/view/9612M107884304" target="_blank" rel="noopener"><span class="hm" aria-hidden="true"><svg viewBox="0 0 27 37"><use href="#hm"/></svg></span>Afiliarme en Hotmart · VIP</a></div>
     <p class="micro" style="text-align:center;margin-top:12px">Déjanos tu solicitud arriba y completa también tu afiliación en Hotmart: ahí apruebas y recibes tu enlace.</p>
     <p class="micro" style="text-align:center">¿Prefieres escribirnos? <a href="mailto:soporte@mextradebot.com.mx?subject=Quiero%20ser%20afiliado%20de%20MexTradeBot">soporte@mextradebot.com.mx</a></p>
   </div>
@@ -586,7 +589,7 @@ footer.pie p+p{margin-top:8px}
       .then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j}})})
       .then(function(x){
         if(x.ok){
-          f.innerHTML='<h3>¡Listo, '+o.nombre.split(' ')[0].replace(/[<>&]/g,'')+'!</h3><p class="s">Recibimos tu solicitud. Te respondemos en menos de 48 horas hábiles a <b>'+o.correo.replace(/[<>&]/g,'')+'</b>. Para terminar, completa tu afiliación en Hotmart (ahí apruebas y recibes tu enlace):</p><div class="cta-row" style="margin:0 0 14px"><a class="btn pri" href="https://affiliate.hotmart.com/affiliate-recruiting/view/9438M107884215" target="_blank" rel="noopener">Afiliarme · Trader</a><a class="btn pri" href="https://affiliate.hotmart.com/affiliate-recruiting/view/9612M107884304" target="_blank" rel="noopener">Afiliarme · VIP</a></div><a class="btn ghost block" href="/">Crear mi cuenta gratis</a>';
+          f.innerHTML='<h3>¡Listo, '+o.nombre.split(' ')[0].replace(/[<>&]/g,'')+'!</h3><p class="s">Recibimos tu solicitud. Te respondemos en menos de 48 horas hábiles a <b>'+o.correo.replace(/[<>&]/g,'')+'</b>. Para terminar, completa tu afiliación en Hotmart (ahí apruebas y recibes tu enlace):</p><div class="cta-row" style="margin:0 0 14px"><a class="btn pri" href="https://affiliate.hotmart.com/affiliate-recruiting/view/9438M107884215" target="_blank" rel="noopener"><span class="hm" aria-hidden="true"><svg viewBox="0 0 27 37"><use href="#hm"/></svg></span>Afiliarme · Trader</a><a class="btn pri" href="https://affiliate.hotmart.com/affiliate-recruiting/view/9612M107884304" target="_blank" rel="noopener"><span class="hm" aria-hidden="true"><svg viewBox="0 0 27 37"><use href="#hm"/></svg></span>Afiliarme · VIP</a></div><a class="btn ghost block" href="/">Crear mi cuenta gratis</a>';
         }else{
           btn.disabled=false;btn.textContent=t;msg.style.color='#ff9d9d';
           msg.textContent=x.j&&x.j.error==='demasiados_intentos'?'Hiciste muchos intentos. Prueba de nuevo en un rato.':(campos[x.j&&x.j.campo]||'No pudimos guardar tu solicitud. Intenta de nuevo en un momento.');
