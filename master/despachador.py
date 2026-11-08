@@ -10,7 +10,7 @@ Persistencia detras de un `repo` (RepoPg en produccion, MemRepo en las pruebas):
 """
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from master import riesgo as compuerta
 
@@ -99,6 +99,33 @@ def recibir_tendencia_swing_express(repo, simbolo: str, temporalidad: str, direc
     return {"aperturas": aperturas, "cierres": cierres, "robots": len(robots)}
 
 
+TF_VELA_MEDIANOCHE = "Diario"
+VELA_MEDIANOCHE_STOP_PCT = 0.98   # ponytail: 2% bajo el PDH; ajustar si Task 1 define un stop por estructura real
+VELA_MEDIANOCHE_CIERRE_HORAS = 7
+
+
+def recibir_candidato_vela_medianoche(repo, simbolo: str, pdh: float, dia_anterior: date,
+                                       ahora: datetime | None = None) -> dict:
+    """Vela de Medianoche: una orden larga diaria por robot activado, entrada en el PDH (maximo del dia anterior) con
+    stop al 2 % debajo. El cierre no es por tendencia (eso es Swing Express) sino por tiempo, ver pulso(). Repetir el
+    mismo dia_anterior no crea una segunda orden (clave = vela_medianoche|dia_anterior)."""
+    ahora = ahora or _ahora()
+    robots = repo.robots_vela_medianoche(simbolo, TF_VELA_MEDIANOCHE)
+    clave = f"vela_medianoche|{dia_anterior}"
+    aperturas = 0
+    for r in robots:
+        if r["posicion_abierta"] or repo.orden_para_entregar(r["licencia_id"], simbolo, TF_VELA_MEDIANOCHE, ahora) is not None:
+            continue
+        if repo.crear_orden({
+                "orden_id": "M" + uuid.uuid4().hex[:14], "licencia_id": r["licencia_id"], "cuenta": r.get("cuenta"),
+                "simbolo": simbolo, "temporalidad": TF_VELA_MEDIANOCHE, "direccion": "long",
+                "entrada": float(pdh), "stop": float(pdh) * VELA_MEDIANOCHE_STOP_PCT, "tp": None,
+                "estrategia": "vela_medianoche", "clave": clave, "ref_ts": None, "ref_cierre": pdh,
+                "expira_en": ahora + timedelta(seconds=TTL_ORDEN_S)}):
+            aperturas += 1
+    return {"aperturas": aperturas, "robots": len(robots)}
+
+
 def _lotes(est: dict, orden: dict, riesgo_pct: float) -> tuple[float, str]:
     from conectividad.riesgo import dimensionar, tope_riesgo
     costo = abs(orden["entrada"] - orden["stop"]) / float(est["tick_size"]) * float(est["tick_value"])
@@ -141,7 +168,8 @@ def pulso(repo, licencia_id: int, cuenta: int, simbolo: str, temporalidad: str, 
     # Swing Express: si el EA ya no reporta ninguna posicion (cierre forzado -3%, cierre manual, orden pendiente
     # vencida) pero el repo la seguia marcando abierta, se corrige aqui -- sin esto el robot nunca volveria a
     # entrar aunque la tendencia siga alcista (recibir_tendencia_swing_express no abre con posicion_abierta=True).
-    if robot.get("estrategia") == "swing_express" and robot.get("posicion_abierta") and int(est.get("posiciones") or 0) == 0:
+    if robot.get("estrategia") in ("swing_express", "vela_medianoche") and robot.get("posicion_abierta") \
+            and int(est.get("posiciones") or 0) == 0:
         repo.reconciliar_posicion(licencia_id, simbolo, temporalidad)
 
     c = repo.cuenta(cuenta) or {"pico_equity": 0.0, "halt": None}
@@ -152,6 +180,10 @@ def pulso(repo, licencia_id: int, cuenta: int, simbolo: str, temporalidad: str, 
     cierre = repo.cierre_pendiente(licencia_id, simbolo, temporalidad, ahora)
     if cierre is None and cierre_auto and c.get("halt") and (int(est.get("posiciones") or 0) > 0 or est.get("pendientes")):
         cierre = ordenar_cierre(repo, licencia_id, simbolo, temporalidad, "FRENO de la cuenta: " + str(c["halt"]), ahora)
+    if cierre is None and cierre_auto and robot.get("estrategia") == "vela_medianoche" and robot.get("posicion_abierta_en") \
+            and ahora - robot["posicion_abierta_en"] >= timedelta(hours=VELA_MEDIANOCHE_CIERRE_HORAS):
+        cierre = ordenar_cierre(repo, licencia_id, simbolo, temporalidad,
+                                "Vela de Medianoche: 7 horas desde la entrada", ahora)
     if cierre:
         repo.guardar_cuenta(cuenta, pico, c.get("halt"))
         return {"orden": None, "cierre": {"cierre_id": cierre["cierre_id"], "motivo": cierre["motivo"]},
@@ -197,12 +229,19 @@ class MemRepo:
 
     def robots_activados(self, simbolo, tf):
         return [r for (_, s, t), r in self.robots.items()
-                if s == simbolo and t == tf and r["activo"] and r.get("estrategia", "estructural") != "swing_express"]
+                if s == simbolo and t == tf and r["activo"]
+                and r.get("estrategia", "estructural") not in ("swing_express", "vela_medianoche")]
 
     def robots_swing_express(self, simbolo, tf):
         return [{"licencia_id": r["licencia_id"], "cuenta": r["cuenta"], "posicion_abierta": r.get("posicion_abierta", False)}
                 for (_, s, t), r in self.robots.items()
                 if s == simbolo and t == tf and r["activo"] and r.get("estrategia", "estructural") == "swing_express"]
+
+    def robots_vela_medianoche(self, simbolo, tf):
+        return [{"licencia_id": r["licencia_id"], "cuenta": r["cuenta"], "posicion_abierta": r.get("posicion_abierta", False),
+                 "posicion_abierta_en": r.get("posicion_abierta_en")}
+                for (_, s, t), r in self.robots.items()
+                if s == simbolo and t == tf and r["activo"] and r.get("estrategia", "estructural") == "vela_medianoche"]
 
     def crear_orden(self, o):
         if any(x["licencia_id"] == o["licencia_id"] and x["clave"] == o["clave"] for x in self.ordenes.values()):
@@ -297,6 +336,7 @@ class MemRepo:
         r = self.robots.get((lic, sim, tf))
         if r:
             r["posicion_abierta"] = False
+            r["posicion_abierta_en"] = None
 
     def registrar_autorizacion(self, lic, sim, tf, evento, chat_id, huella, ip, ua):
         self.autorizaciones = getattr(self, "autorizaciones", [])
@@ -359,7 +399,7 @@ class RepoPg:
             filas = c.execute(
                 """SELECT m.licencia_id, l.cuenta FROM master_robots m JOIN licencias l ON l.id = m.licencia_id
                    WHERE m.simbolo = %s AND m.temporalidad = %s AND m.activo AND l.revocada_en IS NULL
-                     AND m.estrategia <> 'swing_express'
+                     AND m.estrategia NOT IN ('swing_express', 'vela_medianoche')
                      AND (l.expira_en IS NULL OR l.expira_en > now())""", (simbolo, tf)).fetchall()
         return [{"licencia_id": f[0], "cuenta": f[1]} for f in filas]
 
@@ -371,6 +411,16 @@ class RepoPg:
                      AND m.estrategia = 'swing_express'
                      AND (l.expira_en IS NULL OR l.expira_en > now())""", (simbolo, tf)).fetchall()
         return [{"licencia_id": f[0], "cuenta": f[1], "posicion_abierta": f[2]} for f in filas]
+
+    def robots_vela_medianoche(self, simbolo, tf):
+        with self._conn() as c:
+            filas = c.execute(
+                """SELECT m.licencia_id, l.cuenta, m.posicion_abierta, m.posicion_abierta_en
+                   FROM master_robots m JOIN licencias l ON l.id = m.licencia_id
+                   WHERE m.simbolo = %s AND m.temporalidad = %s AND m.activo AND l.revocada_en IS NULL
+                     AND m.estrategia = 'vela_medianoche'
+                     AND (l.expira_en IS NULL OR l.expira_en > now())""", (simbolo, tf)).fetchall()
+        return [{"licencia_id": f[0], "cuenta": f[1], "posicion_abierta": f[2], "posicion_abierta_en": f[3]} for f in filas]
 
     def crear_orden(self, o):
         o = {**o, "estrategia": o.get("estrategia") or "estructural"}
@@ -395,16 +445,17 @@ class RepoPg:
 
     def robot(self, lic, sim, tf):
         with self._conn() as c:
-            f = c.execute("""SELECT activo, estrategia, posicion_abierta FROM master_robots
+            f = c.execute("""SELECT activo, estrategia, posicion_abierta, posicion_abierta_en FROM master_robots
                              WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s""", (lic, sim, tf)).fetchone()
-        return {"activo": f[0], "estrategia": f[1], "posicion_abierta": f[2]} if f else None
+        return {"activo": f[0], "estrategia": f[1], "posicion_abierta": f[2], "posicion_abierta_en": f[3]} if f else None
 
     def reconciliar_posicion(self, lic, sim, tf):
         """Corrige posicion_abierta a False cuando el EA ya no reporta ninguna posicion (ver pulso()),
-        aunque el cierre no haya pasado por ordenar_cierre/aplicar_ack (cierre forzado, manual, expiracion)."""
+        aunque el cierre no haya pasado por ordenar_cierre/aplicar_ack (cierre forzado, manual, expiracion).
+        Tambien limpia posicion_abierta_en (Vela de Medianoche): posicion cerrada por otra via, sin marca que contar."""
         with self._conn() as c:
-            c.execute("UPDATE master_robots SET posicion_abierta = false WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s",
-                      (lic, sim, tf))
+            c.execute("""UPDATE master_robots SET posicion_abierta = false, posicion_abierta_en = NULL
+                        WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s""", (lic, sim, tf))
 
     def crear_cierre(self, c):
         with self._conn() as conn:
@@ -633,6 +684,12 @@ def demo() -> None:
     repoX.robots[(2, "EURUSD", "Scalping 15m")] = {"licencia_id": 2, "cuenta": 222, "activo": True, "estrategia": "swing_express"}
     assert [r["licencia_id"] for r in repoX.robots_activados("EURUSD", "Scalping 15m")] == [1], "swing_express no debe salir aqui"
     assert [r["licencia_id"] for r in repoX.robots_swing_express("EURUSD", "Scalping 15m")] == [2]
+    # 12b. robots_activados tambien excluye vela_medianoche; robots_vela_medianoche solo trae esos
+    repoX.robots[(3, "EURUSD", "Scalping 15m")] = {"licencia_id": 3, "cuenta": 333, "activo": True,
+                                                    "estrategia": "vela_medianoche", "posicion_abierta": False,
+                                                    "posicion_abierta_en": None}
+    assert [r["licencia_id"] for r in repoX.robots_activados("EURUSD", "Scalping 15m")] == [1], "vela_medianoche no debe salir aqui"
+    assert [r["licencia_id"] for r in repoX.robots_vela_medianoche("EURUSD", "Scalping 15m")] == [3]
     # 13. recibir_tendencia_swing_express: abre en "compra", cierra en "venta", nunca duplica, re-entra tras ciclo completo
     t1 = datetime(2026, 11, 6, 12, 0, tzinfo=timezone.utc)
     repoS = MemRepo()
@@ -730,6 +787,36 @@ def demo() -> None:
     repoA.activar(20, "XAUUSD", "Swing (S)", False)   # desactivar sin mandar estrategia: no la borra
     assert repoA.robots[(20, "XAUUSD", "Swing (S)")]["activo"] is False
     assert repoA.robots[(20, "XAUUSD", "Swing (S)")]["estrategia"] == "swing_express"
+    # 12. recibir_candidato_vela_medianoche: 1 orden larga diaria en el PDH, stop 2% debajo; repetir el mismo
+    # dia_anterior no duplica (clave = vela_medianoche|dia_anterior)
+    tM = datetime(2026, 11, 7, 0, 0, tzinfo=timezone.utc)
+    repoVM = MemRepo()
+    repoVM.robots[(11, "XAUUSD", "Diario")] = {"licencia_id": 11, "cuenta": 1111, "activo": True,
+                                               "estrategia": "vela_medianoche", "posicion_abierta": False,
+                                               "posicion_abierta_en": None}
+    rv1 = recibir_candidato_vela_medianoche(repoVM, "XAUUSD", 2650.0, date(2026, 11, 6), tM)
+    assert rv1 == {"aperturas": 1, "robots": 1}, rv1
+    ordenVM = next(o for o in repoVM.ordenes.values() if o["licencia_id"] == 11)
+    assert ordenVM["estrategia"] == "vela_medianoche" and ordenVM["direccion"] == "long", ordenVM
+    assert ordenVM["entrada"] == 2650.0 and abs(ordenVM["stop"] - 2650.0 * 0.98) < 1e-9, ordenVM
+    assert ordenVM["clave"] == "vela_medianoche|2026-11-06", ordenVM
+    rv2 = recibir_candidato_vela_medianoche(repoVM, "XAUUSD", 2650.0, date(2026, 11, 6), tM + timedelta(minutes=1))
+    assert rv2 == {"aperturas": 0, "robots": 1}, rv2
+    # 13. cierre a las 7h: un robot vela_medianoche con posicion abierta hace >= 7h se cierra solo (cierre_auto=True)
+    repoVM2 = MemRepo(activados=[(12, "XAUUSD", "Diario", 1212)])
+    repoVM2.robots[(12, "XAUUSD", "Diario")]["estrategia"] = "vela_medianoche"
+    repoVM2.robots[(12, "XAUUSD", "Diario")]["posicion_abierta"] = True
+    repoVM2.robots[(12, "XAUUSD", "Diario")]["posicion_abierta_en"] = tM - timedelta(hours=7, minutes=1)
+    estVM = {"balance": 10000, "equity": 10000, "pnl_hoy": 0, "racha": 0, "riesgo_abierto_pct": 0, "posiciones": 1, "riesgo_pct": 2.0}
+    r = pulso(repoVM2, 12, 1212, "XAUUSD", "Diario", estVM, ahora=tM, cierre_auto=True)
+    assert r["estado"] == "cierre" and r["cierre"]["motivo"] == "Vela de Medianoche: 7 horas desde la entrada", r
+    # todavia no llegan 7h -> no cierra por tiempo (ni por freno: no hay halt)
+    repoVM3 = MemRepo(activados=[(13, "XAUUSD", "Diario", 1313)])
+    repoVM3.robots[(13, "XAUUSD", "Diario")]["estrategia"] = "vela_medianoche"
+    repoVM3.robots[(13, "XAUUSD", "Diario")]["posicion_abierta"] = True
+    repoVM3.robots[(13, "XAUUSD", "Diario")]["posicion_abierta_en"] = tM - timedelta(hours=6)
+    r = pulso(repoVM3, 13, 1313, "XAUUSD", "Diario", estVM, ahora=tM, cierre_auto=True)
+    assert r["estado"] == "sin_orden", r
     print("master.despachador.demo() OK")
 
 
