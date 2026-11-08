@@ -162,10 +162,14 @@ def _robot_ficha(datos: dict, headers: dict) -> tuple[int, dict]:
     from persistencia import licencias, membresias
 
     modo = str(datos.get("modo") or "").lower()
+    estrategia = str(datos.get("estrategia") or "estructural")  # mismo campo que activar() en api/master.py
     try:
         if modo not in ("demo", "real"):
             raise ValueError("modo debe ser demo o real")
-        simbolo, temporalidad, capital = validar_presets(datos.get("simbolo"), datos.get("temporalidad"), datos.get("capital"))
+        temporalidad = datos.get("temporalidad")
+        if estrategia == "vela_medianoche":  # el alumno nunca elige la temporalidad de esta estrategia
+            temporalidad = "Diario"
+        simbolo, temporalidad, capital = validar_presets(datos.get("simbolo"), temporalidad, datos.get("capital"))
     except ValueError as e:
         return 400, {"error": str(e)}
 
@@ -422,6 +426,19 @@ def demo() -> None:
             ("demo", "Oro (XAUUSD) · Intraday 1H"), ("demo", "Dow Jones 30 (US30) · Swing (M)"),
             ("real", "Oro (XAUUSD) · Intraday 1H")}, robots
         assert all(r["simbolo_xm"] for r in robots) and "correo" not in robots[0]
+
+        # ── vela_medianoche: la temporalidad siempre es "Diario", el cliente mande lo que mande ──
+        pedidos.clear()
+        vm = {"simbolo": "EURJPY", "modo": "demo", "estrategia": "vela_medianoche"}
+        st, body = procesar_mi_robot(vm, con)
+        assert st == 200 and len(pedidos) == 1 and pedidos[0][1] == {"simbolo": "EURJPY", "temporalidad": "Diario", "capital": None}, pedidos
+        pedidos.clear()
+        vm_otra_tf = {**vm, "temporalidad": "Swing (S)"}  # el cliente manda otra TF: se ignora, se usa "Diario"
+        st, body = procesar_mi_robot(vm_otra_tf, con)
+        assert st == 200 and len(pedidos) == 1 and pedidos[0][1] == {"simbolo": "EURJPY", "temporalidad": "Diario", "capital": None}, pedidos
+        mem["bajadas"][("ana@x.com", "demo")].discard(("EURJPY", "Diario"))  # no contamina los limites de abajo
+        reautorizadas.clear()  # idem para el chequeo mas abajo de reautorizadas == [5]
+
         admin_vip, estado["extra"], estado["demo"] = estado["extra"], [], mia  # Gratis: sin licencias pagadas
         def bajar(simbolo, temporalidad="Intraday 4H", modo="demo"):
             return procesar_mi_robot({**ficha, "simbolo": simbolo, "temporalidad": temporalidad, "modo": modo}, con)
