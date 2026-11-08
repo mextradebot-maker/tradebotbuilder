@@ -91,7 +91,7 @@ def pie(motivo: str, extra: str = "") -> str:
 
 def plantilla(preheader: str, kicker: str, h1: str, subtitulo: str, cuerpo: str, motivo: str, extra_pie: str = "", firma_tipo: str = "ricardo") -> str:
     b = base()
-    oculto = "&#8199;&#65279;&#847; " * 30
+    oculto = "&#8199;&#65279;&#847; " * 8
     return (
         f'<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;font-size:1px;line-height:1px">{escape(preheader)}{oculto}</div>'
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#e9edf6"><tr><td align="center" style="padding:24px 10px">'
