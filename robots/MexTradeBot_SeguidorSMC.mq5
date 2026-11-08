@@ -48,7 +48,8 @@
 //| OffsetBarcelona/UltimoDomingo -- mismo calculo que                 |
 //| MexTradeBot_OroMedianoche.mq5, portado aqui). A diferencia de      |
 //| Swing (S)/(M), SI lleva su stop real (2% de emergencia) en la      |
-//| orden.                                                              |
+//| orden. Sin TP ni breakeven/trailing (EsVelaMedianoche): sale por  |
+//| el cierre de las 7h que ordena el Master o por el stop.            |
 //| SWING SIN SL, SIEMPRE (v1.22, principio de Ricardo 30 oct 2026):  |
 //| Swing (S)/(M) no llevan stop loss ni al abrir ni despues -- se     |
 //| retira la escalera/trailing que la v1.17 (regla 5, 2 oct) les      |
