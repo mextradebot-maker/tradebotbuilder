@@ -180,6 +180,31 @@ header.top{position:absolute;inset:44px 0 auto 0;z-index:5}
 .plan.dest{border-color:var(--paper-ink);box-shadow:0 18px 40px -22px rgba(11,21,48,.45)}
 .bn{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;background:var(--lime-ink);color:var(--ink);border-radius:14px;padding:14px 18px;margin:16px 0 22px;font-size:15px;line-height:1.5}
 .bn span{background:var(--lime);color:var(--lime-ink);font-weight:700;font-size:12px;letter-spacing:.1em;text-transform:uppercase;border-radius:999px;padding:4px 12px;white-space:nowrap}
+/* ───────── Anuncio Black November (calendario de noviembre que se va cerrando) ───────── */
+.bnx{padding:56px 0}
+.bnx-card{display:grid;grid-template-columns:1.1fr .9fr;gap:40px;align-items:center;border:1.5px solid var(--lime);border-radius:22px;padding:44px;background:radial-gradient(520px 360px at 100% 0%,rgba(198,234,59,.16),transparent 65%),radial-gradient(480px 340px at 0% 100%,rgba(45,212,191,.14),transparent 65%),var(--panel);box-shadow:0 24px 60px rgba(0,0,0,.35)}
+.bnx h2{font-size:clamp(30px,4.2vw,48px);line-height:1.08;letter-spacing:-.03em;margin:6px 0 16px}
+.bnx h2 em{font-style:normal;color:var(--lime)}
+.bnx p.lead{color:var(--ink2);max-width:46ch}
+.bnx .precios{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0 26px}
+.bnx .precios span{border:1px solid var(--line);border-radius:12px;padding:10px 16px;font-size:15px;color:var(--ink2)}
+.bnx .precios b{display:block;font-size:26px;color:var(--ink);letter-spacing:-.02em}
+.bnx .cuenta{display:inline-block;background:var(--lime);color:var(--lime-ink);font-weight:800;font-size:13px;letter-spacing:.1em;text-transform:uppercase;border-radius:999px;padding:6px 14px;margin-bottom:14px}
+.cal{background:rgba(6,13,36,.55);border:1px solid var(--line);border-radius:18px;padding:20px}
+.cal-h{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;font-weight:700;letter-spacing:.04em}
+.cal-h small{font-weight:400;color:var(--ink2);font-size:13px}
+.cal-g{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.cal-g i,.cal-g b{font-style:normal;display:grid;place-items:center;aspect-ratio:1;border-radius:10px;font-size:14px;font-weight:600}
+.cal-g i.dw{aspect-ratio:auto;font-size:11px;letter-spacing:.1em;color:var(--ink2);font-weight:400;height:20px}
+.cal-g b{background:rgba(198,234,59,.14);border:1px solid rgba(198,234,59,.45);color:var(--lime);opacity:0;transform:scale(.92);animation:in-d 360ms var(--ease) forwards;animation-delay:calc(var(--d,0)*14ms)}
+.cal-g b.pas{background:transparent;border-color:var(--line);color:#5b6a93;text-decoration:line-through;text-decoration-thickness:1.5px}
+.cal-g b.hoy{background:var(--lime);color:var(--lime-ink);border-color:var(--lime);box-shadow:0 0 0 4px rgba(198,234,59,.25)}
+.cal-g b.fin{border-style:dashed;border-color:var(--lime);color:var(--ink);background:rgba(198,234,59,.28)}
+.cal-f{margin-top:14px;font-size:14px;color:var(--ink2);line-height:1.45}
+.cal-f strong{color:var(--ink)}
+@keyframes in-d{to{opacity:1;transform:none}}
+@media (max-width:820px){.bnx-card{grid-template-columns:1fr;padding:28px 22px;gap:28px}}
+@media (prefers-reduced-motion:reduce){.cal-g b{animation:none;opacity:1;transform:none}}
 .etq{font-size:13px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:#0a8f80;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:26px}
 .etq i{font-style:normal;background:var(--paper-ink);color:#fff;border-radius:6px;padding:3px 8px;font-size:11px;letter-spacing:.1em}
 .plan h3{font-size:22px;margin-bottom:16px}
@@ -296,6 +321,43 @@ footer.pie p+p{margin-top:8px}
     <li><strong>Comunidad en Telegram</strong>Avisos informativos</li>
   </ul></div>
 </section>
+
+<!-- ═════════ ANUNCIO · BLACK NOVEMBER (se oculta solo al terminar noviembre) ═════════ -->
+<section class="bnx" id="black-november" aria-labelledby="bnxT">
+  <div class="wrap"><div class="bnx-card">
+    <div>
+      <span class="cuenta" id="bnxCuenta">Solo noviembre</span>
+      <p class="eyebrow">Black November · Edición de lanzamiento</p>
+      <h2 id="bnxT">Estos precios <em>no vuelven.</em></h2>
+      <p class="lead">Son precios de lanzamiento. Existen únicamente durante noviembre y nunca volverás a verlos. El 1 de diciembre este anuncio desaparece.</p>
+      <div class="precios">
+        <span>Plan Trader<b>$197</b>MXN / mes</span>
+        <span>Plan VIP<b>$330</b>MXN / mes</span>
+      </div>
+      <a class="btn pri" href="#oferta">Ver los planes de lanzamiento</a>
+    </div>
+    <div class="cal" aria-hidden="true">
+      <div class="cal-h">NOVIEMBRE 2026 <small id="calQ"></small></div>
+      <div class="cal-g" id="calG"></div>
+      <p class="cal-f"><strong>30 de nov.</strong> es el último día. Del 1 de diciembre en adelante, estos precios dejan de existir.</p>
+    </div>
+  </div></div>
+</section>
+<script>
+(function(){
+  var sec=document.getElementById('black-november'),g=document.getElementById('calG');if(!sec||!g)return;
+  var p=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City',year:'numeric',month:'numeric',day:'numeric'}).formatToParts(new Date()),v={};
+  p.forEach(function(x){v[x.type]=+x.value});
+  if(v.year>2026||(v.year===2026&&v.month>11)){sec.hidden=true;return}
+  var hoy=(v.year===2026&&v.month===11)?v.day:0,h='';
+  'LMMJVSD'.split('').forEach(function(d){h+='<i class="dw">'+d+'</i>'});
+  for(var k=0;k<6;k++)h+='<i></i>';
+  for(var d=1;d<=30;d++)h+='<b style="--d:'+d+'" class="'+(d<hoy?'pas':d===hoy?'hoy':d===30?'fin':'')+'">'+d+'</b>';
+  g.innerHTML=h;
+  if(hoy){var q=30-hoy+1;document.getElementById('calQ').textContent='Quedan '+q+(q===1?' día':' días');
+    document.getElementById('bnxCuenta').textContent=q===1?'Último día':'Quedan '+q+' días'}
+})();
+</script>
 
 <!-- ═════════ 2 · BENEFICIOS — ¿Qué gano con esto? ═════════ -->
 <section class="sec" id="beneficios">
