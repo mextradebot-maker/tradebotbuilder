@@ -178,6 +178,8 @@ header.top{position:absolute;inset:44px 0 auto 0;z-index:5}
 .planes{display:grid;grid-template-columns:1fr 1fr;gap:22px}
 .plan{background:#fff;border:1.5px solid var(--paper-line);border-radius:20px;padding:32px 30px;display:flex;flex-direction:column}
 .plan.dest{border-color:var(--paper-ink);box-shadow:0 18px 40px -22px rgba(11,21,48,.45)}
+.bn{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;background:var(--lime-ink);color:var(--ink);border-radius:14px;padding:14px 18px;margin:16px 0 22px;font-size:15px;line-height:1.5}
+.bn span{background:var(--lime);color:var(--lime-ink);font-weight:700;font-size:12px;letter-spacing:.1em;text-transform:uppercase;border-radius:999px;padding:4px 12px;white-space:nowrap}
 .etq{font-size:13px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:#0a8f80;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:26px}
 .etq i{font-style:normal;background:var(--paper-ink);color:#fff;border-radius:6px;padding:3px 8px;font-size:11px;letter-spacing:.1em}
 .plan h3{font-size:22px;margin-bottom:16px}
@@ -263,7 +265,7 @@ footer.pie p+p{margin-top:8px}
 
 
 <!-- ANUNCIO IMPORTANTE (banda superior de la estructura) -->
-<div class="banda">Empieza gratis en DEMO con dinero virtual · Planes de pago con 7 días de garantía</div>
+<div class="banda"><b>Black November</b> · Precios de lanzamiento solo en noviembre. Después no volverás a verlos.</div>
 
 <header class="top"><div class="wrap">
   <a class="marca" href="#portada">Mex<b>Trade</b>Bot</a>
@@ -386,8 +388,9 @@ footer.pie p+p{margin-top:8px}
 <section class="sec" id="oferta">
   <div class="wrap">
     <div class="oferta">
-      <p class="eyebrow">Planes</p>
+      <p class="eyebrow">Planes · Black November</p>
       <h2>Elige cómo quieres empezar</h2>
+      <p class="bn"><span>Black November</span> Estos son precios de lanzamiento. Existen solo durante el mes de noviembre y nunca volverás a verlos.</p>
       <p class="lead">Precios en pesos mexicanos, IVA incluido. Pagas desde Hotmart y cancelas cuando quieras.</p>
       <div class="toggle" role="group" aria-label="Periodo de pago">
         <button type="button" id="bMes" aria-pressed="true">Mensual</button>
