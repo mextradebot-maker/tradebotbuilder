@@ -1269,6 +1269,10 @@ window.renderMasterTraderPanel = function() {
 .mf-spin{width:36px;height:36px;margin:0 auto 16px;border-radius:50%;border:3px solid var(--mt-line);border-top-color:var(--mt-accent);animation:mfSpin .8s linear infinite}
 .mf-wait-t{font-size:18px;font-weight:600;margin:0 0 6px}
 .mf-pasos{padding-left:20px;margin:0 0 16px;display:grid;gap:10px;font-size:14px}
+.mf-ayuda{margin-top:16px;border:1px solid var(--mt-line);border-radius:10px;padding:0 14px;background:var(--mt-bg)}
+.mf-ayuda summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-size:14px;font-weight:600;color:var(--mt-accent)}
+.mf-ayuda summary:focus-visible{outline:2px solid var(--mt-accent);outline-offset:2px;border-radius:6px}
+.mf-ayuda .mf-pasos{margin:4px 0 14px}
 .mf-pasos code,.mf-data code{background:var(--mt-raised);border-radius:6px;padding:2px 6px;overflow-wrap:anywhere;font-size:13px}
 .mf-data{display:grid;grid-template-columns:auto 1fr;gap:10px 16px;margin:0;padding:14px;background:var(--mt-bg);border:1px solid var(--mt-line);border-radius:10px;font-size:13px}
 .mf-data dt{color:var(--mt-muted)}.mf-data dd{margin:0;min-width:0;overflow-wrap:anywhere}
@@ -1597,11 +1601,11 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
     $('mfCuerpo').innerHTML = `<section class="mf-step" role="status"><p class="mf-ok" style="margin:0 0 14px"><strong>Listo: se descargó ${esc(nombre)}</strong></p>
 <h3>Instala tu robot</h3>
 <ol class="mf-pasos">
-${cuentaXm ? `<li>Abre tu cuenta en XM tipo <strong>${cuentaXm}</strong> (se elige al abrirla y no se puede cambiar después). Es la que mejor cabe con tu monto de ${dinero(M)}.</li>` : ''}
-<li>Copia el archivo a <strong>MQL5\\Experts</strong> en el MT5 de tu VPS.</li>
-<li>En MT5 ve a Herramientas → Opciones → Expert Advisors: permite <strong>WebRequest</strong> a <code>https://mextradebot.com.mx</code> y activa <strong>Trading algorítmico</strong>.</li>
-<li>${paso3}</li>
-<li><strong>Verifica</strong> en MexTradeBot_SeguidorSMC (F7 → Entradas) que aparezcan estos datos. Ya vienen cargados; si alguno no coincide, corrígelo:</li>
+${cuentaXm ? `<li><strong>Abre tu cuenta en XM tipo ${cuentaXm}.</strong> Con tu monto de ${dinero(M)} es la que mejor cabe: el lote mínimo de ese tipo de cuenta mantiene el riesgo dentro de lo permitido. El tipo se elige al abrir la cuenta (demo o real) y no se puede cambiar después; si ya tienes una cuenta de otro tipo, abre una nueva.</li>` : ''}
+<li><strong>Copia el archivo a la carpeta de robots</strong> de tu MT5 (en tu VPS o en tu PC). En MT5: Archivo → Abrir carpeta de datos → MQL5 → <strong>Experts</strong>, y pega ahí el archivo. Después, en el Navegador, clic derecho sobre «Asesores Expertos» → <strong>Actualizar</strong>.</li>
+<li><strong>Permite que el robot se conecte.</strong> En MT5: Herramientas → Opciones → Asesores Expertos. Marca «Permitir el comercio algorítmico» y «Permitir WebRequest para las siguientes URL». Haz doble clic en la fila gris «añadir URL…», pega <code>https://mextradebot.com.mx</code> y pulsa Enter. Acepta. El botón <strong>Trading algorítmico</strong> de la barra superior debe estar activo.</li>
+<li>${paso3} Arrastra el robot desde el Navegador hasta esa gráfica. <strong>La gráfica debe ser del mismo símbolo</strong>: el robot opera en la gráfica donde lo sueltas.</li>
+<li><strong>Verifica</strong> en MexTradeBot_SeguidorSMC (F7 → Entradas) que aparezcan estos datos. Ya vienen cargados; si alguno no coincide, corrígelo. Abajo, en la pestaña <strong>Expertos</strong>, debe aparecer un mensaje de inicio sin líneas en rojo.</li>
 </ol>
 <dl class="mf-data">
 <dt>Token</dt><dd><div class="mf-token"><code id="mfToken">${esc(token) || '—'}</code>${token ? '<button type="button" class="ag-btn" data-mf="copiar">Copiar</button>' : ''}</div></dd>
@@ -1610,6 +1614,15 @@ ${cuentaXm ? `<li>Abre tu cuenta en XM tipo <strong>${cuentaXm}</strong> (se eli
 <dt>Timeframe</dt><dd>${TF}</dd>
 <dt>Monto a operar</dt><dd>${dinero(M)}</dd>
 </dl>
+${sel.temporalidad === 'Diario' ? '<div class="mf-alert mf-alert-info" style="margin-top:16px"><p><strong>Vela de Medianoche:</strong> la orden de compra se coloca a las 00:00 hora de Barcelona. La verás como orden pendiente en la pestaña <strong>Operaciones</strong> de MT5.</p></div>' : ''}
+<details class="mf-ayuda"><summary>¿Algo no funciona? Soluciones comunes</summary>
+<ul class="mf-pasos">
+<li><strong>Error 4014 o «URL no permitida» en la pestaña Expertos:</strong> falta agregar <code>https://mextradebot.com.mx</code> en Herramientas → Opciones → Asesores Expertos (paso «Permite que el robot se conecte»).</li>
+<li><strong>No aparece el robot en el Navegador:</strong> confirma que el archivo está en MQL5 → Experts y haz clic derecho sobre «Asesores Expertos» → Actualizar.</li>
+<li><strong>El robot no opera o el icono de la gráfica tiene cara triste:</strong> activa el botón «Trading algorítmico» de la barra superior.</li>
+<li><strong>El robot está activo pero no abre operaciones:</strong> puede que tu cuenta de XM sea de un tipo distinto al indicado en el paso 1 (por ejemplo Standard con un monto chico) y el lote mínimo no cabe en el riesgo permitido. Abre una cuenta del tipo indicado.</li>
+<li><strong>Lo pusiste en otra gráfica:</strong> quítalo (clic derecho en la gráfica → Asesor Experto → Quitar) y arrástralo a la gráfica del símbolo correcto.</li>
+</ul></details>
 <div class="mf-actions"><button type="button" class="ag-btn ag-primary" data-mf="cerrar">Listo</button></div></section>`;
     ov.querySelector('.mf-dialog').focus();
   }
