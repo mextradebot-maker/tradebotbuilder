@@ -1333,6 +1333,32 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
     return v || (f.viable === true ? 'Expectativa positiva' : 'Expectativa negativa');
   }
   function monto() { const n = Number(st.monto); return st.monto !== '' && Number.isFinite(n) && n >= MONTO_MIN ? n : null; }
+
+  // ---- calculadora de capital: contrato del MT5 de XM y stops reales del motor (tools/exportar_calculadora.py → /calculadora-datos.json) ----
+  // Standard: lote mínimo 0.01 de 100,000 u = 1,000 u. Micro: lote mínimo 0.1 de 1,000 u = 100 u → 10 veces menos exposición.
+  // ponytail: el factor Micro se aplica a todos los activos; solo el forex está confirmado, el resto se verifica al abrir la cuenta.
+  const MICRO_FACTOR = 0.1;
+  let calcDatos = null;
+  fetch('/calculadora-datos.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(d => { calcDatos = d; actualizar(); }).catch(() => {});
+  function calcular(sim, temp, M, swing) {
+    const e = calcDatos && calcDatos.especificaciones[sim], s = calcDatos && calcDatos.stops.find(x => x.s === sim && x.t === temp);
+    if (!e || !s || !M) return null;
+    const pref = swing ? 0.01 : 0.02, tope = swing ? 0.03 : 0.02; // mismo criterio que conectividad/riesgo.py
+    const std = e.vol_min * s.med, micro = std * MICRO_FACTOR, amplio = e.vol_min * s.p75 * MICRO_FACTOR;
+    if (std / M <= pref) return { ok: true, cuenta: 'Ultra Low Standard', lote: String(e.vol_min), perdida: std, riesgo: std / M, amplio: e.vol_min * s.p75 };
+    if (micro / M <= tope) return { ok: true, cuenta: 'Ultra Low Micro', lote: '0.1', perdida: micro, riesgo: micro / M, amplio };
+    return { ok: false, capMin: Math.ceil(micro / tope) };
+  }
+  function pintarCalc(M, swing) {
+    const box = $('mfCalc'); if (!box) return;
+    box.hidden = !(M && st.simbolo && st.temporalidad); if (box.hidden) return;
+    const c = st.estrategia === VM ? { vm: true, ok: true, cuenta: 'Ultra Low Micro' } : calcular(st.simbolo, st.temporalidad, M, swing);
+    box.innerHTML = !c ? 'Cargando la calculadora de capital…'
+      : c.vm ? `<p><strong>Cuenta XM que debes abrir: ${c.cuenta}</strong></p><p>El stop de esta estrategia es el 2% del precio; con el lote mínimo de Micro (10 veces menor que Standard) es como mejor cabe tu monto.</p>`
+      : c.ok ? `<p><strong>Cuenta XM que debes abrir: ${c.cuenta}</strong></p><p>Con ${dinero(M)}, el lote mínimo (${c.lote}) pierde unos ${dinero(c.perdida)} (${(c.riesgo * 100).toFixed(2)}% de tu monto) si toca el stop típico de ${esc(st.simbolo)} en ${esc(st.temporalidad)}; con los stops más amplios, hasta unos ${dinero(c.amplio)}. El servidor ajusta el lotaje a tu monto sin pasar de ese mínimo.</p><p class="ag-muted">El tipo de cuenta se elige al abrirla en XM y no se puede cambiar después.</p>`
+      : `<p><strong>${dinero(M)} no alcanza para ${esc(st.simbolo)} en ${esc(st.temporalidad)}</strong></p><p>Aun con una cuenta Ultra Low Micro necesitas al menos ${dinero(c.capMin)} para que el lote mínimo no pase del riesgo permitido. Sube tu monto o elige otra temporalidad.</p>`;
+    box.dataset.cuenta = c && c.ok ? c.cuenta : '';
+  }
   const dinero = n => window.dinero(n);
 
   // ---- abrir / cerrar ----
@@ -1431,6 +1457,7 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
 <fieldset class="mf-field"><legend class="mf-label">Modo</legend><div class="mf-seg">${modos}</div></fieldset>
 <div id="mfLicencia" aria-live="polite"></div>
 <div class="mf-field"><label class="mf-label" for="mfMonto">Monto a operar (USD)</label><input id="mfMonto" type="number" min="${MONTO_MIN}" step="any" inputmode="decimal" autocomplete="off" value="${esc(st.monto)}" aria-describedby="mfMontoAyuda mfMontoErr"><p id="mfMontoAyuda" class="ag-muted">Mínimo $300. El robot opera sobre el menor entre este monto y el balance de tu cuenta.</p><p id="mfMontoErr" class="ag-muted mf-no" hidden>El monto mínimo es $300.</p></div>
+<div id="mfCalc" class="mf-alert mf-alert-info" aria-live="polite" hidden></div>
 </section>
 <section class="mf-step"><h3><span class="mf-num" aria-hidden="true">2</span>Cómo va a operar</h3><p class="ag-muted">Definidos por el Master Trader, no editables</p><div id="mfReglas"></div></section>
 <p id="mfError" class="mf-alert mf-alert-risk" role="alert" hidden></p>
@@ -1477,6 +1504,7 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
     const M = monto();
     $('mfMontoErr').hidden = st.monto === '' || !!M;
     const swing = st.temporalidad.startsWith('Swing'), pr = swing ? 1 : 2, m = v => M ? dinero(M * v) : '—';
+    pintarCalc(M, swing);
     const filas = st.estrategia === VM ? [
       ['Entrada', 'Compra (BUY STOP) en el máximo del día anterior, colocada a las 00:00 de Barcelona'],
       ['Vencimiento de la orden', 'A las 09:00 de Barcelona, si no se llenó'],
@@ -1562,12 +1590,14 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
   function renderFinal(sel, M, nombre, token, simboloXm) {
     st.vista = 'final';
     const TF = tfLegible(sel.temporalidad), activo = ctx().known(sel.simbolo);
+    const cuentaXm = sel.estrategia === VM ? 'Ultra Low Micro' : ((calcular(sel.simbolo, sel.temporalidad, M, sel.temporalidad.startsWith('Swing')) || {}).cuenta || '');
     const paso3 = simboloXm
       ? `Ponlo en la gráfica <strong>${esc(simboloXm)}</strong>, temporalidad <strong>${TF}</strong>.${simboloXm !== sel.simbolo ? ` Según tu servidor de XM el símbolo puede aparecer como <strong>${esc(simboloXm)}</strong> o como <strong>${esc(sel.simbolo)}</strong>: usa el que veas en Observación del mercado.` : ''}`
       : `Busca ${esc(activo ? activo.name : sel.simbolo)} en XM (Ver → Símbolos) y abre su gráfica. Usa la temporalidad <strong>${TF}</strong>.`;
     $('mfCuerpo').innerHTML = `<section class="mf-step" role="status"><p class="mf-ok" style="margin:0 0 14px"><strong>Listo: se descargó ${esc(nombre)}</strong></p>
 <h3>Instala tu robot</h3>
 <ol class="mf-pasos">
+${cuentaXm ? `<li>Abre tu cuenta en XM tipo <strong>${cuentaXm}</strong> (se elige al abrirla y no se puede cambiar después). Es la que mejor cabe con tu monto de ${dinero(M)}.</li>` : ''}
 <li>Copia el archivo a <strong>MQL5\\Experts</strong> en el MT5 de tu VPS.</li>
 <li>En MT5 ve a Herramientas → Opciones → Expert Advisors: permite <strong>WebRequest</strong> a <code>https://mextradebot.com.mx</code> y activa <strong>Trading algorítmico</strong>.</li>
 <li>${paso3}</li>
