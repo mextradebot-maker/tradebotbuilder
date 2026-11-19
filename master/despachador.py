@@ -14,8 +14,17 @@ from datetime import date, datetime, timedelta, timezone
 
 from master import riesgo as compuerta
 
-TTL_ORDEN_S = 300   # una orden que el robot no recoge en 5 min expira (el setup ya no es de ahora)
+TTL_ORDEN_S = 300   # cierres y entradas a mercado (swing express): se vuelven a emitir si caducan
+# Vida de una orden de ENTRADA hasta que el robot la recoge. 5 min era menos que una caida del API: el 16 y el 19 nov 2026 el API
+# respondio HTTP 503 ~5 min justo despues de crear la orden (el robot lo registra en su log) y la orden expiro sin entregarse.
+# Cuanto mas lenta la vela, mas margen: el robot pone su orden pendiente al precio de entrada, no a mercado.
+TTL_ORDEN_POR_TF = {"Scalping 15m": 1200, "Scalping 30m": 2400, "Intraday 1H": 3600}   # 20 min / 40 min / 1 h
+TTL_ORDEN_DEFAULT_S = 7200                                                              # 4H, diario y swing: 2 h
 VIVO_S = 30         # un robot que no pregunta en 30 s no cuenta como vivo
+
+
+def ttl_orden_s(temporalidad: str) -> int:
+    return TTL_ORDEN_POR_TF.get(temporalidad, TTL_ORDEN_DEFAULT_S)
 PCT_MAX = 2.0       # mismo tope que conectividad.riesgo.PCT_MAX_SL
 
 
@@ -64,7 +73,7 @@ def recibir_oportunidades(repo, simbolo: str, temporalidad: str, confirmados: li
                 "simbolo": simbolo, "temporalidad": temporalidad, "direccion": s["direccion"],
                 "entrada": float(s["entrada"]), "stop": float(s["stop"]), "tp": float(s["tp"]) if s.get("tp") else None,
                 "clave": clave, "ref_ts": ref_ts, "ref_cierre": ref_cierre,
-                "expira_en": ahora + timedelta(seconds=TTL_ORDEN_S)}):
+                "expira_en": ahora + timedelta(seconds=ttl_orden_s(temporalidad))}):
             nuevas += 1
     return {"ordenes": nuevas, "robots": len(robots)}
 
@@ -708,11 +717,16 @@ def demo() -> None:
     recibir_oportunidades(repo2, "EURUSD", "Scalping 15m", [setup], 1, 1.1, t0)
     r = pulso(repo2, 7, 111, "EURUSD", "Scalping 15m", {**est, "balance": 10, "equity": 10}, ahora=t0)
     assert r["estado"] == "sin_lotes", r
-    # 9. expira: una orden que nadie recoge en 5 min no se entrega
+    # 9. expira: una orden que nadie recoge a tiempo no se entrega; a tiempo = 20 min en 15m (no 5): sobrevive a una caida corta del API
     repo3 = MemRepo(activados=[(7, "EURUSD", "Scalping 15m", 111)])
     recibir_oportunidades(repo3, "EURUSD", "Scalping 15m", [setup], 1, 1.1, t0)
     r = pulso(repo3, 7, 111, "EURUSD", "Scalping 15m", est, ahora=t0 + timedelta(seconds=TTL_ORDEN_S + 1))
+    assert r["estado"] == "entregada", r   # pasaron mas de 5 min (caida del API) y la orden sigue viva
+    repo3b = MemRepo(activados=[(7, "EURUSD", "Scalping 15m", 111)])
+    recibir_oportunidades(repo3b, "EURUSD", "Scalping 15m", [setup], 1, 1.1, t0)
+    r = pulso(repo3b, 7, 111, "EURUSD", "Scalping 15m", est, ahora=t0 + timedelta(seconds=ttl_orden_s("Scalping 15m") + 1))
     assert r["estado"] == "sin_orden", r
+    assert ttl_orden_s("Scalping 15m") == 1200 and ttl_orden_s("Intraday 1H") == 3600 and ttl_orden_s("Swing (M)") == 7200
     # 10. cierre ordenado: el robot lo recibe primero, aunque haya una orden pendiente; el ack lo cierra
     repo4 = MemRepo(activados=[(7, "EURUSD", "Scalping 15m", 111)])
     recibir_oportunidades(repo4, "EURUSD", "Scalping 15m", [setup], 1, 1.1, t0)
