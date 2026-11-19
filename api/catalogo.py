@@ -80,6 +80,21 @@ def fila(simbolo, temporalidad, tendencia, refrescado_en, bt_snapshot, bt_largo,
     }
 
 
+def _vela_medianoche_todos() -> list[dict]:
+    """Una fila por candidato de Vela de Medianoche (mismo criterio de nombres que robot_legible), sin
+    winrate/expectativa_r: esta estrategia no los tiene. Sin almacen/datos -> [] (no tumba /api/catalogo)."""
+    try:
+        from motor_smc.vela_medianoche import candidatos as _candidatos
+        cands = _candidatos()
+    except Exception:
+        return []
+    return [{
+        "simbolo": c["simbolo"], "simbolo_xm": SIMBOLO_XM.get(c["simbolo"]) or "",
+        "nombre": NOMBRE_ACTIVO.get(c["simbolo"]) or c["simbolo"],
+        "pdh": c["pdh"], "dia_anterior": _iso(c["dia_anterior"]), "ventana_hasta": _iso(c["ventana_hasta"]),
+    } for c in cands]
+
+
 def armar(filas_db) -> list[dict]:
     filas = [fila(*f) for f in filas_db]
     for i, f in enumerate(sorted((f for f in filas if f["viable"]), key=lambda f: -f["expectativa_r"]), 1):
@@ -97,7 +112,8 @@ def procesar(_payload: dict) -> tuple[int, dict]:
         activos = armar(_p.filas_catalogo())
     except Exception as e:
         return 500, {"error": str(e)}
-    return 200, {"catalogo": entradas, "total": len(entradas), "activos_todos": activos, "robots": []}
+    return 200, {"catalogo": entradas, "total": len(entradas), "activos_todos": activos, "robots": [],
+                 "vela_medianoche_todos": _vela_medianoche_todos()}
 
 
 def demo() -> None:
@@ -130,6 +146,42 @@ def demo() -> None:
     assert robot_legible("XAUUSD", "Swing (S)") == {"simbolo": "XAUUSD", "temporalidad": "Swing (S)", "nombre": "Oro",
                                                     "etiqueta": "Oro (XAUUSD) · Swing (S)", "simbolo_xm": "GOLD"}
     assert robot_legible("ZZZ", "Intraday 1H")["etiqueta"] == "ZZZ · Intraday 1H"
+
+    # vela_medianoche_todos: una fila por candidato, formato robot_legible-style, sin winrate/expectativa_r
+    import datetime as _dt
+    import sys as _sys
+
+    from motor_smc import vela_medianoche as _vm
+    _orig_candidatos = _vm.candidatos
+    try:
+        _vm.candidatos = lambda: [{"simbolo": "XAUUSD", "pdh": 2100.5, "dia_anterior": _dt.date(2026, 11, 6),
+                                    "ventana_hasta": _dt.datetime(2026, 11, 7, 7, 0, tzinfo=_dt.timezone.utc)}]
+        filas_vm = _vela_medianoche_todos()
+        assert filas_vm == [{"simbolo": "XAUUSD", "simbolo_xm": "GOLD", "nombre": "Oro", "pdh": 2100.5,
+                             "dia_anterior": "2026-11-06", "ventana_hasta": "2026-11-07T07:00:00+00:00"}], filas_vm
+        assert "winrate" not in filas_vm[0] and "expectativa_r" not in filas_vm[0]
+        # candidatos() lanza -> [] sin tumbar nada
+        _vm.candidatos = lambda: (_ for _ in ()).throw(RuntimeError("almacen sin datos"))
+        assert _vela_medianoche_todos() == []
+    finally:
+        _vm.candidatos = _orig_candidatos
+
+    # procesar() incluye vela_medianoche_todos en la respuesta sin tumbar el resto si candidatos() falla
+    falso_p = type(_sys)("persistencia")
+    falso_p.listar_catalogo = lambda: []
+    falso_p.filas_catalogo = lambda: []
+    _previo_p = _sys.modules.get("persistencia")
+    _sys.modules["persistencia"] = falso_p
+    try:
+        _vm.candidatos = lambda: (_ for _ in ()).throw(RuntimeError("almacen sin datos"))
+        status, body = procesar({})
+        assert status == 200 and body["vela_medianoche_todos"] == [], body
+    finally:
+        _vm.candidatos = _orig_candidatos
+        if _previo_p is None:
+            del _sys.modules["persistencia"]
+        else:
+            _sys.modules["persistencia"] = _previo_p
     print("api/catalogo demo OK")
 
 

@@ -408,6 +408,42 @@ _SQL = [
     """
     CREATE INDEX IF NOT EXISTS idx_master_aut_correo ON master_autorizaciones (lower(correo), registrada_en DESC)
     """,
+    # ── Swing express: estrategia en Master Trader y tabla master_historial ──
+    # estrategia por robot y por orden ('estructural' por defecto para lo ya existente); posicion_abierta la mantiene el Master
+    # master_historial: una fila por operacion cerrada del Master (reportes y auditoria)
+    """
+    ALTER TABLE master_robots ADD COLUMN IF NOT EXISTS estrategia text NOT NULL DEFAULT 'estructural',
+        ADD COLUMN IF NOT EXISTS posicion_abierta boolean NOT NULL DEFAULT false
+    """,
+    """
+    ALTER TABLE master_ordenes ADD COLUMN IF NOT EXISTS estrategia text NOT NULL DEFAULT 'estructural'
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS master_historial (
+        id             bigserial   PRIMARY KEY,
+        licencia_id    bigint      NOT NULL REFERENCES licencias(id) ON DELETE CASCADE,
+        simbolo        text        NOT NULL,
+        temporalidad   text        NOT NULL,
+        estrategia     text        NOT NULL,
+        direccion      text        NOT NULL,
+        lotes          double precision NOT NULL,
+        ticket         bigint,
+        precio_entrada double precision,
+        precio_cierre  double precision,
+        profit_usd     double precision,
+        razon_cierre   text,
+        abierta_en     timestamptz,
+        cerrada_en     timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_master_historial_licencia ON master_historial (licencia_id, cerrada_en DESC)
+    """,
+    # Vela de Medianoche: momento en que el Master abrio la posicion (la lee el despachador para cerrar por tiempo)
+    """
+    ALTER TABLE master_robots ADD COLUMN IF NOT EXISTS posicion_abierta_en timestamptz
+    """,
+
     # ── Etapa 2: temporalidades canonicas (idempotente: se corre en cada arranque) ──
     # 1) catalogo: 7 canonicas por simbolo con filas viejas, heredando fecha_inicio
     #    (Scalping 30m entra inactiva); sin filas viejas no hace nada.
@@ -469,9 +505,13 @@ _SQL_LIMPIEZA = [
       for t in ("catalogo_activos", "smc_snapshot", "backtest_largo", "historico_tendencias", "velas", "velas_carga")],
     *[f"DELETE FROM {t} WHERE simbolo = 'GOLD'"
       for t in ("catalogo_activos", "smc_snapshot", "backtest_largo", "velas", "velas_carga")],
+    # "Diario" es solo del Master (Vela de Medianoche): refresco.pendientes() no la conoce y avisaria 34 veces por
+    # ciclo. Corrige las filas ya sembradas activas antes de que estuviera en _TEMPORALIDADES_INACTIVAS.
+    "UPDATE catalogo_activos SET activo = false WHERE temporalidad = 'Diario' AND activo",
 ]
-_TEMPORALIDADES_SEED = ["Scalping 15m", "Scalping 30m", "Intraday 1H", "Intraday 4H", "Intraday D", "Swing (S)", "Swing (M)"]
-_TEMPORALIDADES_INACTIVAS = {"Scalping 30m"}  # activar a mano tras medir tiempos en produccion
+_TEMPORALIDADES_SEED = ["Scalping 15m", "Scalping 30m", "Intraday 1H", "Intraday 4H", "Intraday D", "Swing (S)", "Swing (M)", "Diario"]
+# Scalping 30m: activar a mano tras medir tiempos en produccion. Diario: nunca la refresca el motor (ver arriba).
+_TEMPORALIDADES_INACTIVAS = {"Scalping 30m", "Diario"}
 _FECHA_SEED = "2026-09-20"
 
 
@@ -556,7 +596,10 @@ def demo() -> None:
     # las semillas ya no reintroducen nombres viejos
     assert not {"Scalping", "Intraday", "Swing (H)"} & (set(_TEMPORALIDADES_SEED) | {c[4] for c in _CUENTAS_SEED})
     from conectividad.historico import TEMPORALIDADES
-    assert list(TEMPORALIDADES) == _TEMPORALIDADES_SEED
+    # "Diario" es solo del Master (Vela de Medianoche): no existe en el mapa de Estructural (conectividad.historico)
+    assert list(TEMPORALIDADES) == [t for t in _TEMPORALIDADES_SEED if t != "Diario"]
+    # ...por eso se siembra inactiva: refresco.pendientes() solo recorre filas activas
+    assert "Diario" in _TEMPORALIDADES_INACTIVAS and any("temporalidad = 'Diario'" in s for s in _SQL_LIMPIEZA)
     # catalogo de 34: limpieza borra retirados y GOLD huerfano de las tablas de analisis, no de cuentas_demo
     assert len(_SIMBOLOS_SEED) == 34 and not {"AMXL", "CEMEXCPO", "GOLD"} & set(_SIMBOLOS_SEED)
     db.execute("INSERT INTO cuentas_demo VALUES (9, 'Swing (S)')")

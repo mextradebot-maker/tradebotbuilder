@@ -1,0 +1,250 @@
+<!doctype html><html lang='es-MX'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'>
+<title>Mockup fiel a producción — Catálogo de Estrategias</title>
+<link href='https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap' rel='stylesheet'>
+<!--
+  Este mockup NO inventa nada: cada clase, variable y pieza de markup de abajo se copió tal cual de
+  C:\Proyectos\MexTradeBot\tradebotbuilder\index.html (ya reconciliado con producción, commit 0333dab),
+  después de dos intentos fallidos basados en archivos obsoletos (plantillas/panel-alumnos.html y una
+  copia vieja de index.html). Fuente de cada pieza:
+  - Variables --mt-* y clases .ag-* : extraídas del <style> real (sección "Agentico" del index.html).
+  - Sidebar agrupado (MERCADO Y OPERACIÓN / ESTRATEGIAS / HERRAMIENTAS Y AYUDA): copiado del arreglo
+    `menus` real en index.html (función init() del script "ag-"). Se agregó UN ítem nuevo,
+    "Catálogo de Estrategias", dentro del grupo ESTRATEGIAS (no se tocó ningún ítem existente).
+  - Tarjeta de activo (.ag-asset/.ag-row/.ag-symbol/.ag-trend/.ag-metrics/.ag-foot): copiada literal de
+    la función renderGrid() real (el template que arma "Catálogo de activos" hoy). Los 3 campos del
+    ag-metrics (Acierto histórico / Expectativa / Muestra · setups) se reusan para Estructural y Vela de
+    Medianoche; para Swing Express se reetiquetan a Tendencia / Expectativa / Lote porque esa estrategia
+    no tiene winrate ni muestra — es la misma rejilla de 3 columnas, solo cambian las etiquetas.
+  - Encabezado "El mercado, con perspectiva." / "INTELIGENCIA DE MERCADO" copiado literal de renderCatalog()
+    real, para que quede claro que el patrón "ag-eyebrow + ag-title + ag-muted" es el mismo que ya usa
+    Catálogo de Activos — Catálogo de Estrategias lo reusa con su propio texto.
+  - Ícono nuevo de "Catálogo de Estrategias" en el sidebar: no existe un MTB_ICO real para esto todavía
+    (serían 3 nuevos íconos: Estructural/Vela de Medianoche/Swing Express agrupados). Se dibujó uno nuevo
+    con el mismo estilo (trazo fino, viewBox 24x24, sin relleno) imitando los demás MTB_ICO — placeholder
+    a reemplazar por el ícono real que el constructor decida.
+  - Datos de ejemplo (símbolos, winrate, expectativa, candidatos) son ILUSTRATIVOS.
+-->
+<style>
+:root{color-scheme:dark;--mt-bg:#080f1b;--mt-panel:#101b2b;--mt-raised:#162337;--mt-line:#2a3a50;--mt-text:#edf3fb;--mt-muted:#a6b6cc;--mt-accent:#32c7df;--mt-accent-ink:#06242c;--mt-aside:#0d1726;--viable:#64e6ac;--viable-bg:#11352b;--no-viable:#b5c1d2;--no-viable-bg:#223047;--perdida:#ff8ca2;--perdida-bg:#3b202b;--advertencia:#edc575;--advertencia-bg:#392f1c}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:var(--mt-bg);color:var(--mt-text);font:14px/1.5 'Lexend','Segoe UI',sans-serif;padding:24px}
+button,a{cursor:pointer}
+a{color:var(--mt-accent);text-decoration:none}
+
+#wizard{max-width:1440px;margin:auto;width:100%}
+#wizard>div{display:flex;background:var(--mt-panel);border:1px solid var(--mt-line);border-radius:18px;min-height:calc(100vh - 48px);overflow:hidden}
+#wizard aside{width:225px;flex-shrink:0;border-right:1px solid var(--mt-line);padding:24px 14px;background:var(--mt-aside);display:flex;flex-direction:column}
+#wizard aside>div{padding:0 10px 20px}
+#wizard aside>div>div:first-child{font-size:20px;font-weight:700;letter-spacing:-.7px}
+#wizard aside>div>div:last-child{text-transform:uppercase;letter-spacing:2px;font-size:10px;color:var(--mt-accent);margin-top:5px}
+#wizard aside+div{flex:1;min-width:0;display:flex;flex-direction:column}
+#wizard aside+div>div:first-child{padding:24px 30px;border-bottom:1px solid var(--mt-line);display:flex;align-items:center;justify-content:space-between;gap:16px}
+#wizard aside+div>div:last-child{padding:30px;flex:1;overflow:auto;background:var(--mt-bg)}
+#pageTitulo{font-size:19px;margin:0;font-weight:600}
+#wizardSaludo{margin:4px 0 0;color:var(--mt-muted);font-size:12px}
+#mtbSidebarNav{display:flex;flex-direction:column;gap:4px}
+.mtb-side-btn{padding:11px 13px;font-size:12px;min-height:42px;color:var(--mt-muted);border-radius:8px;display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;text-align:left;text-decoration:none}
+.mtb-side-btn:hover{background:var(--mt-raised)}
+.mtb-side-btn[aria-current=true]{background:var(--mt-raised);box-shadow:inset 3px 0 var(--mt-accent);color:var(--mt-text)}
+.mtb-side-btn.nuevo::after{content:'Nuevo';margin-left:auto;font-size:9px;font-weight:700;color:var(--mt-accent-ink);background:var(--mt-accent);border-radius:999px;padding:2px 7px}
+.ag-nav-group{font-size:9px;letter-spacing:1.4px;color:#899db9;margin:21px 12px 6px}
+.ag-icon{width:20px;display:inline-block;font-size:16px;text-align:center;color:var(--mt-accent)}
+.mtb-ico{width:16px;height:16px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
+
+.ag-eyebrow{font-size:10px;letter-spacing:1.8px;color:var(--mt-accent);margin:0 0 10px}
+.ag-title{font-size:32px;line-height:1.2;letter-spacing:-1px;margin:0 0 12px;font-weight:600}
+.ag-muted{color:var(--mt-muted);font-size:12px}
+.ag-toolbar{display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap;margin:24px 0 14px}
+.ag-status{padding:12px 15px;background:var(--mt-raised);border-radius:8px;margin:16px 0;color:var(--mt-muted);font-size:12px}
+.ag-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}
+.ag-asset{background:var(--mt-panel);border:1px solid var(--mt-line);border-radius:12px;padding:18px;color:var(--mt-text);display:block;cursor:pointer}
+.ag-asset:hover{border-color:var(--mt-accent)}
+.ag-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.ag-symbol{font-size:21px;font-weight:600;letter-spacing:.5px}
+.ag-name{display:block;font-size:11px;color:var(--mt-muted);margin:5px 0 12px}
+.ag-trend{font-size:11px;border-radius:6px;padding:4px 8px;background:var(--mt-raised);white-space:nowrap;display:inline-block}
+.ag-up{color:var(--viable)}.ag-down{color:var(--perdida)}.ag-flat{color:var(--advertencia)}.ag-unknown{color:var(--mt-muted)}
+.ag-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:20px 0}
+.ag-metrics small{font-size:10px;display:block;color:var(--mt-muted)}
+.ag-metrics strong{font-size:17px;font-weight:500;font-variant-numeric:tabular-nums}
+.ag-foot{border-top:1px solid var(--mt-line);padding-top:12px;font-size:10px;color:var(--mt-muted)}
+.ag-foot span:last-child{color:var(--mt-accent)}
+.ag-panel{padding:24px;background:var(--mt-panel);border:1px solid var(--mt-line);border-radius:12px;margin:20px 0}
+.ag-panel h2{font-size:18px;font-weight:600;margin:0 0 16px}
+.ag-legend{display:flex;gap:18px;flex-wrap:wrap;font-size:11px;margin:20px 0}
+.ag-detail-header{margin-top:22px}
+.ag-detail-header .ag-title{margin-bottom:6px}
+.ag-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;background:var(--mt-raised);color:var(--mt-text);border:1px solid var(--mt-line);padding:10px 14px;border-radius:8px;text-decoration:none;font-size:12px}
+.ag-btn:hover{border-color:var(--mt-accent)}
+.ag-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;background:var(--mt-raised);border:1px solid var(--mt-line);border-radius:999px;padding:4px 10px;color:var(--mt-text)}
+.mtb-dot{display:inline-block;width:6px;height:6px;border-radius:999px;background:var(--viable);position:relative}
+.mtb-dot::after{content:"";position:absolute;inset:-4px;border-radius:999px;border:1px solid var(--viable);animation:mtbPulse 2s ease-out infinite}
+@keyframes mtbPulse{0%{transform:scale(.6);opacity:.9}100%{transform:scale(2);opacity:0}}
+
+.strat-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;margin-top:20px}
+.strat-card{background:var(--mt-panel);border:1px solid var(--mt-line);border-radius:12px;padding:20px;cursor:pointer}
+.strat-card:hover{border-color:var(--mt-accent)}
+.strat-card.activa{border-color:var(--mt-accent)}
+
+.view{display:none}.view.activa{display:block}
+.ejemplo-badge{position:fixed;bottom:16px;right:16px;background:var(--mt-raised);border:1px solid var(--mt-line);color:var(--mt-muted);font-size:11px;padding:7px 11px;border-radius:8px;z-index:50}
+@media(max-width:900px){.ag-grid,.strat-grid{grid-template-columns:1fr}#wizard aside{width:auto}}
+</style>
+</head><body>
+
+<div id='wizard'><div>
+
+  <!-- ===================== SIDEBAR real + 1 ítem nuevo ===================== -->
+  <aside>
+    <div><div>MexTradeBot</div><div>trading agéntico</div></div>
+    <nav id='mtbSidebarNav'>
+      <div class='ag-nav-group'>MERCADO Y OPERACIÓN</div>
+      <button type='button' class='mtb-side-btn' data-page='catalogoTop'><svg class='mtb-ico' viewBox='0 0 24 24'><rect x='3' y='3' width='7' height='7' rx='1.6'/><rect x='14' y='3' width='7' height='7' rx='1.6'/><rect x='14' y='14' width='7' height='7' rx='1.6'/><rect x='3' y='14' width='7' height='7' rx='1.6'/></svg>Catálogo de activos</button>
+      <button type='button' class='mtb-side-btn' data-page='resumen'><svg class='mtb-ico' viewBox='0 0 24 24'><rect x='3' y='3' width='7' height='9' rx='1.6'/><rect x='14' y='3' width='7' height='5' rx='1.6'/><rect x='14' y='12' width='7' height='9' rx='1.6'/><rect x='3' y='16' width='7' height='5' rx='1.6'/></svg>Resumen</button>
+      <button type='button' class='mtb-side-btn' data-page='botsProduccion'><svg class='mtb-ico' viewBox='0 0 24 24'><rect x='4' y='8' width='16' height='12' rx='3.5'/><path d='M12 8V5'/><circle cx='12' cy='3.6' r='1.2'/></svg>Bots en operación</button>
+      <div class='ag-nav-group'>ESTRATEGIAS</div>
+      <button type='button' class='mtb-side-btn' data-page='backtester'><svg class='mtb-ico' viewBox='0 0 24 24'><path d='m3 17 6-6 4 4 8-8'/><path d='M15 7h6v6'/></svg>Backtester</button>
+      <button type='button' class='mtb-side-btn' data-page='analisis'><svg class='mtb-ico' viewBox='0 0 24 24'><path d='M6 3v3M6 15v3M12 6v3M12 18v3M18 2v3M18 12v4'/><rect x='4' y='6' width='4' height='9' rx='1.2'/><rect x='10' y='9' width='4' height='9' rx='1.2'/><rect x='16' y='5' width='4' height='7' rx='1.2'/></svg>Análisis técnico</button>
+      <button type='button' class='mtb-side-btn nuevo' data-page='catalogoEstrategias' aria-current='true'><svg class='mtb-ico' viewBox='0 0 24 24'><path d='M4 6h16M4 12h10M4 18h7'/><circle cx='19' cy='18' r='2'/></svg>Catálogo de estrategias</button>
+      <button type='button' class='mtb-side-btn' data-page='validaciones'><svg class='mtb-ico' viewBox='0 0 24 24'><path d='M12 3 4.5 6v5.5c0 4.4 3.1 8 7.5 9.5 4.4-1.5 7.5-5.1 7.5-9.5V6z'/><path d='m9 12 2.2 2.2L15.5 10'/></svg>Mis validaciones</button>
+      <button type='button' class='mtb-side-btn' data-page='constructor'><svg class='mtb-ico' viewBox='0 0 24 24'><rect x='6' y='6' width='12' height='12' rx='2.2'/><rect x='9.5' y='9.5' width='5' height='5' rx='1'/></svg>Constructor de bots</button>
+      <div class='ag-nav-group'>HERRAMIENTAS Y AYUDA</div>
+      <button type='button' class='mtb-side-btn' data-page='calendario'><svg class='mtb-ico' viewBox='0 0 24 24'><rect x='3' y='4.5' width='18' height='16.5' rx='2.4'/><path d='M16 2.5v4M8 2.5v4M3 10h18'/></svg>Calendario económico</button>
+      <button type='button' class='mtb-side-btn' data-page='conexionXm'><svg class='mtb-ico' viewBox='0 0 24 24'><path d='m17 4 4 4-4 4M21 8H8M7 20l-4-4 4-4M3 16h13'/></svg>Conexión XM</button>
+    </nav>
+  </aside>
+
+  <div>
+    <div>
+      <div><h1 id='pageTitulo'>Catálogo de estrategias</h1><p id='wizardSaludo'>Hola, Ricardo Peña Covarrubias</p></div>
+      <span class='ag-chip'><span class='mtb-dot'></span>VPS conectado · refrescó hace 38s</span>
+    </div>
+
+    <div>
+
+      <!-- ===================== CATÁLOGO DE ESTRATEGIAS — lista ===================== -->
+      <div id='page-catalogoEstrategias' class='view activa'>
+        <p class='ag-eyebrow'>CATÁLOGO DE ESTRATEGIAS</p>
+        <h2 class='ag-title'>Elige cómo quieres operar.</h2>
+        <p class='ag-muted'>Cada estrategia es un ángulo distinto sobre el mismo catálogo de 34 activos — solo muestra los que, ahora mismo, cumplen su condición de entrada. La lista se actualiza con cada refresco, igual que Catálogo de activos.</p>
+
+        <div class='strat-grid'>
+          <div class='strat-card'>
+            <div class='ag-row'><span class='ag-symbol' style='font-size:16px'>Estructural</span><span class='ag-trend ag-up'>8 candidatos</span></div>
+            <p class='ag-muted' style='margin:10px 0 16px'>Entra en cambios de tendencia confirmados por el motor SMC (reversión y continuación), con stop loss y take profit calculados por zona de Order Block / FVG.</p>
+            <div class='ag-row' style='font-size:11px;color:var(--mt-muted)'><span>5 temporalidades</span><span>Compra y venta</span></div>
+          </div>
+          <div class='strat-card'>
+            <div class='ag-row'><span class='ag-symbol' style='font-size:16px'>Vela de Medianoche</span><span class='ag-trend ag-up'>3 candidatos</span></div>
+            <p class='ag-muted' style='margin:10px 0 16px'>Aprovecha el patrón de apertura diaria en el oro, con su propia gestión de stop y objetivo — exclusiva de XAUUSD en Diario.</p>
+            <div class='ag-row' style='font-size:11px;color:var(--mt-muted)'><span>1 temporalidad</span><span>Solo XAUUSD</span></div>
+          </div>
+          <div class='strat-card activa' onclick="mostrar('swingExpress')">
+            <div class='ag-row'><span class='ag-symbol' style='font-size:16px'>Swing Express</span><span class='ag-trend ag-up'>6 candidatos</span></div>
+            <p class='ag-muted' style='margin:10px 0 16px'>Se llama "Express" porque solo requiere ver al activo en tendencia alcista para entrar — sin esperar un setup. Lote fijo 0.01, sin stop loss, cierra al cambiar la tendencia.</p>
+            <div class='ag-row' style='font-size:11px;color:var(--mt-muted)'><span>Semanal / Mensual</span><span>Solo compra</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== CATÁLOGO DE ESTRATEGIAS — detalle Swing Express ===================== -->
+      <div id='page-swingExpress' class='view'>
+        <button class='ag-btn' onclick="mostrar('catalogoEstrategias')">← Volver al catálogo de estrategias</button>
+        <div class='ag-detail-header'>
+          <p class='ag-eyebrow'>SWING EXPRESS / RESEÑA</p>
+          <h2 class='ag-title'>Entra en tendencia. Sal cuando cambie.</h2>
+          <p class='ag-muted' style='max-width:640px'>Se llama "Express" porque solo requiere ver al activo en tendencia alcista en la temporalidad que elijas (Semanal o Mensual) para entrar en operación — no espera un cambio de tendencia como las demás estrategias. Cierra automáticamente para asegurar ganancia en cuanto la estructura deja de ser alcista.</p>
+        </div>
+
+        <div class='ag-panel'>
+          <div class='ag-row' style='align-items:flex-start'>
+            <div style='display:flex;gap:8px;flex-wrap:wrap'>
+              <span class='ag-chip'>Lote <strong>&nbsp;0.01</strong> fijo</span>
+              <span class='ag-chip'>Sin stop loss</span>
+              <span class='ag-chip'>Máx. 2 posiciones por activo</span>
+            </div>
+            <div style='display:flex;gap:28px;font-size:12px'>
+              <div><div class='ag-muted'>Inversión mínima</div><strong style='font-size:16px'>$300 USD</strong></div>
+              <div><div class='ag-muted'>Candidatos ahora</div><strong style='font-size:16px;color:var(--viable)'>6</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <p class='ag-status'>Fuente: tendencia del motor SMC v2 (último BOS/CHOCH), por temporalidad Swing. Se actualiza con cada refresco.</p>
+
+        <h3 style='font-size:14px;font-weight:500;margin:24px 0 12px'>Activos candidatos — tendencia alcista ahora mismo</h3>
+
+        <div class='ag-grid'>
+          <a class='ag-asset' onclick="mostrar('fichaSwing')">
+            <div class='ag-row'><span class='ag-symbol'>XAUUSD</span><span class='ag-trend ag-up'>↗ Alcista</span></div>
+            <span class='ag-name'>Oro (GOLD en XM)</span>
+            <span class='ag-muted'>Metales · Semanal</span>
+            <div class='ag-metrics'>
+              <div><small>Expectativa</small><strong>0.35R</strong></div>
+              <div><small>Lote</small><strong>0.01</strong></div>
+              <div><small>Tu posición</small><strong style='color:var(--mt-accent);font-size:13px'>Abierta</strong></div>
+            </div>
+            <div class='ag-foot ag-row'><span>6 nov 2026, 02:03 p.m.</span><span>Ver ficha ↗</span></div>
+          </a>
+          <a class='ag-asset' onclick="mostrar('fichaSwing')">
+            <div class='ag-row'><span class='ag-symbol'>XAUUSD</span><span class='ag-trend ag-up'>↗ Alcista</span></div>
+            <span class='ag-name'>Oro (GOLD en XM)</span>
+            <span class='ag-muted'>Metales · Mensual</span>
+            <div class='ag-metrics'>
+              <div><small>Expectativa</small><strong>0.35R</strong></div>
+              <div><small>Lote</small><strong>0.01</strong></div>
+              <div><small>Tu posición</small><strong style='font-size:13px'>Sin posición</strong></div>
+            </div>
+            <div class='ag-foot ag-row'><span>6 nov 2026, 02:03 p.m.</span><span>Ver ficha ↗</span></div>
+          </a>
+          <a class='ag-asset' onclick="mostrar('fichaSwing')">
+            <div class='ag-row'><span class='ag-symbol'>US500</span><span class='ag-trend ag-up'>↗ Alcista</span></div>
+            <span class='ag-name'>Índice S&amp;P 500 (US500Cash en XM)</span>
+            <span class='ag-muted'>Índices · Semanal</span>
+            <div class='ag-metrics'>
+              <div><small>Expectativa</small><strong>0.18R</strong></div>
+              <div><small>Lote</small><strong>0.01</strong></div>
+              <div><small>Tu posición</small><strong style='font-size:13px'>Sin posición</strong></div>
+            </div>
+            <div class='ag-foot ag-row'><span>6 nov 2026, 09:52 a.m.</span><span>Ver ficha ↗</span></div>
+          </a>
+        </div>
+
+        <div class='ag-legend'><span class='ag-up'>↗ Alcista</span><span class='ag-muted'>Solo los activos alcistas entran en Swing Express — es una estrategia de solo compra.</span></div>
+      </div>
+
+      <!-- ===================== FICHA (reusa exactamente el patrón real de #page-ficha) ===================== -->
+      <div id='page-fichaSwing' class='view'>
+        <button class='ag-btn' onclick="mostrar('swingExpress')">← Volver a Swing Express</button>
+        <div class='ag-detail-header'>
+          <p class='ag-eyebrow'>METALES / FICHA DEL ACTIVO</p>
+          <div class='ag-row'><h2 class='ag-title'>XAUUSD</h2><span class='ag-trend ag-up'>↗ Alcista</span></div>
+          <p class='ag-muted'>Oro · Swing Express · Semanal</p>
+        </div>
+        <div class='ag-metrics' style='max-width:520px'>
+          <div><small>Expectativa</small><strong>0.35R</strong></div>
+          <div><small>Lote</small><strong>0.01</strong></div>
+          <div><small>Candidatos del activo</small><strong>2 de 2</strong></div>
+        </div>
+        <div class='ag-panel'>
+          <p class='ag-muted'>La tendencia se recalcula en cada refresco a partir del último BOS/CHoCH del motor SMC v2 en Semanal. Esta ficha no muestra winrate ni muestra histórica porque Swing Express no evalúa setups — solo tendencia vigente.</p>
+        </div>
+        <p class='ag-status'><span class='mtb-dot'></span>&nbsp;Actualizado hace 2 min · 6 nov 2026, 02:03 p.m.</p>
+      </div>
+
+    </div>
+  </div>
+</div></div>
+
+<div class='ejemplo-badge'>Vista de ejemplo — fiel a las clases/variables reales de producción, datos ilustrativos</div>
+
+<script>
+function mostrar(id){
+  document.querySelectorAll('.view').forEach(function(v){v.classList.remove('activa')});
+  document.getElementById('page-'+id).classList.add('activa');
+  var titulos={catalogoEstrategias:'Catálogo de estrategias',swingExpress:'Swing Express',fichaSwing:'XAUUSD'};
+  document.getElementById('pageTitulo').textContent=titulos[id]||id;
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+</script>
+</body></html>

@@ -44,6 +44,7 @@ SIMBOLOS = (
 TF_POR_TEMPORALIDAD = {
     "Scalping 15m": "PERIOD_M15", "Scalping 30m": "PERIOD_M30", "Intraday 1H": "PERIOD_H1",
     "Intraday 4H": "PERIOD_H4", "Intraday D": "PERIOD_D1", "Swing (S)": "PERIOD_W1", "Swing (M)": "PERIOD_MN1",
+    "Diario": "PERIOD_H1",  # Vela de Medianoche: el EA no usa esta TF para velas, solo para el InpTF del preset
 }
 CAPITAL_MIN, CAPITAL_MAX = 300.0, 10_000_000.0  # ponytail: tope solo contra números absurdos
 _candado = threading.Lock()  # ponytail: una compilación a la vez; MetaEditor tarda ~1-2 s
@@ -190,6 +191,10 @@ def demo() -> None:
             except ValueError:
                 pass
         assert preparar_fuente(fuente.replace(linea, "//"), token)  # sin presets esas líneas no importan
+
+    # Vela de Medianoche: "Diario" compila con InpTF = PERIOD_H1 (el EA no usa esa TF para velas)
+    assert TF_POR_TEMPORALIDAD["Diario"] == "PERIOD_H1"
+    assert validar_presets("XAUUSD", "Diario") == ("XAUUSD", "Diario", None)
 
     # las listas cerradas siguen iguales a las semillas del catalogo (sin importar persistencia: aplica migraciones)
     import ast

@@ -7,7 +7,8 @@
           "orden": null | {"orden_id","direccion","entrada","stop","tp","lotes","ref_ts","ref_cierre"}}
        El cuerpo se escribe en el orden y con las llaves que lee el parser minimo del EA ("orden":{...} al final).
   POST /api/v1/master/oportunidad  (servicio) X-MTB-Service-Key  {"simbolo","temporalidad","setups_confirmados":[...],"ref_ts","ref_cierre"}
-  GET/POST /api/v1/master/admin    (admin)    X-Admin-Key: estado | {"accion":"activar|desactivar","licencia_id","simbolo","temporalidad"} | {"accion":"reanudar","cuenta"}
+  GET/POST /api/v1/master/admin    (admin)    X-Admin-Key: estado | {"accion":"activar|desactivar","licencia_id","simbolo","temporalidad","estrategia"} | {"accion":"reanudar","cuenta"}
+       "estrategia" (opcional, solo "activar"): "estructural" (default) | "vela_medianoche" | "swing_express" -- crea/reactiva el robot con esa estrategia; sin ella, preserva la que ya tenia (en temporalidad "Diario", sin ella = "vela_medianoche").
 
 El Master solo entrega ordenes si MASTER_ACTIVO=1 en el entorno del servidor (apagado por defecto: los robots siguen con su
 camino de siempre, /api/setups a la vela nueva). Sin el interruptor, el pulso igual registra que el robot esta vivo.
@@ -92,7 +93,10 @@ def procesar_admin(metodo: str, datos: dict, headers: dict, repo=None) -> tuple[
             if accion == "activar" and r.ultima_autorizacion(lic, sim, tf) != "aceptada":
                 return 409, {"error": "sin_autorizacion",
                              "detalle": "El alumno debe aceptar por Telegram antes de activar (pide la autorizacion con accion 'solicitar')."}
-            r.activar(lic, sim, tf, accion == "activar")
+            # estrategia: opcional, p.ej. "swing_express" -- sin ella se preserva la actual (o 'estructural' si es
+            # nueva); en "Diario" sin ella queda 'vela_medianoche' (despachador.estrategia_por_defecto), igual que
+            # en la activacion por Telegram (procesar_aceptar_post), que nunca manda estrategia.
+            r.activar(lic, sim, tf, accion == "activar", datos.get("estrategia"))
             return 200, {"ok": True}
         if accion == "reanudar":
             r.reanudar(int(datos["cuenta"]))
@@ -283,6 +287,11 @@ def demo() -> None:
     repo3.registrar_autorizacion(7, "EURUSD", "Scalping 15m", "rechazada", 555, "h", None, None)    # lo ultimo manda
     assert procesar_admin("POST", act, adm, repo3)[0] == 409
     assert procesar_admin("POST", {**act, "accion": "desactivar"}, adm, repo3)[0] == 200
+    # Vela de Medianoche: activar en "Diario" sin mandar estrategia la deja etiquetada como vela_medianoche
+    repo3.registrar_autorizacion(7, "XAUUSD", "Diario", "aceptada", 555, "h", None, None)
+    act_vm = {"accion": "activar", "licencia_id": 7, "simbolo": "XAUUSD", "temporalidad": "Diario"}
+    assert procesar_admin("POST", act_vm, adm, repo3)[0] == 200
+    assert repo3.robots[(7, "XAUUSD", "Diario")]["estrategia"] == "vela_medianoche"
     # enlaces sin chat (los de antes de la evidencia) ya no activan nada
     from master import aceptacion as _ac
     assert procesar_aceptar_post({"t": _ac.firmar(7, "EURUSD", "Scalping 15m", "activar")}, MemRepo())[0] == 400
