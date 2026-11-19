@@ -13,9 +13,12 @@
 El Master solo entrega ordenes si MASTER_ACTIVO=1 en el entorno del servidor (apagado por defecto: los robots siguen con su
 camino de siempre, /api/setups a la vela nueva). Sin el interruptor, el pulso igual registra que el robot esta vivo.
 """
+import logging
 import os
 
 from api.licencias import _bearer, _clave_ok, _h, _identidad, _ip, _verificar
+
+_log = logging.getLogger("mtb.master")
 
 _ESTADO = ("balance", "equity", "tick_size", "tick_value", "vol_min", "vol_max", "vol_step")
 
@@ -50,6 +53,7 @@ def procesar_pulso(datos: dict, headers: dict, repo=None) -> tuple[int, dict]:
     try:
         ok, motivo, lic = _verificar(token, cuenta, modo, robot, _ip(headers), {"endpoint": "master_pulso"})
     except Exception as e:  # BD caida: falla cerrado, el robot reintenta en el siguiente pulso
+        _log.exception("pulso: verificacion de licencia fallo (cuenta %s)", cuenta)   # antes el 503 no dejaba rastro en el log del servidor
         return 503, {"ok": False, "motivo": f"cerebro_no_disponible: {type(e).__name__}"}
     if not ok:
         return 403, {"ok": False, "motivo": motivo}
@@ -57,6 +61,7 @@ def procesar_pulso(datos: dict, headers: dict, repo=None) -> tuple[int, dict]:
         r = despachador.pulso(repo or _repo(), lic["id"], cuenta, simbolo, temporalidad, est,
                               datos.get("acks") or [], habilitado=habilitado(), cierre_auto=cierre_auto())
     except Exception as e:
+        _log.exception("pulso: el despachador fallo (cuenta %s, %s %s)", cuenta, simbolo, temporalidad)
         return 503, {"ok": False, "motivo": f"master_no_disponible: {type(e).__name__}"}
     # "cierre" antes que "orden": el parser del EA busca cada bloque desde su propia llave
     return 200, {"ok": True, "estado": r["estado"], "motivos": r["motivos"], "cierre": r.get("cierre"), "orden": r["orden"]}
