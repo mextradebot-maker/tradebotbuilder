@@ -13,9 +13,13 @@ import statistics
 import subprocess
 import sys
 
+sys.path.insert(0, os.getcwd())  # se corre desde C:\MTB; python pone tools\ en la ruta, no la raiz
 os.environ["MTB_SIN_MIGRACIONES"] = "1"  # ponytail: solo lee; evita el ALTER TABLE de persistencia al importar
 
 import MetaTrader5 as mt5
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from api.catalogo import SIMBOLO_XM
 from persistencia.conexion import get_conn
