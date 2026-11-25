@@ -189,6 +189,98 @@ def demo() -> None:
     print("validar_laboratorio.demo() OK")
 
 
+# ---- Comparacion ANTES (todas las temporalidades) vs DESPUES (solo Diario + Swing), por ano y fuera de muestra ----
+DIAS = {"Scalping 15m": 60, "Intraday 1H": 365, "Intraday 4H": 365, "Intraday D": 1095, "Swing (S)": 1095, "Swing (M)": 2555}
+FOCO = ("Intraday D", "Swing (S)", "Swing (M)")
+COSTO_PCT = 0.015  # supuesto: spread + comision ~0.015 % del precio por operacion
+
+
+def operaciones(datos: dict, variante: str) -> list[dict]:
+    """Operaciones cerradas simuladas con su fecha aproximada (dias atras) y R neto de costo."""
+    ops = []
+    for clave, d in datos.items():
+        if "error" in d or not d.get("velas"):
+            continue
+        sim, temp = clave.split("|")
+        v, n = d["velas"], d["n"]
+        off = n - len(v)
+        for s in d["setups"]:
+            k0 = s.get("indice_conocido")
+            if k0 is None or k0 - off < 0 or not s.get("tp"):
+                continue
+            k = k0 - off
+            lado, e, sl, tp = s["direccion"], s["entrada"], s["stop"], s["tp"]
+            if abs(e - sl) == 0 or k >= len(v) - 1:
+                continue
+            if variante == "limite":
+                est, R = sim_limite(v, k, lado, e, sl, tp)
+            elif variante == "mercado":
+                est, R = sim_mercado(v, k, lado, sl, tp)
+            else:
+                medio = (v[k][3] + e) / 2
+                est, R = sim_limite(v, k, lado, medio, sl, tp) if (sl < medio < tp if lado == "long" else tp < medio < sl) else ("invalido", 0.0)
+            if est in ("gano", "perdio"):
+                riesgo_pct = abs(e - sl) / e * 100
+                ops.append({"temp": temp, "sim": sim, "dias_atras": DIAS[temp] * (n - 1 - k0) / n, "R": R - COSTO_PCT / riesgo_pct})
+    return ops
+
+
+def metricas(ops: list[dict], anios: dict) -> dict:
+    """anios: {temporalidad: anos de historia usados}. R/ano suma cada temporalidad sobre SU propia ventana."""
+    if not ops:
+        return {"n": 0}
+    orden = sorted(ops, key=lambda o: -o["dias_atras"])  # de la mas antigua a la mas reciente
+    eq = pico = dd = racha = peor = 0.0
+    for o in orden:
+        eq += o["R"]
+        pico = max(pico, eq)
+        dd = max(dd, pico - eq)
+        racha = racha + 1 if o["R"] < 0 else 0
+        peor = max(peor, racha)
+    por_anio = sum(sum(o["R"] for o in ops if o["temp"] == t) / a for t, a in anios.items())
+    ops_anio = sum(sum(1 for o in ops if o["temp"] == t) / a for t, a in anios.items())
+    return {"n": len(ops), "win": 100 * sum(o["R"] > 0 for o in ops) / len(ops), "R_op": sum(o["R"] for o in ops) / len(ops),
+            "R_anio": por_anio, "ops_anio": ops_anio, "dd": dd, "racha": peor}
+
+
+def linea(nombre: str, m: dict) -> str:
+    if not m["n"]:
+        return f"  {nombre:34} sin operaciones"
+    return (f"  {nombre:34} {m['ops_anio']:5.0f} ops/ano  win {m['win']:3.0f}%  R/op {m['R_op']:+.3f}  "
+            f"R/ANO {m['R_anio']:+6.1f}  caida maxima {m['dd']:4.1f}R  peor racha {m['racha']:.0f} perdidas")
+
+
+def compara_enfoque(datos: dict) -> None:
+    anios = {t: DIAS[t] / 365 for t in DIAS}
+    print("COSTOS descontados: 0.015 % del precio por operacion. R/ANO = suma de R por ano sobre las 34 activos de cada temporalidad.\n")
+    for var, nom in (("limite", "entrada LIMITE (la actual)"), ("mercado", "entrada A MERCADO"), ("medio", "entrada LIMITE A MITAD")):
+        ops = operaciones(datos, var)
+        print(f"== {nom}")
+        print(linea("ANTES: todas las temporalidades", metricas(ops, anios)))
+        print(linea("DESPUES: solo Diario + Swing S/M", metricas([o for o in ops if o["temp"] in FOCO], {t: anios[t] for t in FOCO})))
+        print(linea("  lo que se descarta (15m/1H/4H)", metricas([o for o in ops if o["temp"] not in FOCO], {t: anios[t] for t in DIAS if t not in FOCO})))
+        print()
+    print("== FUERA DE MUESTRA: se ELIGE con la mitad antigua de cada serie y se PRUEBA en la mitad reciente (entrada limite)")
+    for var in ("limite", "mercado"):
+        ops = operaciones(datos, var)
+        elegidas = []
+        for t in DIAS:
+            ant = [o for o in ops if o["temp"] == t and o["dias_atras"] > DIAS[t] / 2]
+            if len(ant) >= 10 and sum(o["R"] for o in ant) / len(ant) > 0:
+                elegidas.append(t)
+        rec = [o for o in ops if o["dias_atras"] <= DIAS[o["temp"]] / 2]
+        mitad = {t: anios[t] / 2 for t in DIAS}
+        print(f" entrada {var}: con la mitad antigua habria elegido {elegidas}")
+        print(linea("  mitad reciente, TODAS", metricas(rec, mitad)))
+        print(linea("  mitad reciente, solo lo elegido", metricas([o for o in rec if o["temp"] in elegidas], {t: mitad[t] for t in elegidas})))
+        print(linea("  mitad reciente, solo Diario+Swing", metricas([o for o in rec if o["temp"] in FOCO], {t: mitad[t] for t in FOCO})))
+    print("\n== POR TEMPORALIDAD (entrada limite, neto): ops/ano y R/ano")
+    ops = operaciones(datos, "limite")
+    for t in DIAS:
+        m = metricas([o for o in ops if o["temp"] == t], {t: anios[t]})
+        print(linea(f"  {t}", m))
+
+
 if __name__ == "__main__":
     modo = sys.argv[1] if len(sys.argv) > 1 else "todo"
     if modo == "demo":
@@ -197,3 +289,5 @@ if __name__ == "__main__":
         datos = descargar(os.environ["MTB_SERVICE_KEY"]) if modo in ("descarga", "todo") else json.load(open(ARCHIVO))
         if modo in ("analiza", "todo"):
             analiza(datos)
+        if modo in ("enfoque", "todo"):
+            compara_enfoque(datos)
