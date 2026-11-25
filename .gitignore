@@ -9,3 +9,4 @@ scratch/
 
 # scratch de agentes (reportes, diffs, pickles)
 .superpowers/
+backtesting/validar_laboratorio.json
