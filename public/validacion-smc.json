@@ -1,0 +1,104 @@
+{
+ "fecha": "2026-11-24",
+ "estrategia": "SMC / Estructural (motor v2)",
+ "fuente": "velas XM, 34 activos, setups validos del motor",
+ "costo_pct": 0.015,
+ "filas": [
+  {
+   "temporalidad": "Scalping 15m",
+   "setups": 395,
+   "limite": {
+    "ops": 84,
+    "acierto": 0.19,
+    "r_op": -0.343
+   },
+   "mercado": {
+    "ops": 381,
+    "acierto": 0.598,
+    "r_op": -0.123
+   },
+   "valida": false,
+   "muestra_limitada": false
+  },
+  {
+   "temporalidad": "Intraday 1H",
+   "setups": 263,
+   "limite": {
+    "ops": 60,
+    "acierto": 0.217,
+    "r_op": -0.096
+   },
+   "mercado": {
+    "ops": 255,
+    "acierto": 0.651,
+    "r_op": -0.09
+   },
+   "valida": false,
+   "muestra_limitada": false
+  },
+  {
+   "temporalidad": "Intraday 4H",
+   "setups": 191,
+   "limite": {
+    "ops": 42,
+    "acierto": 0.262,
+    "r_op": -0.128
+   },
+   "mercado": {
+    "ops": 177,
+    "acierto": 0.627,
+    "r_op": -0.127
+   },
+   "valida": false,
+   "muestra_limitada": false
+  },
+  {
+   "temporalidad": "Intraday D",
+   "setups": 173,
+   "limite": {
+    "ops": 32,
+    "acierto": 0.438,
+    "r_op": 0.87
+   },
+   "mercado": {
+    "ops": 168,
+    "acierto": 0.774,
+    "r_op": 0.131
+   },
+   "valida": true,
+   "muestra_limitada": false
+  },
+  {
+   "temporalidad": "Swing (S)",
+   "setups": 35,
+   "limite": {
+    "ops": 7,
+    "acierto": 0.429,
+    "r_op": 0.648
+   },
+   "mercado": {
+    "ops": 29,
+    "acierto": 0.793,
+    "r_op": 0.109
+   },
+   "valida": true,
+   "muestra_limitada": true
+  },
+  {
+   "temporalidad": "Swing (M)",
+   "setups": 32,
+   "limite": {
+    "ops": 2,
+    "acierto": 0.5,
+    "r_op": 1.254
+   },
+   "mercado": {
+    "ops": 17,
+    "acierto": 0.941,
+    "r_op": 0.255
+   },
+   "valida": true,
+   "muestra_limitada": true
+  }
+ ]
+}

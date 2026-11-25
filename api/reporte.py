@@ -154,7 +154,7 @@ def demo() -> None:
                           snap("CADJPY", "Intraday D", 400, [{**st(395, "short", 111.97, 112.2), "indice_conocido": 396}])],
                          {"EURGBP": (1, 0.8702), "CADJPY": (1, 111.6)})
     ap = {v["simbolo"]: v["aplica"] for v in ri["vigentes"]}
-    assert ap == {"EURGBP": False, "CADJPY": True} and "no mostro ventaja" in ri["aviso_estrategia"], ri["vigentes"]
+    assert ap == {"EURGBP": False, "CADJPY": True} and "no valida para esta temporalidad" in ri["aviso_estrategia"], ri["vigentes"]
     assert [v["aviso"] for v in ri["vigentes"] if v["simbolo"] == "CADJPY"] == [None]
     # MISMA regla que el robot: una zona vieja de oro (entrada 1905, precio 3883) NO es vigente aunque tenga < 20 velas
     oro_m = {**st(52, "long", 1905.4, 1750.9), "indice_conocido": 79}
