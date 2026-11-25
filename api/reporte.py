@@ -21,6 +21,7 @@ _A_COMPRA_VENTA = {"long": "compra", "short": "venta"}
 def setups_vigentes(snapshots: list[dict], precios: dict | None = None) -> dict:
     """snapshots: [{simbolo, temporalidad, respuesta, tendencia_actual, refrescado_en}] → reporte.
     precios: {simbolo: (ref_ts, ref_cierre)} (el de api.setups._precio_ref); sin él no se puede medir la distancia al precio."""
+    from api.catalogo import AVISO_SIN_VENTAJA, SIN_VENTAJA
     from master.despachador import MAX_DISTANCIA_PCT_SWING, MAX_DISTANCIA_R, MAX_EDAD_VELAS, MAX_ZONA_VELAS, motivo_descarte, vigentes as vigentes_motor
 
     precios = precios or {}
@@ -44,7 +45,10 @@ def setups_vigentes(snapshots: list[dict], precios: dict | None = None) -> dict:
         st = ok[-1]  # el mismo que recibe el robot (recibir_oportunidades toma el último)
         hace = velas - 1 - int(st.get("indice_conocido", st["indice_confirmacion"]))
         sin_precio += ref_cierre is None
+        aplica = s["temporalidad"] not in SIN_VENTAJA
         vigentes.append({
+            "aplica": aplica,  # False = intradia: sin ventaja demostrada; el mensaje debe decirlo, no presentarlo como oportunidad
+            "aviso": None if aplica else AVISO_SIN_VENTAJA,
             "simbolo": s["simbolo"],
             "temporalidad": s["temporalidad"],
             "direccion": _A_COMPRA_VENTA.get(st["direccion"], st["direccion"]),
@@ -66,6 +70,7 @@ def setups_vigentes(snapshots: list[dict], precios: dict | None = None) -> dict:
         "combinaciones": len(snapshots),
         "con_setup_vigente": len(vigentes),
         "sin_setup": sin_setup,
+        "aviso_estrategia": AVISO_SIN_VENTAJA,  # va en todo reporte: los setups con aplica=false (intradia) no son oportunidades
         "descartados": descartados,  # setups que el motor aun ve "sin llenar" pero ya no son operables
         "vigentes_sin_precio_actual": sin_precio,  # sin precio de referencia no se pudo medir la distancia
         "snapshot_mas_viejo": min(refrescos) if refrescos else None,
@@ -144,6 +149,13 @@ def demo() -> None:
     pendiente = {**v2, "resultado": "sin_llenar"}
     assert setups_vigentes([snap("XAUUSD", "Intraday 1H", 500, [pendiente])])["con_setup_vigente"] == 1
 
+    # intradia: aparece, pero marcado como sin ventaja demostrada
+    ri = setups_vigentes([snap("EURGBP", "Scalping 15m", 400, [{**st(395, "long", 0.8700, 0.8690), "indice_conocido": 396}]),
+                          snap("CADJPY", "Intraday D", 400, [{**st(395, "short", 111.97, 112.2), "indice_conocido": 396}])],
+                         {"EURGBP": (1, 0.8702), "CADJPY": (1, 111.6)})
+    ap = {v["simbolo"]: v["aplica"] for v in ri["vigentes"]}
+    assert ap == {"EURGBP": False, "CADJPY": True} and "no mostro ventaja" in ri["aviso_estrategia"], ri["vigentes"]
+    assert [v["aviso"] for v in ri["vigentes"] if v["simbolo"] == "CADJPY"] == [None]
     # MISMA regla que el robot: una zona vieja de oro (entrada 1905, precio 3883) NO es vigente aunque tenga < 20 velas
     oro_m = {**st(52, "long", 1905.4, 1750.9), "indice_conocido": 79}
     rep = setups_vigentes([snap("XAUUSD", "Swing (M)", 83, [oro_m]), snap("EURGBP", "Scalping 15m", 400, [{**st(395, "long", 0.8700, 0.8690), "indice_conocido": 396}])],
