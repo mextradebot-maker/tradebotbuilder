@@ -11,7 +11,7 @@ Resultado en R (1 R = distancia entrada-stop del setup); se guarda bruto y el re
 La SALIDA es la del robot (MexTradeBot_SeguidorSMC.mq5), no un stop fijo:
   - Swing (S)/(M): SIN stop loss y SIN cierre forzado (decision de Ricardo, 25 nov 2026: el -3 % del capital es muy corto para swing;
     se espera que aguante el drawdown). Solo sale por el TP del motor. La orden queda "llena" mientras el precio no lo alcance.
-    OJO: el EA actual todavia trae InpPerdidaMaxPct = 3 para todas las temporalidades; cambiarlo en el robot esta pendiente.
+    El EA v1.25 ya lo quita para Swing (SMC); Swing Express conserva el freno. Falta compilar y desplegar el robot en el VPS.
   - Diario (y el resto): stop del motor + escalera de breakeven: a +1 R el SL pasa a la entrada, a +1.5 R a +0.5 R, a +2 R a +1 R.
     (El trailing por estructura desde +2 R no se simula: solo mejoraria salidas ya protegidas.)
 La cuenta de referencia es Ultra Low Micro (lotes minimos chicos): aqui todo va en R, sin lotes.

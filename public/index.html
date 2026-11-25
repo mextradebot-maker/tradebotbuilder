@@ -1537,11 +1537,11 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
       ['Protección de ganancia', 'Ninguna (sin breakeven ni trailing)']
     ] : [
       ['Riesgo por operación', `${pr}% = ${m(pr / 100)}${swing ? ' (Swing: provisional, sin SL fijo)' : ''}`],
-      ['Stop Loss', 'El del motor SMC en cada setup'],
+      ['Stop Loss', swing ? 'Ninguno: Swing aguanta el drawdown' : 'El del motor SMC en cada setup'],
       ['Take Profit', 'Objetivo del motor (respaldo 2R)'],
       ['Lotaje', `Lo calcula el servidor para no arriesgar más del ${pr}%`],
-      ['Cierre forzado', `Si la pérdida llega a 3% = ${m(0.03)}`],
-      ['Protección de ganancia', 'SL a la entrada en 1R, +0.5R en 1.5R, +1R en 2R; luego trailing por estructura']
+      ['Cierre forzado', swing ? 'Ninguno en Swing: sale solo por el take profit. Puede pasar mucho tiempo en pérdida y, sin stop, el broker lo cierra si te quedas sin margen' : `Si la pérdida llega a 3% = ${m(0.03)}`],
+      ['Protección de ganancia', swing ? 'Ninguna (sin stop, breakeven ni trailing)' : 'SL a la entrada en 1R, +0.5R en 1.5R, +1R en 2R; luego trailing por estructura']
     ];
     $('mfReglas').innerHTML = `<div class="ag-table-wrap"><table class="ag-table"><tbody>${filas.map(([a, b]) => `<tr><th scope="row">${a}</th><td>${b}</td></tr>`).join('')}</tbody></table></div>${M ? '' : '<p class="ag-muted">Escribe tu monto para ver las cantidades.</p>'}`;
     const err = $('mfError'); err.hidden = !st.error; err.textContent = st.error;

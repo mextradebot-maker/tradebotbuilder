@@ -28,7 +28,8 @@ PCT_RIESGO_SWING = 0.02
 PCT_MAX_SWING = 0.02
 PCT_RIESGO_DEFAULT = 0.02
 PCT_MAX_SL = 0.02  # tope de pérdida en el SL para scalping/intraday
-PCT_CIERRE_FORZADO = 0.03  # swing no lleva SL: su pérdida real la acota el cierre forzado del -3 % (EA InpPerdidaMaxPct)
+PCT_CIERRE_FORZADO = 0.03  # tope de riesgo al adaptar el lote minimo en Swing. OJO: desde el EA v1.25 Swing (SMC) YA NO tiene cierre forzado en -3 %;
+# queda como referencia de tamano (provisional), no como cota de perdida
 
 
 def tope_riesgo(temporalidad: str) -> float:
