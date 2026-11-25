@@ -126,8 +126,17 @@ def _cargar_cuentas_demo(conn) -> List[Dict[str, Any]]:
     return cuentas
 
 
+def _nombres(simbolo: str) -> tuple:
+    """(nombre en el motor/API, nombres que puede llevar en MT5). cuentas_demo guarda el nombre de XM (GOLD, OILCash)
+    o el de la API (XAUUSD, WTIUSD); el snapshot del motor solo existe con el de la API (el de GOLD se borra al arrancar)."""
+    from api.catalogo import SIMBOLO_XM  # import tardío: solo constantes
+    api = {xm: a for a, xm in SIMBOLO_XM.items()}.get(simbolo, simbolo)
+    return api, {simbolo, api, SIMBOLO_XM.get(api, api)}
+
+
 def _obtener_snapshot_smc(conn, simbolo: str, temporalidad: str) -> Optional[Dict[str, Any]]:
-    """Obtiene el último snapshot SMC guardado en Postgres (`smc_snapshot`)."""
+    """Obtiene el último snapshot SMC guardado en Postgres (`smc_snapshot`). `simbolo` puede ser el de XM o el de la API."""
+    simbolo = _nombres(simbolo)[0]
     row = conn.execute(
         """SELECT ultimo_timestamp, estructura_smc, tendencia_actual, atr
            FROM smc_snapshot
@@ -202,10 +211,10 @@ def _revisar_cierre(conn, cuenta: Dict[str, Any], mt5_posiciones: List[dict], sn
             _log(conn, login, p["symbol"], temp, "SINCRONIZAR_POSICION_MT5", "Detectada posición viva en MT5", float(p["volume"]), {"ticket": ticket})
             logging.info(f"[{login}] Auto-sincronizada posición viva en MT5 ticket #{ticket} {p['symbol']} {direccion_str}")
 
-    # 2. Regla de Oro Swing: Salida por CHoCH inverso
+    # 2. Regla de Oro Swing: Salida por CHoCH inverso (el swing no lleva SL: esta es su salida, junto al TP del motor)
     if es_swing(temp) and snapshot:
-        pos_activa = next((p for p in mt5_posiciones if p["symbol"] == simbolo), None)
-        if pos_activa:
+        _, nombres_mt5 = _nombres(simbolo)
+        for pos_activa in [p for p in mt5_posiciones if p["symbol"] in nombres_mt5]:
             ticket = pos_activa["ticket"]
             dir_actual = "BUY" if pos_activa["type"] == _xm().mt5.POSITION_TYPE_BUY else "SELL"
             tendencia_actual = snapshot.get("tendencia_actual")
@@ -367,13 +376,17 @@ def demo() -> None:
         def info_cuenta(self):
             return {"balance": 10000.0}
 
+        posiciones: list = []
+        cerrados: list = []
+
         def posiciones_abiertas(self):
-            return []
+            return list(self.posiciones)
 
         def historial_operaciones(self, dias=7):
             return []
 
         def cerrar_posicion(self, ticket):
+            self.cerrados.append(ticket)
             return {}
 
     cuentas_bd = [(108460538, "XMGlobal-MT5 5", "ORO SWING", "GOLD", "Swing (S)", 0.02, True),
@@ -419,6 +432,23 @@ def demo() -> None:
 
         _GET_CONN = lambda: _conn_rota()
         _latido("CICLO_OK", "sin BD")
+
+        # 5. Salida swing por CHoCH inverso. La cuenta guarda GOLD (XM) y el snapshot del motor es XAUUSD: antes no se
+        #    encontraba y el oro swing nunca cerraba. Compra + tendencia "venta" -> cierra; compra + "compra" -> no.
+        assert _nombres("GOLD") == ("XAUUSD", {"GOLD", "XAUUSD"}) and "OILCash" in _nombres("WTIUSD")[1]
+        for tendencia, debe_cerrar in (("venta", True), ("compra", False)):
+            registro = []
+            xm = _XMFalso()
+            xm.posiciones, xm.cerrados = [{"ticket": 7, "symbol": "GOLD", "type": 0, "volume": 0.1, "price_open": 3400.0,
+                                           "time": 1.0}], []
+            filas = {"cuentas_demo": cuentas_bd[:1], "kill_switch": [(False,)], "posiciones_abiertas": [],
+                     "smc_snapshot": [(None, {}, tendencia, 5.0)]}
+            _XM, _GET_CONN = xm, (lambda: _ConnFalso(registro, filas))
+            ciclo()
+            snap_params = [p for s, p in registro if s.startswith("SELECT ultimo_timestamp")]
+            assert snap_params == [("XAUUSD", "Swing (S)")], snap_params   # busca con el nombre del motor
+            assert (xm.cerrados == [7]) == debe_cerrar, (tendencia, xm.cerrados)
+            assert ("EXIT_SWING_CHOCH" in str(registro)) == debe_cerrar
     finally:
         _XM, _GET_CONN, _KILL = xm_previo, conn_previo, kill_previo
 
