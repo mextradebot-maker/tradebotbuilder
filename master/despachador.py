@@ -21,6 +21,7 @@ TTL_ORDEN_S = 300   # cierres y entradas a mercado (swing express): se vuelven a
 TTL_ORDEN_POR_TF = {"Scalping 15m": 1200, "Scalping 30m": 2400, "Intraday 1H": 3600}   # 20 min / 40 min / 1 h
 TTL_ORDEN_DEFAULT_S = 7200                                                              # 4H, diario y swing: 2 h
 VIVO_S = 30         # un robot que no pregunta en 30 s no cuenta como vivo
+TF_SWING = ("Swing (S)", "Swing (M)")
 
 
 def ttl_orden_s(temporalidad: str) -> int:
@@ -255,6 +256,13 @@ def pulso(repo, licencia_id: int, cuenta: int, simbolo: str, temporalidad: str, 
             and ahora - robot["posicion_abierta_en"] >= timedelta(hours=VELA_MEDIANOCHE_CIERRE_HORAS):
         cierre = ordenar_cierre(repo, licencia_id, simbolo, temporalidad,
                                 "Vela de Medianoche: 7 horas desde la entrada", ahora)
+    # Salida universal del Swing estructural (misma regla del coordinador para las cuentas demo, ahora tambien para los
+    # robots de alumnos): el swing no lleva SL y solo compra; si el motor pasa la tendencia a "venta" con posicion abierta
+    # (CHoCH inverso), se ordena cerrar. El robot reporta sus posiciones reales en cada pulso, asi que no hay estado que guardar.
+    if cierre is None and posiciones > 0 and temporalidad in TF_SWING and robot.get("estrategia", "estructural") == "estructural" \
+            and repo.tendencia(simbolo, temporalidad) == "venta":
+        cierre = ordenar_cierre(repo, licencia_id, simbolo, temporalidad,
+                                "Swing: CHoCH inverso (la tendencia cambio a venta)", ahora)
     if cierre:
         repo.guardar_cuenta(cuenta, pico, c.get("halt"))
         return {"orden": None, "cierre": {"cierre_id": cierre["cierre_id"], "motivo": cierre["motivo"]},
@@ -331,6 +339,9 @@ class MemRepo:
 
     def robot(self, lic, sim, tf):
         return self.robots.get((lic, sim, tf))
+
+    def tendencia(self, sim, tf):
+        return getattr(self, "tendencias", {}).get((sim, tf))
 
     def aplicar_ack(self, lic, a):
         if a.get("cierre_id"):
@@ -534,6 +545,12 @@ class RepoPg:
             f = c.execute("""SELECT activo, estrategia, posicion_abierta, posicion_abierta_en FROM master_robots
                              WHERE licencia_id = %s AND simbolo = %s AND temporalidad = %s""", (lic, sim, tf)).fetchone()
         return {"activo": f[0], "estrategia": f[1], "posicion_abierta": f[2], "posicion_abierta_en": f[3]} if f else None
+
+    def tendencia(self, sim, tf):
+        """Ultima tendencia del motor ("compra"/"venta"/...) para ese activo y temporalidad, o None si no hay snapshot."""
+        with self._conn() as c:
+            f = c.execute("SELECT tendencia_actual FROM smc_snapshot WHERE simbolo = %s AND temporalidad = %s", (sim, tf)).fetchone()
+        return f[0] if f else None
 
     def reconciliar_posicion(self, lic, sim, tf):
         """Corrige posicion_abierta a False cuando el EA ya no reporta ninguna posicion (ver pulso()),
@@ -1034,6 +1051,27 @@ def demo() -> None:
     assert modo_entrada("estructural", "Swing (M)") == "limite" and modo_entrada("swing_express", "Intraday D") == "limite"
     assert modo_entrada("vela_medianoche", "Intraday D") == "limite" and modo_entrada("estructural", "Scalping 15m") == "limite"
     assert _publica({"orden_id": "x", "estrategia": "estructural"}, "Intraday D")["modo_entrada"] == "mercado"
+    # 14. Salida universal del Swing estructural (CHoCH inverso): posicion abierta + tendencia "venta" -> cierre ordenado.
+    #     Aplica a cualquier robot (propio o de alumno); no toca otras estrategias ni temporalidades, ni sin posicion.
+    t14 = datetime(2026, 11, 25, 15, 0, tzinfo=timezone.utc)
+    est14 = {"balance": 10000, "equity": 10000, "pnl_hoy": 0, "racha": 0, "riesgo_abierto_pct": 0, "posiciones": 1}
+
+    def _swing(estrategia=None, tf="Swing (M)", tendencia="venta", posiciones=1, lic=40):
+        r = MemRepo(activados=[(lic, "XAUUSD", tf, 4040)])
+        if estrategia:
+            r.robots[(lic, "XAUUSD", tf)]["estrategia"] = estrategia
+        r.tendencias = {("XAUUSD", tf): tendencia}
+        return r, pulso(r, lic, 4040, "XAUUSD", tf, {**est14, "posiciones": posiciones}, ahora=t14)
+
+    r14, p14 = _swing()
+    assert p14["estado"] == "cierre" and "CHoCH inverso" in p14["cierre"]["motivo"], p14
+    assert pulso(r14, 40, 4040, "XAUUSD", "Swing (M)", est14, ahora=t14 + timedelta(seconds=5))["cierre"]["cierre_id"] == p14["cierre"]["cierre_id"]  # no duplica
+    assert _swing(tendencia="compra")[1]["estado"] != "cierre"            # la tendencia sigue a favor
+    assert _swing(posiciones=0)[1]["estado"] != "cierre"                  # sin posicion no hay nada que cerrar
+    assert _swing(tf="Swing (S)")[1]["estado"] == "cierre"                # semanal igual
+    assert _swing(estrategia="swing_express")[1]["estado"] != "cierre"    # Swing Express tiene su propia regla
+    r14b = MemRepo(activados=[(41, "XAUUSD", "Intraday 1H", 4141)]); r14b.tendencias = {("XAUUSD", "Intraday 1H"): "venta"}
+    assert pulso(r14b, 41, 4141, "XAUUSD", "Intraday 1H", est14, ahora=t14)["estado"] != "cierre"   # intradia: SL y TP del broker
     print("master.despachador.demo() OK")
 
 
