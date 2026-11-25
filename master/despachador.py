@@ -36,22 +36,39 @@ def clave_oportunidad(s: dict) -> str:
     return f"{s['direccion']}|{float(s['entrada']):.8g}|{float(s['stop']):.8g}"
 
 
-MAX_EDAD_VELAS = 20      # misma caducidad que la orden pendiente del EA (InpVelasExpiracion)
-MAX_DISTANCIA_PCT = 10.0  # ponytail: tope unico; si un swing legitimo queda mas lejos, subirlo por temporalidad
+MAX_EDAD_VELAS = 20      # misma caducidad que la orden pendiente del EA (InpVelasExpiracion): velas desde que el setup fue conocido
+MAX_DISTANCIA_R = 3.0    # entrada a mas de 3 veces el riesgo del propio setup (|entrada-stop|) del precio actual: casi nunca se llena
+# (medido nov 2026 en 154 setups: se llena 72 % a <1 R, ~22 % a 1-3 R, 13 % a 3-5 R, 3 % a >5 R; un % fijo no sirve: en swing mensual
+# lo normal es nacer a 10-50 %, en 15m a 0.2 %)
+# Antiguedad maxima de la ZONA (velas desde indice_confirmacion), no desde que se hizo operable. Tope de seguridad por criterio
+# (la distancia en R hace el trabajo fino; la muestra de swing es chica). Temporalidad sin entrada: sin tope de zona.
+MAX_ZONA_VELAS = {"Scalping 15m": 40, "Scalping 30m": 40, "Intraday 1H": 40, "Intraday 4H": 60, "Intraday D": 60,
+                  "Swing (S)": 26, "Swing (M)": 12}
 
 
-def vigentes(confirmados: list[dict], velas, ref_cierre) -> list[dict]:
-    """Descarta del camino automatico los setups que ya no sirven: confirmados hace mas de MAX_EDAD_VELAS velas o con la
-    entrada a mas de MAX_DISTANCIA_PCT % del precio actual (p. ej. una zona de hace anos que el motor sigue viendo 'sin llenar').
-    Sin velas / ref_cierre (API vieja) no filtra por ese dato."""
-    salida = []
-    for s in confirmados:
-        if velas and s.get("indice_conocido") is not None and velas - 1 - int(s["indice_conocido"]) > MAX_EDAD_VELAS:
-            continue
-        if ref_cierre and s.get("entrada") and abs(float(s["entrada"]) - float(ref_cierre)) / float(ref_cierre) * 100 > MAX_DISTANCIA_PCT:
-            continue
-        salida.append(s)
-    return salida
+def motivo_descarte(s: dict, velas, ref_cierre, temporalidad: str | None = None) -> str | None:
+    """Por que un setup NO sirve para operar: "resuelto" (ya llenado, cancelado o expirado), "edad" (conocido hace mas de
+    MAX_EDAD_VELAS velas), "zona_vieja" (zona confirmada hace mas de MAX_ZONA_VELAS[temporalidad] velas), "distancia" (entrada a
+    mas de MAX_DISTANCIA_R veces su riesgo del precio actual) o None si sirve.
+    Es LA regla de vigencia: la usan el despachador (robots) y api/reporte.py (Telegram), para que ambos vean lo mismo.
+    Sin velas / ref_cierre / temporalidad no filtra por ese dato."""
+    if s.get("resultado", "sin_llenar") != "sin_llenar":
+        return "resuelto"  # el motor ya los quita de setups_confirmados; por si algun dia llega uno
+    idx = s.get("indice_conocido", s.get("indice_confirmacion"))
+    if velas and idx is not None and velas - 1 - int(idx) > MAX_EDAD_VELAS:
+        return "edad"
+    tope = MAX_ZONA_VELAS.get(temporalidad)
+    if velas and tope and s.get("indice_confirmacion") is not None and velas - 1 - int(s["indice_confirmacion"]) > tope:
+        return "zona_vieja"
+    riesgo = abs(float(s["entrada"]) - float(s["stop"])) if s.get("entrada") and s.get("stop") else 0
+    if ref_cierre and riesgo and abs(float(s["entrada"]) - float(ref_cierre)) / riesgo > MAX_DISTANCIA_R:
+        return "distancia"
+    return None
+
+
+def vigentes(confirmados: list[dict], velas, ref_cierre, temporalidad: str | None = None) -> list[dict]:
+    """Los setups que pasan motivo_descarte (camino automatico de refresco.py y reporte diario)."""
+    return [s for s in confirmados if motivo_descarte(s, velas, ref_cierre, temporalidad) is None]
 
 
 def recibir_oportunidades(repo, simbolo: str, temporalidad: str, confirmados: list[dict],
@@ -663,13 +680,18 @@ class RepoPg:
 
 
 def demo() -> None:
-    # vigentes(): casos reales del 30 oct 2026
-    oro_m = {"direccion": "long", "entrada": 1905.4, "stop": 1750.9, "indice_conocido": 79}   # zona de hace anos, oro a 3883
-    assert vigentes([oro_m], 83, 3883.74) == []                                                 # 51 % lejos del precio
-    fresco = {"direccion": "short", "entrada": 1.1213, "stop": 1.1218, "indice_conocido": 4220}
-    assert vigentes([fresco], 4224, 1.1151) == [fresco]                                         # 3 velas, 0.55 % lejos
-    assert vigentes([{**fresco, "indice_conocido": 4100}], 4224, 1.1151) == []                  # 123 velas: ya expiro
-    assert vigentes([fresco], None, None) == [fresco]                                           # API vieja: no filtra
+    # vigentes(): casos reales (30 oct y 24 nov 2026; distancia en veces el riesgo, zona por temporalidad)
+    oro_m = {"direccion": "long", "entrada": 1905.4, "stop": 1750.9, "indice_conocido": 79, "indice_confirmacion": 52}
+    assert vigentes([oro_m], 83, 3883.74, "Swing (M)") == []                                    # 6.3 R lejos y zona de 31 meses
+    assert motivo_descarte(oro_m, 83, 3883.74, "Swing (M)") == "zona_vieja"
+    assert motivo_descarte({**oro_m, "indice_confirmacion": 75}, 83, 3883.74, "Swing (M)") == "distancia"
+    fresco = {"direccion": "short", "entrada": 1.1156, "stop": 1.1162, "indice_conocido": 4220, "indice_confirmacion": 4200}
+    assert vigentes([fresco], 4224, 1.1151, "Scalping 15m") == [fresco]                         # 3 velas, 0.8 R, zona de 23 velas
+    assert vigentes([{**fresco, "indice_conocido": 4100}], 4224, 1.1151, "Scalping 15m") == []  # 123 velas: ya expiro
+    assert vigentes([{**fresco, "entrada": 1.1213, "stop": 1.1218}], 4224, 1.1151, "Scalping 15m") == []  # 12 R: no se llena
+    swing_ok = {"direccion": "long", "entrada": 1.05, "stop": 0.99, "indice_conocido": 80, "indice_confirmacion": 75}
+    assert vigentes([swing_ok], 84, 1.12, "Swing (M)") == [swing_ok]                            # swing mensual a 6 % = 1.2 R: normal, no se descarta
+    assert vigentes([fresco], None, None) == [fresco]                                           # API vieja / sin dato: no filtra
     assert filtros_autorizaciones() == ("", [])
     w, p = filtros_autorizaciones(desde="2026-10-01", hasta="2026-10-31", usuario="Ricardo", nombre="Oro", activo="gold", evento="aceptada")
     assert w.count("%s") == len(p) == 7 and w.startswith("WHERE ") and p[-2:] == ["GOLD", "aceptada"] and p[2] == "%ricardo%", (w, p)
