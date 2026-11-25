@@ -562,7 +562,7 @@ function mostrarResultadoValidacion(resEl, data){
 function renderQuantConnectLeanBacktester(containerId) {
   var cont = document.getElementById(containerId);
   if (!cont) return;
-  var st = window.mtbBtState = window.mtbBtState || { q: '', ver: 'todos', max: 40 };
+  var st = window.mtbBtState = window.mtbBtState || { q: '', ver: 'todos', tf: 'todas', max: 40 };
   var filas = window.MTB_FILAS_CATALOGO;
   if (!Array.isArray(filas)) {
     cont.innerHTML = '<p class="text-sm text-slate-400">Cargando resultados del motor...</p>';
@@ -574,7 +574,7 @@ function renderQuantConnectLeanBacktester(containerId) {
   }
   var q = st.q.toUpperCase().trim();
   var lista = filas.filter(function(f){
-    return (!q || String(f.simbolo).toUpperCase().indexOf(q) !== -1) && (st.ver === 'todos' || f.veredicto === st.ver);
+    return (!q || String(f.simbolo).toUpperCase().indexOf(q) !== -1) && (st.ver === 'todos' || f.veredicto === st.ver) && (st.tf === 'todas' || f.temporalidad === st.tf);
   }).sort(function(a, b){ var o = { 'RECOMENDABLE': 0, 'NO RECOMENDABLE': 1, 'INSUFICIENTE': 2, 'NO VALIDA': 3 }; var d = (o[a.veredicto] || 0) - (o[b.veredicto] || 0); if (d) return d; return a.veredicto === 'RECOMENDABLE' ? (b.expectativa_r || 0) - (a.expectativa_r || 0) : (b.n_setups || 0) - (a.n_setups || 0); });
   var pct = function(x){ return x == null ? '—' : Math.round(x * 100) + '%'; };
   var r2 = function(x){ return x == null ? '—' : (x > 0 ? '+' : '') + Number(x).toFixed(2) + 'R'; };
@@ -600,14 +600,15 @@ function renderQuantConnectLeanBacktester(containerId) {
     return '<tr><td class="p-2.5 font-bold text-white">' + esc(f.simbolo) + '</td><td class="p-2.5">' + esc(f.temporalidad) + '</td>' +
       '<td class="p-2.5 text-right">' + (f.n_setups || 0) + '</td><td class="p-2.5 text-right">' + pct(f.winrate) + '</td>' +
       '<td class="p-2.5 text-right">' + r2(f.expectativa_r) + '</td><td class="p-2.5 text-right">' + r2(f.r_total) + '</td>' +
-      '<td class="p-2.5 font-bold ' + (color[f.veredicto] || '') + '">' + esc(lab[f.veredicto] || f.veredicto) + '</td>' +
+      '<td class="p-2.5 font-bold ' + (color[f.veredicto] || '') + '">' + esc(f.veredicto === 'INSUFICIENTE' && f.aplica === true ? 'TEMPORALIDAD VÁLIDA · MUESTRA POR ACTIVO INSUFICIENTE' : (lab[f.veredicto] || f.veredicto)) + '</td>' +
       '<td class="p-2.5"><button type="button" class="mtb-btn bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition" data-ficha-simbolo="' + esc(f.simbolo) + '" data-ficha-temporalidad="' + esc(f.temporalidad) + '">Ficha</button></td></tr>';
   }).join('');
   cont.innerHTML = '<div class="space-y-4">' + valHtml +
     '<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><h3 class="font-extrabold text-white text-lg">Resultados históricos del Motor SMC</h3>' +
-    '<p class="text-xs text-slate-400 mt-1">Backtest real por activo y temporalidad (' + filas.length + ' combinaciones). R = resultado respecto al riesgo inicial. Con menos de 20 setups la muestra es insuficiente. La etiqueta describe únicamente el resultado histórico de la simulación; no es una recomendación de operar ni asesoría de inversión. Los resultados pasados no garantizan resultados futuros; operar implica riesgo de pérdida.</p></div>' +
+    '<p class="text-xs text-slate-400 mt-1">Backtest real por activo y temporalidad (' + filas.length + ' combinaciones). R = resultado respecto al riesgo inicial. Con menos de 20 setups la muestra por activo es insuficiente: en Diario y Swing la validez se mide por temporalidad, con los 34 activos juntos (cuadro de arriba). La etiqueta describe únicamente el resultado histórico de la simulación; no es una recomendación de operar ni asesoría de inversión. Los resultados pasados no garantizan resultados futuros; operar implica riesgo de pérdida.</p></div>' +
     '<div class="flex flex-wrap gap-2"><input id="btBusca" type="text" value="' + esc(st.q) + '" placeholder="Buscar símbolo (ej. XAUUSD)" class="bg-slate-950 border border-slate-800 text-white text-xs rounded-xl px-3 py-2 font-mono" />' +
-    '<select id="btVer" class="bg-slate-950 border border-slate-800 text-white text-xs rounded-xl px-3 py-2">' + opts + '</select></div>' +
+    '<select id="btVer" class="bg-slate-950 border border-slate-800 text-white text-xs rounded-xl px-3 py-2">' + opts + '</select>' +
+    '<select id="btTf" class="bg-slate-950 border border-slate-800 text-white text-xs rounded-xl px-3 py-2">' + ['todas', 'Scalping 15m', 'Intraday 1H', 'Intraday 4H', 'Intraday D', 'Swing (S)', 'Swing (M)'].map(function(v){ return '<option value="' + v + '"' + (st.tf === v ? ' selected' : '') + '>' + (v === 'todas' ? 'Todas las temporalidades' : v) + '</option>'; }).join('') + '</select></div>' +
     '<div class="overflow-x-auto"><table class="w-full text-xs text-left text-slate-300"><thead class="text-[11px] uppercase bg-slate-950 text-slate-400"><tr>' +
     '<th class="p-2.5">Activo</th><th class="p-2.5">Temporalidad</th><th class="p-2.5 text-right">Setups</th><th class="p-2.5 text-right">Acierto</th><th class="p-2.5 text-right">Expectativa</th><th class="p-2.5 text-right">R total</th><th class="p-2.5">Resultado histórico</th><th class="p-2.5"></th></tr></thead>' +
     '<tbody class="divide-y divide-slate-800/80 font-mono">' + (filasHtml || '<tr><td colspan="8" class="p-4 text-center text-slate-500">Sin resultados.</td></tr>') + '</tbody></table></div>' +
@@ -616,6 +617,7 @@ function renderQuantConnectLeanBacktester(containerId) {
   var i = document.getElementById('btBusca');
   i.oninput = function(){ st.q = i.value; st.max = 40; renderQuantConnectLeanBacktester(containerId); var n = document.getElementById('btBusca'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
   document.getElementById('btVer').onchange = function(e){ st.ver = e.target.value; st.max = 40; renderQuantConnectLeanBacktester(containerId); };
+  document.getElementById('btTf').onchange = function(e){ st.tf = e.target.value; st.max = 40; renderQuantConnectLeanBacktester(containerId); };
   var m = document.getElementById('btMas');
   if (m) m.onclick = function(){ st.max += 40; renderQuantConnectLeanBacktester(containerId); };
 }
