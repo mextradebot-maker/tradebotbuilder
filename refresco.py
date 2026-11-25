@@ -180,7 +180,7 @@ def _avisar_master(simbolo: str, temporalidad: str, body: dict) -> None:
     (master/despachador.py). Nunca propaga un fallo: el analisis sigue aunque el Master no responda."""
     try:
         from master.despachador import RepoPg, recibir_oportunidades, recibir_tendencia_swing_express, vigentes
-        confirmados = vigentes(body.get("setups_confirmados") or [], body.get("velas"), body.get("ref_cierre"))
+        confirmados = vigentes(body.get("setups_confirmados") or [], body.get("velas"), body.get("ref_cierre"), temporalidad)
         if confirmados:
             recibir_oportunidades(RepoPg(), simbolo, temporalidad, confirmados, body.get("ref_ts"), body.get("ref_cierre"))
         if temporalidad in ("Swing (S)", "Swing (M)"):

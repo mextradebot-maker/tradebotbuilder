@@ -5,53 +5,69 @@ No calcula nada: lee los snapshots que refresco.py ya mantiene al día en Postgr
 (34 activos × 7 temporalidades). Solo lo llama n8n (T-01) con X-MTB-Service-Key; Claude
 redacta el mensaje de Telegram con este JSON.
 
-"Vigente" = conocido (indice_conocido; si no viene, confirmado) en las últimas VELAS_VIGENCIA velas de su temporalidad: la misma
-ventana en que el robot mantiene su orden pendiente (InpVelasExpiracion del EA). Un setup del motor v2
-con `resultado` distinto de "sin_llenar" (ya llenado, cancelado o expirado) tampoco está vigente.
+"Vigente" = EXACTAMENTE lo que el despachador de robots (master/despachador.py) tomaría: pasa su regla única `motivo_descarte`
+(conocido hace <= 20 velas Y entrada a <= 10 % del precio actual) y, por combinación, se reporta el mismo setup que el robot
+recibiría (el último). Así el reporte de Telegram y la operación no pueden diferir. El precio actual sale del mismo
+`_precio_ref` que usa el motor (última vela 15m guardada). Los setups con `resultado` distinto de "sin_llenar" nunca llegan
+aquí: el motor ya los quita de `setups_confirmados`.
 """
 
 import os
 from datetime import datetime, timezone
 
-VELAS_VIGENCIA = 20
 _A_COMPRA_VENTA = {"long": "compra", "short": "venta"}
 
 
-def setups_vigentes(snapshots: list[dict], max_velas: int = VELAS_VIGENCIA) -> dict:
-    """snapshots: [{simbolo, temporalidad, respuesta, tendencia_actual, refrescado_en}] → reporte."""
+def setups_vigentes(snapshots: list[dict], precios: dict | None = None) -> dict:
+    """snapshots: [{simbolo, temporalidad, respuesta, tendencia_actual, refrescado_en}] → reporte.
+    precios: {simbolo: (ref_ts, ref_cierre)} (el de api.setups._precio_ref); sin él no se puede medir la distancia al precio."""
+    from master.despachador import MAX_DISTANCIA_R, MAX_EDAD_VELAS, MAX_ZONA_VELAS, motivo_descarte, vigentes as vigentes_motor
+
+    precios = precios or {}
     vigentes, sin_setup, tendencias = [], 0, {}
+    descartados = {"resuelto": 0, "edad": 0, "zona_vieja": 0, "distancia": 0}
+    sin_precio = 0
     for s in snapshots:
         r = s.get("respuesta") or {}
         tendencias.setdefault(s["simbolo"], {})[s["temporalidad"]] = s.get("tendencia_actual")
         velas = int(r.get("velas") or 0)
-        encontrados = []
-        for st in r.get("setups_confirmados") or []:
-            if st.get("resultado", "sin_llenar") != "sin_llenar":
-                continue
-            hace = velas - 1 - int(st.get("indice_conocido", st["indice_confirmacion"]))
-            if 0 <= hace <= max_velas:
-                encontrados.append({
-                    "simbolo": s["simbolo"],
-                    "temporalidad": s["temporalidad"],
-                    "direccion": _A_COMPRA_VENTA.get(st["direccion"], st["direccion"]),
-                    "entrada": round(float(st["entrada"]), 5),
-                    "stop": round(float(st["stop"]), 5),
-                    "tp": round(float(st["tp"]), 5) if st.get("tp") is not None else None,
-                    "tipo": st.get("tipo"),
-                    "velas_desde_confirmacion": hace,
-                    "order_block_confluente": bool(st.get("order_block_confluente")),
-                    "liquidez_confluente": bool(st.get("liquidez_confluente")),
-                })
-        if encontrados:
-            vigentes.append(min(encontrados, key=lambda x: x["velas_desde_confirmacion"]))  # el más reciente
-        else:
+        ref_ts, ref_cierre = precios.get(s["simbolo"]) or (None, None)
+        confirmados = r.get("setups_confirmados") or []
+        for st in confirmados:
+            m = motivo_descarte(st, velas, ref_cierre, s["temporalidad"])
+            if m:
+                descartados[m] += 1
+        ok = vigentes_motor(confirmados, velas, ref_cierre, s["temporalidad"])
+        if not ok:
             sin_setup += 1
+            continue
+        st = ok[-1]  # el mismo que recibe el robot (recibir_oportunidades toma el último)
+        hace = velas - 1 - int(st.get("indice_conocido", st["indice_confirmacion"]))
+        sin_precio += ref_cierre is None
+        vigentes.append({
+            "simbolo": s["simbolo"],
+            "temporalidad": s["temporalidad"],
+            "direccion": _A_COMPRA_VENTA.get(st["direccion"], st["direccion"]),
+            "entrada": round(float(st["entrada"]), 5),
+            "stop": round(float(st["stop"]), 5),
+            "tp": round(float(st["tp"]), 5) if st.get("tp") is not None else None,
+            "tipo": st.get("tipo"),
+            "velas_desde_confirmacion": hace,
+            "precio_actual": round(float(ref_cierre), 5) if ref_cierre else None,
+            "distancia_pct": round(abs(float(st["entrada"]) - float(ref_cierre)) / float(ref_cierre) * 100, 2) if ref_cierre else None,
+            "distancia_r": round(abs(float(st["entrada"]) - float(ref_cierre)) / abs(float(st["entrada"]) - float(st["stop"])), 2) if ref_cierre and st["entrada"] != st["stop"] else None,
+            "order_block_confluente": bool(st.get("order_block_confluente")),
+            "liquidez_confluente": bool(st.get("liquidez_confluente")),
+        })
     refrescos = [s["refrescado_en"] for s in snapshots if s.get("refrescado_en")]
     return {
         "generado_en": datetime.now(timezone.utc),
+        "criterio": f"conocido hace <= {MAX_EDAD_VELAS} velas, zona no mas vieja que el tope de su temporalidad {MAX_ZONA_VELAS} y entrada a <= {MAX_DISTANCIA_R:g} veces su riesgo del precio actual (el mismo del despachador de robots)",
         "combinaciones": len(snapshots),
         "con_setup_vigente": len(vigentes),
         "sin_setup": sin_setup,
+        "descartados": descartados,  # setups que el motor aun ve "sin llenar" pero ya no son operables
+        "vigentes_sin_precio_actual": sin_precio,  # sin precio de referencia no se pudo medir la distancia
         "snapshot_mas_viejo": min(refrescos) if refrescos else None,
         "vigentes": sorted(vigentes, key=lambda x: (x["velas_desde_confirmacion"], x["simbolo"])),
         "conteo_por_temporalidad": _conteos(tendencias),  # Claude redacta, no cuenta (contaba mal)
@@ -90,7 +106,10 @@ def procesar_reporte(headers: dict) -> tuple[int, dict]:
     if not _clave_ok(_h(headers, "X-MTB-Service-Key"), "MTB_SERVICE_KEY"):
         return 401, {"error": "se requiere X-MTB-Service-Key"}
     try:
-        return 200, setups_vigentes(_leer_snapshots())
+        snaps = _leer_snapshots()
+        from api.setups import _precio_ref  # el mismo precio de referencia que ve el motor al despachar
+
+        return 200, setups_vigentes(snaps, {sim: _precio_ref(sim) for sim in {s["simbolo"] for s in snaps}})
     except Exception as e:  # BD caída
         return 503, {"error": f"snapshots no disponibles: {type(e).__name__}"}
 
@@ -104,7 +123,7 @@ def demo() -> None:
     st = lambda idx, d="long", e=2642.5, s=2635.0: {"indice_confirmacion": idx, "direccion": d, "entrada": e, "stop": s,
                                                      "order_block_confluente": True, "liquidez_confluente": False}
     rep = setups_vigentes([
-        snap("XAUUSD", "Intraday 1H", 500, [st(400), st(495), st(490)]),   # vigentes: hace 4 y hace 9 → el de hace 4
+        snap("XAUUSD", "Intraday 1H", 500, [st(400), st(490), st(495)]),   # en orden cronologico; vigentes hace 9 y hace 4 → el ultimo (hace 4), como el robot
         snap("EURUSD", "Scalping 15m", 300, [st(100, "short", 1.0845, 1.0852)], "venta"),  # hace 199 → viejo
         snap("USDJPY", "Intraday 4H", 200, []),
     ])
@@ -115,7 +134,7 @@ def demo() -> None:
     assert rep["conteo_por_temporalidad"]["Intraday 1H"] == {"compra": 1, "venta": 0, "sin_definir": 0}
     assert setups_vigentes([])["con_setup_vigente"] == 0
     # v2: la vigencia cuenta desde indice_conocido (cuando el setup ya era visible), y salen tp/tipo
-    v2 = {**st(100), "indice_conocido": 495, "tp": 2660.0, "tipo": "reversion"}
+    v2 = {**st(480), "indice_conocido": 495, "tp": 2660.0, "tipo": "reversion"}
     rv = setups_vigentes([snap("XAUUSD", "Intraday 1H", 500, [v2])])["vigentes"][0]
     assert (rv["velas_desde_confirmacion"], rv["tp"], rv["tipo"]) == (4, 2660.0, "reversion"), rv
     assert v["tp"] is None and v["tipo"] is None  # setups viejos sin tp/tipo
@@ -124,6 +143,22 @@ def demo() -> None:
     assert setups_vigentes([snap("XAUUSD", "Intraday 1H", 500, [resuelto])])["con_setup_vigente"] == 0
     pendiente = {**v2, "resultado": "sin_llenar"}
     assert setups_vigentes([snap("XAUUSD", "Intraday 1H", 500, [pendiente])])["con_setup_vigente"] == 1
+
+    # MISMA regla que el robot: una zona vieja de oro (entrada 1905, precio 3883) NO es vigente aunque tenga < 20 velas
+    oro_m = {**st(52, "long", 1905.4, 1750.9), "indice_conocido": 79}
+    rep = setups_vigentes([snap("XAUUSD", "Swing (M)", 83, [oro_m]), snap("EURGBP", "Scalping 15m", 400, [{**st(395, "long", 0.8700, 0.8690), "indice_conocido": 396}])],
+                          {"XAUUSD": (1, 3883.74), "EURGBP": (1, 0.8702)})
+    assert rep["con_setup_vigente"] == 1 and rep["descartados"]["zona_vieja"] == 1, rep
+    assert rep["vigentes"][0]["simbolo"] == "EURGBP" and rep["vigentes"][0]["distancia_pct"] == 0.02, rep["vigentes"]
+    # sin precio de referencia no se puede medir la distancia: se reporta como el motor (no filtra) pero queda marcado
+    oro_cerca = {**oro_m, "indice_confirmacion": 75}  # zona reciente pero lejos: solo la distancia lo descarta
+    assert setups_vigentes([snap("XAUUSD", "Swing (M)", 83, [oro_cerca])], {"XAUUSD": (1, 3883.74)})["descartados"]["distancia"] == 1
+    sp = setups_vigentes([snap("XAUUSD", "Swing (M)", 83, [oro_cerca])])
+    assert sp["con_setup_vigente"] == 1 and sp["vigentes_sin_precio_actual"] == 1 and sp["vigentes"][0]["distancia_pct"] is None, sp
+    # con varios setups, el reporte da el MISMO que recibe el robot (el ultimo que pasa el filtro), no otro
+    from master.despachador import vigentes as _v
+    cs = [{**st(i, "long", 2642.5 + i, 2635.0), "indice_conocido": i} for i in (490, 495, 498)]
+    assert setups_vigentes([snap("XAUUSD", "Intraday 1H", 500, cs)])["vigentes"][0]["entrada"] == _v(cs, 500, None)[-1]["entrada"]
 
     previa = os.environ.pop("MTB_SERVICE_KEY", None)
     try:
