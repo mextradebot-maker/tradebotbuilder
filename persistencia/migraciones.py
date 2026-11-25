@@ -418,6 +418,27 @@ _SQL = [
     """
     ALTER TABLE master_ordenes ADD COLUMN IF NOT EXISTS estrategia text NOT NULL DEFAULT 'estructural'
     """,
+    # Cuenta del motor (paper trading): cada setup vigente de Diario/Swing se registra como orden limite en SU entrada, stop y tp
+    # (sin forzar nada) y se resuelve con las velas XM. Sirve para medir en vivo si la estrategia gana. Ver cuenta_motor.py
+    """
+    CREATE TABLE IF NOT EXISTS cuenta_motor (
+        id           bigserial   PRIMARY KEY,
+        simbolo      text        NOT NULL,
+        temporalidad text        NOT NULL,
+        direccion    text        NOT NULL,
+        entrada      double precision NOT NULL,
+        stop         double precision NOT NULL,
+        tp           double precision NOT NULL,
+        riesgo_pct   double precision NOT NULL,
+        clave        text        NOT NULL,
+        estado       text        NOT NULL DEFAULT 'pendiente',
+        r            double precision,
+        creada_en    timestamptz NOT NULL DEFAULT now(),
+        llena_en     timestamptz,
+        cerrada_en   timestamptz,
+        UNIQUE (simbolo, temporalidad, clave)
+    )
+    """,
     """
     CREATE TABLE IF NOT EXISTS master_historial (
         id             bigserial   PRIMARY KEY,
