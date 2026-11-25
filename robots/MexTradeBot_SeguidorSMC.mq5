@@ -55,6 +55,13 @@
 //| retira la escalera/trailing que la v1.17 (regla 5, 2 oct) les      |
 //| ponia. Su salida: TP del motor, cierre forzado -3% y el cierre     |
 //| ordenado por el Master. Exclusivo de Swing: el resto no cambia.    |
+//| SWING SIN CIERRE FORZADO (v1.25, decision de Ricardo 25 nov 2026):|
+//| el -3% del capital era muy corto para Swing. Las posiciones de     |
+//| Swing (S)/(M) del motor SMC ya NO se cierran por perdida maxima:   |
+//| aguantan el drawdown hasta el TP (o el cierre que ordene el        |
+//| Master). Sin SL ni cierre forzado, su unica cota es la liquidacion |
+//| del broker. Swing Express conserva el freno (su comentario lleva   |
+//| "-SE"): es su unica proteccion. Diario y el resto no cambian.      |
 //| MONTO A OPERAR (v1.18, ficha de descarga 3 oct 2026): InpCapital  |
 //| > 0 limita el capital al menor entre ese monto y el balance (lote,|
 //| cierre forzado -3% y R de Swing). 0 = balance de la cuenta.       |
@@ -85,7 +92,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.24"
+#property version   "1.25"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -882,7 +889,7 @@ bool ColocarOrdenMercado(ENUM_ORDER_TYPE tipo, double lots)
    request.tp             = 0.0;
    request.deviation      = 50;
    request.magic          = InpMagicNumber;
-   request.comment        = InpComment;
+   request.comment        = InpComment + "-SE";   // v1.25: marca de Swing Express (conserva el cierre forzado en Swing)
    request.type_filling   = FillingDelSimbolo(_Symbol);
 
    if(!OrderSend(request, result))
@@ -969,6 +976,8 @@ void CerrarPorPerdidaMaxima()
    {
       ulong ticket = PositionGetTicket(i);
       if(ticket == 0 || !PositionSelectByTicket(ticket) || PositionGetInteger(POSITION_MAGIC) != InpMagicNumber) continue;
+      // v1.25: Swing (S)/(M) del motor SMC aguanta el drawdown (sin cierre forzado); Swing Express ("-SE") lo conserva
+      if(EsSwingSM() && StringFind(PositionGetString(POSITION_COMMENT), "-SE") < 0) continue;
       double perdida = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
       if(perdida > limite) continue;
 
