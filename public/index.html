@@ -889,7 +889,7 @@ function mtbResumenBacktest(){
   var badge = function(f){ return f.viable ? '<span class="mtb-badge" style="background:var(--viable-bg);color:var(--viable)">Exp. positiva</span>' : (f.n_setups < 20 ? '<span class="mtb-badge" style="background:var(--no-viable-bg);color:var(--no-viable)">Pocas señales</span>' : '<span class="mtb-badge" style="background:var(--perdida-bg);color:var(--perdida)">Exp. negativa</span>'); };
   var lista = top.length ? '<div class="space-y-3">' + top.map(function(f){ return '<div class="flex items-start justify-between gap-3"><div><p class="font-bold text-slate-800">' + esc(f.simbolo) + ' &middot; ' + esc(f.temporalidad) + '</p><p class="text-[11px] text-slate-400 mt-0.5">' + f.n_setups + ' setups &middot; acierto ' + pct(f.winrate || 0) + ' &middot; ' + fmtR(f.expectativa_r || 0) + '</p></div>' + badge(f) + '</div>'; }).join('') + '</div>' : '<p class="text-slate-400">Todavia no hay activos con al menos 10 setups en el backtest.</p>';
   var detalle = '<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">' +
-    '<div class="lg:col-span-7 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4"><h2 class="text-base font-extrabold text-slate-800">' + mtbI('chart') + 'Resultado histórico por estrategia</h2>' + tabla + '<p class="text-[11px] text-slate-400">Resultados del backtest del motor SMC sobre el historico de cada activo. Rendimientos pasados no garantizan resultados futuros.</p></div>' +
+    '<div class="lg:col-span-7 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4"><h2 class="text-base font-extrabold text-slate-800">' + mtbI('chart') + 'Resultado histórico por estrategia</h2>' + tabla + '<p class="text-[11px] text-slate-400">Resultados del backtest del motor SMC sobre el historico de cada activo. Rendimientos pasados no garantizan resultados futuros.</p><p class="text-[11px] font-semibold" style="color:var(--perdida)">Aviso: 15 min, 30 min, 1 h y 4 h no aplican para esta estrategia. En las pruebas con velas de XM no mostraron ventaja (resultado negativo después de costos); solo Diario y Swing tienen respaldo histórico.</p></div>' +
     '<div class="lg:col-span-5 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4 text-xs"><h2 class="text-base font-extrabold text-slate-800">' + mtbI('trophy') + 'Mejores activos</h2>' + lista + '</div>' +
   '</div>';
   return { kpis: kpis, detalle: detalle };
@@ -1329,8 +1329,11 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
   const pct = v => (v == null || v === '' || !Number.isFinite(Number(v))) ? '—' : Math.round(Number(v) <= 1 ? Number(v) * 100 : Number(v)) + '%';
   const rr = v => (v == null || v === '' || !Number.isFinite(Number(v))) ? '—' : (Number(v) > 0 ? '+' : '') + Number(v).toLocaleString('es-MX', { maximumFractionDigits: 2 }) + 'R';
   const lineaStats = f => `Acierto ${pct(f.winrate)} · Expectativa ${rr(f.expectativa_r)} · ${Number(f.n_setups)} setups`;
+  const TF_SIN_VENTAJA = ['Scalping 15m', 'Scalping 30m', 'Intraday 1H', 'Intraday 4H']; // misma lista que api/catalogo.py SIN_VENTAJA
+  const AVISO_TF = "Aviso: en las pruebas con velas de XM, esta estrategia no mostró ventaja en 15 min, 30 min, 1 h ni 4 h (resultado negativo después de costos). Lo medido solo respalda Diario y Swing. Resultados pasados no garantizan resultados futuros.";
   function veredicto(f) {
     const v = String(f.veredicto || '').trim(), u = v.toUpperCase();
+    if (u === 'SIN VENTAJA') return 'Sin ventaja demostrada en esta temporalidad';
     if (u === 'RECOMENDABLE') return 'Expectativa positiva';
     if (u === 'NO_RECOMENDABLE') return 'Expectativa negativa';
     if (u === 'INSUFICIENTE') return 'Pocas señales históricas';
@@ -1479,7 +1482,7 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
     box.innerHTML = c.periods.map(([name, label]) => {
       const f = fila(name), [cls, txt] = c.trend(f && (f.tendencia || f.direccion));
       const stats = !st.simbolo ? 'Elige un activo para ver sus datos' : f ? lineaStats(f) : 'Sin datos';
-      return `<label class="mf-opt"><input type="radio" name="mfTemp" value="${esc(name)}"${name === st.temporalidad ? ' checked' : ''}><span class="mf-opt-body"><span class="mf-opt-top"><strong>${label} · ${esc(name)}</strong>${f ? `<span class="ag-trend ag-${cls}">${txt}</span>` : ''}</span><span class="mf-opt-stats">${stats}</span>${f ? `<span class="mf-opt-stats ${f.viable === true ? 'mf-ok' : 'mf-no'}">${esc(veredicto(f))}</span>` : ''}</span></label>`;
+      return `<label class="mf-opt"><input type="radio" name="mfTemp" value="${esc(name)}"${name === st.temporalidad ? ' checked' : ''}><span class="mf-opt-body"><span class="mf-opt-top"><strong>${label} · ${esc(name)}</strong>${f ? `<span class="ag-trend ag-${cls}">${txt}</span>` : ''}</span><span class="mf-opt-stats">${stats}</span>${f ? `<span class="mf-opt-stats ${f.viable === true ? 'mf-ok' : 'mf-no'}">${esc(veredicto(f))}</span>` : ''}${TF_SIN_VENTAJA.includes(name) ? '<span class="mf-opt-stats mf-no">Sin ventaja demostrada: ver aviso al elegirla</span>' : ''}</span></label>`;
     }).join('');
     $('mfCatEstado').textContent = { loading: 'Consultando el análisis del motor…', error: 'No se pudo cargar el análisis: no se pudo evaluar ninguna combinación; trátalas como sin información.', empty: 'El motor todavía no tiene análisis guardados.' }[c.state()] || '';
   }
@@ -1487,9 +1490,9 @@ const MTB_URL_MEMBRESIA = ''; // pendiente de Ricardo: URL de compra de membres�
     if (!st || st.vista !== 'form' || !$('mfForm')) return;
     // aviso de riesgo: combinación no viable o sin datos
     const elegido = !!(st.simbolo && st.temporalidad), f = elegido ? fila(st.temporalidad) : null;
-    const noRec = elegido && (!f || f.viable !== true);
+    const sinVentaja = elegido && TF_SIN_VENTAJA.includes(st.temporalidad), noRec = elegido && (!f || f.viable !== true || sinVentaja);
     $('mfRiesgo').hidden = !noRec;
-    if (noRec) $('mfRiesgoTxt').innerHTML = st.estrategia === VM
+    if (noRec) $('mfRiesgoTxt').innerHTML = sinVentaja && st.estrategia !== VM ? `<strong>Esta temporalidad (${esc(st.temporalidad)}) no aplica para la estrategia.</strong> ${esc(AVISO_TF)} Puedes descargarla, pero el histórico no la respalda; Diario y Swing sí.` : st.estrategia === VM
       ? `<strong>Vela de Medianoche no tiene expectativa medida para ${st.simbolo}.</strong> Es un disparador mecánico (compra la ruptura del máximo de ayer), sin backtest que lo respalde en este activo. Puedes descargarlo, pero opera sin esa referencia.`
       : f
       ?`<strong>${st.simbolo} en ${esc(st.temporalidad)} tiene expectativa negativa en su histórico.</strong> ${lineaStats(f)} · Resultado histórico: ${esc(veredicto(f))}. Puedes descargarlo, pero el riesgo de perder es mayor.`
