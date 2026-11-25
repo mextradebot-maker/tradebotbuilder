@@ -66,6 +66,7 @@ RUTA_HOTMART = "/api/v1/hotmart"
 RUTA_VELAS_XM = "/api/v1/velas-xm"
 RUTA_VELAS_XM_CARGA = "/api/v1/velas-xm/carga"
 RUTA_GRAFICA = "/api/v1/grafica"
+RUTA_ORDENES_MASTER = "/api/v1/ordenes-master"
 RUTA_LEADS = "/api/v1/leads"
 RUTA_AFILIADOS = "/api/v1/afiliados"
 
@@ -99,6 +100,10 @@ class handler(BaseHTTPRequestHandler):
             from api.grafica import procesar as procesar_grafica
 
             status, body = procesar_grafica(qs, dict(self.headers))
+        elif ruta == RUTA_ORDENES_MASTER:
+            from api.ordenes_master import procesar as procesar_ordenes_master
+
+            status, body = procesar_ordenes_master(qs, dict(self.headers))
         elif ruta == RUTA_REPORTE:
             from api.reporte import procesar_reporte
 
