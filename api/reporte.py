@@ -109,6 +109,7 @@ def setups_vigentes(snapshots: list[dict], precios: dict | None = None, vela_med
             "despachador_encendido": operacion["master_activo"],
             "robots_activos": operacion["robots_total"],
             "ordenes_24h": operacion["ordenes_24h"],
+            "ordenes_30d": {**operacion["ordenes_30d"], "ultima": str(operacion["ordenes_30d"]["ultima"]) if operacion["ordenes_30d"]["ultima"] else None},
         },
         "estrategias": estrategias_del_dia(snapshots, sorted(vigentes, key=lambda x: (x["velas_desde_confirmacion"], x["simbolo"])), vela_medianoche),
         "conteo_por_temporalidad": _conteos(tendencias),  # Claude redacta, no cuenta (contaba mal)
@@ -142,12 +143,19 @@ def _leer_operacion() -> dict | None:
                 """SELECT simbolo, temporalidad, direccion, estado FROM master_ordenes
                    WHERE creada_en > now() - interval '24 hours' AND estrategia NOT IN ('swing_express', 'vela_medianoche')
                    ORDER BY creada_en DESC LIMIT 30""").fetchall()
+            h30 = conn.execute(
+                """SELECT estado, count(*), max(creada_en) FROM master_ordenes
+                   WHERE creada_en > now() - interval '30 days' AND estrategia NOT IN ('swing_express', 'vela_medianoche')
+                   GROUP BY estado""").fetchall()
     except Exception:
         return None
     return {"master_activo": os.environ.get("MASTER_ACTIVO") == "1",
             "robots": {(r[0], r[1]): {"activos": int(r[2]), "vivos": int(r[3])} for r in rob},
             "robots_total": sum(int(r[2]) for r in rob),
-            "ordenes_24h": [{"simbolo": o[0], "temporalidad": o[1], "direccion": o[2], "estado": o[3]} for o in ords]}
+            "ordenes_24h": [{"simbolo": o[0], "temporalidad": o[1], "direccion": o[2], "estado": o[3]} for o in ords],
+            # historia de 30 dias: ¿el Master ha mandado senales alguna vez? (por estado y fecha de la ultima orden creada)
+            "ordenes_30d": {"total": sum(int(r[1]) for r in h30), "por_estado": {r[0]: int(r[1]) for r in h30},
+                            "ultima": max((r[2] for r in h30), default=None)}}
 
 
 def _leer_snapshots() -> list[dict]:
@@ -243,7 +251,8 @@ def demo() -> None:
     assert "vela_medianoche" not in setups_vigentes(snaps_e, None, None)["estrategias"]  # sin dato: se omite, no se inventa
     # reporte honesto: cada setup dice si algun robot lo opera; sin dato no se afirma nada
     op = {"master_activo": False, "robots": {("EURJPY", "Swing (M)"): {"activos": 1, "vivos": 0}}, "robots_total": 1,
-          "ordenes_24h": [{"simbolo": "XAUUSD", "temporalidad": "Swing (S)", "direccion": "compra", "estado": "pendiente"}]}
+          "ordenes_24h": [{"simbolo": "XAUUSD", "temporalidad": "Swing (S)", "direccion": "compra", "estado": "pendiente"}],
+          "ordenes_30d": {"total": 3, "por_estado": {"expirada": 2, "pendiente": 1}, "ultima": None}}
     sn = [snap("EURJPY", "Swing (M)", 400, [{**st(395, "long", 164.0, 150.0), "indice_conocido": 396, "tp": 190.0}]),
           snap("CADJPY", "Intraday D", 400, [{**st(395, "short", 111.9, 113.4), "indice_conocido": 396, "tp": 110.0}], "venta")]
     pp = {"EURJPY": (1, 165.0), "CADJPY": (1, 111.6)}
@@ -251,6 +260,7 @@ def demo() -> None:
     rb = {v["simbolo"]: (v["robots_activos"], v["robots_vivos"]) for v in ro["vigentes"]}
     assert rb == {"EURJPY": (1, 0), "CADJPY": (0, 0)}, rb  # CADJPY: ningun robot -> no se convierte en orden
     assert ro["operacion"]["despachador_encendido"] is False and ro["operacion"]["robots_activos"] == 1 and len(ro["operacion"]["ordenes_24h"]) == 1
+    assert ro["operacion"]["ordenes_30d"]["total"] == 3 and ro["operacion"]["ordenes_30d"]["ultima"] is None
     rs = setups_vigentes(sn, pp, None, None)
     assert rs["operacion"] is None and all(v["robots_activos"] is None for v in rs["vigentes"])  # sin dato: None, no 0
     # MISMA regla que el robot: una zona vieja de oro (entrada 1905, precio 3883) NO es vigente aunque tenga < 20 velas
