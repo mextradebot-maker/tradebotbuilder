@@ -8,7 +8,7 @@ Reglas (las de la estrategia, no se tocan):
     misma vela, cuenta el stop primero (lo conservador).
 Resultado en R (1 R = distancia entrada-stop); se guarda bruto y el resumen descuenta un costo supuesto por operacion.
 
-Se registra y resuelve una vez por reporte (cada vez que se pide /api/v1/reporte-setups con MOTOR_CUENTA=1): para velas diarias,
+Se registra y resuelve una vez por reporte (cada vez que se pide /api/v1/reporte-setups con MOTOR_CUENTA=1 o ?cuenta_motor=1): para velas diarias,
 semanales y mensuales una vez al dia basta. Es idempotente: repetir no duplica ordenes (clave unica por setup).
 """
 

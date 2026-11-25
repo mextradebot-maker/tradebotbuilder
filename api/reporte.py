@@ -164,7 +164,7 @@ def _leer_snapshots() -> list[dict]:
             for r in rows]
 
 
-def procesar_reporte(headers: dict) -> tuple[int, dict]:
+def procesar_reporte(headers: dict, qs: dict | None = None) -> tuple[int, dict]:
     from api.licencias import _clave_ok, _h
 
     if not os.environ.get("MTB_SERVICE_KEY"):
@@ -182,8 +182,8 @@ def procesar_reporte(headers: dict) -> tuple[int, dict]:
         except Exception:
             vm = None
         rep = setups_vigentes(snaps, {sim: _precio_ref(sim) for sim in {s["simbolo"] for s in snaps}}, vm, _leer_operacion())
-        rep["cuenta_motor"] = None  # None = la cuenta del motor no esta encendida (MOTOR_CUENTA=1)
-        if os.environ.get("MOTOR_CUENTA") == "1":
+        rep["cuenta_motor"] = None  # None = la cuenta del motor no esta encendida (MOTOR_CUENTA=1 o ?cuenta_motor=1 en la peticion)
+        if os.environ.get("MOTOR_CUENTA") == "1" or (qs or {}).get("cuenta_motor") == "1":
             try:  # el motor "opera" exactamente lo que este reporte presenta como vigente (cuenta_motor.py)
                 import cuenta_motor
 

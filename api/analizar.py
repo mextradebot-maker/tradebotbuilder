@@ -102,7 +102,7 @@ class handler(BaseHTTPRequestHandler):
         elif ruta == RUTA_REPORTE:
             from api.reporte import procesar_reporte
 
-            status, body = procesar_reporte(dict(self.headers))
+            status, body = procesar_reporte(dict(self.headers), qs)
         elif ruta == RUTA_MIS_LICENCIAS:
             from api.alumnos import procesar_mis_licencias
 
