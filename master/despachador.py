@@ -42,6 +42,8 @@ MAX_DISTANCIA_R = 3.0    # entrada a mas de 3 veces el riesgo del propio setup (
 # lo normal es nacer a 10-50 %, en 15m a 0.2 %)
 # Antiguedad maxima de la ZONA (velas desde indice_confirmacion), no desde que se hizo operable. Tope de seguridad por criterio
 # (la distancia en R hace el trabajo fino; la muestra de swing es chica). Temporalidad sin entrada: sin tope de zona.
+# En swing el riesgo del setup es enorme (~12 %), asi que 3 R deja pasar entradas a 25-30 % del precio, que no se llenan: tope en % solo ahi.
+MAX_DISTANCIA_PCT_SWING = 15.0
 MAX_ZONA_VELAS = {"Scalping 15m": 40, "Scalping 30m": 40, "Intraday 1H": 40, "Intraday 4H": 60, "Intraday D": 60,
                   "Swing (S)": 26, "Swing (M)": 12}
 
@@ -60,6 +62,9 @@ def motivo_descarte(s: dict, velas, ref_cierre, temporalidad: str | None = None)
     tope = MAX_ZONA_VELAS.get(temporalidad)
     if velas and tope and s.get("indice_confirmacion") is not None and velas - 1 - int(s["indice_confirmacion"]) > tope:
         return "zona_vieja"
+    if (ref_cierre and s.get("entrada") and temporalidad in ("Swing (S)", "Swing (M)")
+            and abs(float(s["entrada"]) - float(ref_cierre)) / float(ref_cierre) * 100 > MAX_DISTANCIA_PCT_SWING):
+        return "distancia"
     riesgo = abs(float(s["entrada"]) - float(s["stop"])) if s.get("entrada") and s.get("stop") else 0
     if ref_cierre and riesgo and abs(float(s["entrada"]) - float(ref_cierre)) / riesgo > MAX_DISTANCIA_R:
         return "distancia"
@@ -691,6 +696,9 @@ def demo() -> None:
     assert vigentes([{**fresco, "entrada": 1.1213, "stop": 1.1218}], 4224, 1.1151, "Scalping 15m") == []  # 12 R: no se llena
     swing_ok = {"direccion": "long", "entrada": 1.05, "stop": 0.99, "indice_conocido": 80, "indice_confirmacion": 75}
     assert vigentes([swing_ok], 84, 1.12, "Swing (M)") == [swing_ok]                            # swing mensual a 6 % = 1.2 R: normal, no se descarta
+    wmt = {"direccion": "long", "entrada": 91.56, "stop": 70.0, "indice_conocido": 83, "indice_confirmacion": 80}
+    assert motivo_descarte(wmt, 84, 131.35, "Swing (M)") == "distancia"                         # 1.8 R pero 30 % lejos: tope % de swing
+    assert motivo_descarte(wmt, 84, 131.35, "Intraday D") is None                               # el tope % es solo de swing
     assert vigentes([fresco], None, None) == [fresco]                                           # API vieja / sin dato: no filtra
     assert filtros_autorizaciones() == ("", [])
     w, p = filtros_autorizaciones(desde="2026-10-01", hasta="2026-10-31", usuario="Ricardo", nombre="Oro", activo="gold", evento="aceptada")
