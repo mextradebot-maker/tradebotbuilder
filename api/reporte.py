@@ -18,9 +18,33 @@ from datetime import datetime, timezone
 _A_COMPRA_VENTA = {"long": "compra", "short": "venta"}
 
 
-def setups_vigentes(snapshots: list[dict], precios: dict | None = None) -> dict:
+SWING = ("Swing (S)", "Swing (M)")
+
+
+def estrategias_del_dia(snapshots: list[dict], vigentes: list[dict], vela_medianoche: list[dict] | None) -> dict:
+    """Los setups que hay hoy, clasificados por estrategia (lo que el reporte de Telegram presenta, una seccion por estrategia):
+    - estructural: el motor SMC; solo Diario y Swing (en 15m/30m/1H/4H no es valida y no se presenta);
+    - vela_medianoche: los candidatos de hoy (mismo criterio que la tarjeta del panel; None = no se pudo calcular, se omite);
+    - swing_express: activos con tendencia de compra en Swing (S) o (M), el mismo criterio de la tarjeta del panel."""
+    estructural = [v for v in vigentes if v["aplica"]]
+    express = {}
+    for s in snapshots:
+        if s["temporalidad"] in SWING and s.get("tendencia_actual") == "compra":
+            express.setdefault(s["simbolo"], []).append(s["temporalidad"])
+    sal = {
+        "estructural": {"valida_en": "Diario y Swing", "n": len(estructural), "setups": estructural},
+        "swing_express": {"n": len(express), "activos": [{"simbolo": k, "temporalidades": v} for k, v in sorted(express.items())]},
+    }
+    if vela_medianoche is not None:
+        sal["vela_medianoche"] = {"n": len(vela_medianoche), "candidatos": [
+            {"simbolo": c["simbolo"], "nivel_pdh": c["pdh"], "valido_hasta": str(c.get("ventana_hasta"))} for c in vela_medianoche]}
+    return sal
+
+
+def setups_vigentes(snapshots: list[dict], precios: dict | None = None, vela_medianoche: list[dict] | None = None) -> dict:
     """snapshots: [{simbolo, temporalidad, respuesta, tendencia_actual, refrescado_en}] → reporte.
-    precios: {simbolo: (ref_ts, ref_cierre)} (el de api.setups._precio_ref); sin él no se puede medir la distancia al precio."""
+    precios: {simbolo: (ref_ts, ref_cierre)} (el de api.setups._precio_ref); sin él no se puede medir la distancia al precio.
+    vela_medianoche: candidatos de motor_smc.vela_medianoche.candidatos() (None = se omite esa estrategia)."""
     from api.catalogo import AVISO_SIN_VENTAJA, SIN_VENTAJA
     from master.despachador import MAX_DISTANCIA_PCT_SWING, MAX_DISTANCIA_R, MAX_EDAD_VELAS, MAX_ZONA_VELAS, motivo_descarte, vigentes as vigentes_motor
 
@@ -75,6 +99,7 @@ def setups_vigentes(snapshots: list[dict], precios: dict | None = None) -> dict:
         "vigentes_sin_precio_actual": sin_precio,  # sin precio de referencia no se pudo medir la distancia
         "snapshot_mas_viejo": min(refrescos) if refrescos else None,
         "vigentes": sorted(vigentes, key=lambda x: (x["velas_desde_confirmacion"], x["simbolo"])),
+        "estrategias": estrategias_del_dia(snapshots, sorted(vigentes, key=lambda x: (x["velas_desde_confirmacion"], x["simbolo"])), vela_medianoche),
         "conteo_por_temporalidad": _conteos(tendencias),  # Claude redacta, no cuenta (contaba mal)
         "tendencias": tendencias,
     }
@@ -114,7 +139,13 @@ def procesar_reporte(headers: dict) -> tuple[int, dict]:
         snaps = _leer_snapshots()
         from api.setups import _precio_ref  # el mismo precio de referencia que ve el motor al despachar
 
-        return 200, setups_vigentes(snaps, {sim: _precio_ref(sim) for sim in {s["simbolo"] for s in snaps}})
+        try:  # la Vela de Medianoche necesita el almacen de velas; si falla, el reporte sigue sin esa estrategia
+            from motor_smc.vela_medianoche import candidatos
+
+            vm = candidatos()
+        except Exception:
+            vm = None
+        return 200, setups_vigentes(snaps, {sim: _precio_ref(sim) for sim in {s["simbolo"] for s in snaps}}, vm)
     except Exception as e:  # BD caída
         return 503, {"error": f"snapshots no disponibles: {type(e).__name__}"}
 
@@ -156,6 +187,15 @@ def demo() -> None:
     ap = {v["simbolo"]: v["aplica"] for v in ri["vigentes"]}
     assert ap == {"EURGBP": False, "CADJPY": True} and "no valida para esta temporalidad" in ri["aviso_estrategia"], ri["vigentes"]
     assert [v["aviso"] for v in ri["vigentes"] if v["simbolo"] == "CADJPY"] == [None]
+    # estrategias del dia: estructural solo Diario/Swing, swing express por tendencia, vela de medianoche opcional
+    snaps_e = [snap("XAUUSD", "Swing (M)", 400, [], "compra"), snap("XAUUSD", "Swing (S)", 400, [], "compra"), snap("EURUSD", "Swing (S)", 400, [], "venta"),
+               snap("BTCUSD", "Swing (M)", 400, [], "compra"), snap("EURGBP", "Scalping 15m", 400, [{**st(395, "long", 0.8700, 0.8690), "indice_conocido": 396}], "venta")]
+    re_ = setups_vigentes(snaps_e, {"EURGBP": (1, 0.8702)}, [{"simbolo": "ETHUSD", "pdh": 2100.5, "ventana_hasta": datetime(2026, 11, 7, 7, tzinfo=timezone.utc)}])
+    es = re_["estrategias"]
+    assert es["estructural"]["n"] == 0 and es["estructural"]["setups"] == [], es  # el unico vigente es de 15m: no se presenta
+    assert [a["simbolo"] for a in es["swing_express"]["activos"]] == ["BTCUSD", "XAUUSD"] and es["swing_express"]["activos"][1]["temporalidades"] == ["Swing (M)", "Swing (S)"], es
+    assert es["vela_medianoche"]["n"] == 1 and es["vela_medianoche"]["candidatos"][0]["nivel_pdh"] == 2100.5, es
+    assert "vela_medianoche" not in setups_vigentes(snaps_e, None, None)["estrategias"]  # sin dato: se omite, no se inventa
     # MISMA regla que el robot: una zona vieja de oro (entrada 1905, precio 3883) NO es vigente aunque tenga < 20 velas
     oro_m = {**st(52, "long", 1905.4, 1750.9), "indice_conocido": 79}
     rep = setups_vigentes([snap("XAUUSD", "Swing (M)", 83, [oro_m]), snap("EURGBP", "Scalping 15m", 400, [{**st(395, "long", 0.8700, 0.8690), "indice_conocido": 396}])],
