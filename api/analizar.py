@@ -215,6 +215,8 @@ class handler(BaseHTTPRequestHandler):
             from api.master import procesar_pulso
 
             status, body = procesar_pulso(payload, dict(self.headers))
+            if status not in (200, 401, 403):
+                print(f"[master/pulso] HTTP {status} {str(body)[:160]}", flush=True)  # rastro en los logs de EasyPanel para cruzar con los avisos del robot
         elif ruta == RUTA_MASTER_ACEPTAR:
             from api.master import procesar_aceptar_post
 
