@@ -16,7 +16,7 @@ import pandas as pd
 from conectividad import SIMBOLOS, TEMPORALIDADES, TEMPORALIDAD_A_INTERVALO, obtener_velas, resolver_temporalidad
 
 TEMPORALIDADES_GRAFICA = ("Scalping 15m", "Intraday 1H", "Intraday 4H", "Intraday D", "Swing (S)", "Swing (M)")
-LIMITE_DEFECTO, LIMITE_MAX = 1500, 3000
+LIMITE_DEFECTO, LIMITE_MAX = 1500, 6000  # 6000: toda la serie 15m del motor (unas 4000 velas), para validar setups en el laboratorio
 MAX_POR_TIPO = {"fvg": 40, "order_blocks": 30, "liquidez": 25, "estructura": 60}
 VIDA_CACHE_S = 30
 _cache: dict = {}
