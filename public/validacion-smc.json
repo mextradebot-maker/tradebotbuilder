@@ -3,14 +3,15 @@
  "estrategia": "SMC / Estructural (motor v2)",
  "fuente": "velas XM, 34 activos, setups validos del motor",
  "costo_pct": 0.015,
+ "salida": "como opera el robot: Swing sin stop (solo TP), Diario con escalera de breakeven; posiciones abiertas a precio de mercado",
  "filas": [
   {
    "temporalidad": "Scalping 15m",
    "setups": 395,
-   "limite": {
+   "robot": {
     "ops": 84,
-    "acierto": 0.19,
-    "r_op": -0.343
+    "acierto": 0.238,
+    "r_op": -0.407
    },
    "mercado": {
     "ops": 381,
@@ -23,10 +24,10 @@
   {
    "temporalidad": "Intraday 1H",
    "setups": 263,
-   "limite": {
+   "robot": {
     "ops": 60,
-    "acierto": 0.217,
-    "r_op": -0.096
+    "acierto": 0.25,
+    "r_op": -0.394
    },
    "mercado": {
     "ops": 255,
@@ -39,10 +40,10 @@
   {
    "temporalidad": "Intraday 4H",
    "setups": 191,
-   "limite": {
+   "robot": {
     "ops": 42,
-    "acierto": 0.262,
-    "r_op": -0.128
+    "acierto": 0.381,
+    "r_op": 0.054
    },
    "mercado": {
     "ops": 177,
@@ -55,10 +56,10 @@
   {
    "temporalidad": "Intraday D",
    "setups": 173,
-   "limite": {
+   "robot": {
     "ops": 32,
-    "acierto": 0.438,
-    "r_op": 0.87
+    "acierto": 0.5,
+    "r_op": 0.541
    },
    "mercado": {
     "ops": 168,
@@ -70,32 +71,32 @@
   },
   {
    "temporalidad": "Swing (S)",
-   "setups": 35,
-   "limite": {
-    "ops": 7,
-    "acierto": 0.429,
-    "r_op": 0.648
+   "setups": 27,
+   "robot": {
+    "ops": 4,
+    "acierto": 0.5,
+    "r_op": 0.557
    },
    "mercado": {
-    "ops": 29,
-    "acierto": 0.793,
-    "r_op": 0.109
+    "ops": 21,
+    "acierto": 0.857,
+    "r_op": 0.137
    },
    "valida": true,
    "muestra_limitada": true
   },
   {
    "temporalidad": "Swing (M)",
-   "setups": 32,
-   "limite": {
-    "ops": 2,
-    "acierto": 0.5,
-    "r_op": 1.254
+   "setups": 29,
+   "robot": {
+    "ops": 5,
+    "acierto": 0.8,
+    "r_op": 0.997
    },
    "mercado": {
-    "ops": 17,
-    "acierto": 0.941,
-    "r_op": 0.255
+    "ops": 15,
+    "acierto": 1.0,
+    "r_op": 0.32
    },
    "valida": true,
    "muestra_limitada": true

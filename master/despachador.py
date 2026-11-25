@@ -49,11 +49,13 @@ MAX_ZONA_VELAS = {"Scalping 15m": 40, "Scalping 30m": 40, "Intraday 1H": 40, "In
 
 
 def motivo_descarte(s: dict, velas, ref_cierre, temporalidad: str | None = None) -> str | None:
-    """Por que un setup NO sirve para operar: "resuelto" (ya llenado, cancelado o expirado), "edad" (conocido hace mas de
+    """Por que un setup NO sirve para operar: "solo_compras" (venta en Swing), "resuelto" (ya llenado, cancelado o expirado), "edad" (conocido hace mas de
     MAX_EDAD_VELAS velas), "zona_vieja" (zona confirmada hace mas de MAX_ZONA_VELAS[temporalidad] velas), "distancia" (entrada a
     mas de MAX_DISTANCIA_R veces su riesgo del precio actual) o None si sirve.
     Es LA regla de vigencia: la usan el despachador (robots) y api/reporte.py (Telegram), para que ambos vean lo mismo.
     Sin velas / ref_cierre / temporalidad no filtra por ese dato."""
+    if temporalidad in ("Swing (S)", "Swing (M)") and s.get("direccion") in ("short", "venta"):
+        return "solo_compras"  # regla de negocio: Swing solo se opera en compra (antes vivia solo en T-04 de n8n; el despachador no la tenia)
     if s.get("resultado", "sin_llenar") != "sin_llenar":
         return "resuelto"  # el motor ya los quita de setups_confirmados; por si algun dia llega uno
     idx = s.get("indice_conocido", s.get("indice_confirmacion"))
@@ -694,6 +696,8 @@ def demo() -> None:
     assert vigentes([fresco], 4224, 1.1151, "Scalping 15m") == [fresco]                         # 3 velas, 0.8 R, zona de 23 velas
     assert vigentes([{**fresco, "indice_conocido": 4100}], 4224, 1.1151, "Scalping 15m") == []  # 123 velas: ya expiro
     assert vigentes([{**fresco, "entrada": 1.1213, "stop": 1.1218}], 4224, 1.1151, "Scalping 15m") == []  # 12 R: no se llena
+    assert motivo_descarte({"direccion": "short", "entrada": 1.0, "stop": 1.1, "indice_conocido": 80, "indice_confirmacion": 75}, 84, 1.0, "Swing (M)") == "solo_compras"
+    assert motivo_descarte({"direccion": "short", "entrada": 1.0, "stop": 1.1, "indice_conocido": 80, "indice_confirmacion": 75}, 84, 1.0, "Intraday D") is None  # Diario si vende
     swing_ok = {"direccion": "long", "entrada": 1.05, "stop": 0.99, "indice_conocido": 80, "indice_confirmacion": 75}
     assert vigentes([swing_ok], 84, 1.12, "Swing (M)") == [swing_ok]                            # swing mensual a 6 % = 1.2 R: normal, no se descarta
     wmt = {"direccion": "long", "entrada": 91.56, "stop": 70.0, "indice_conocido": 83, "indice_confirmacion": 80}
