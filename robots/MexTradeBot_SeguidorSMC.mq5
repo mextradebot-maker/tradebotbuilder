@@ -55,6 +55,10 @@
 //| retira la escalera/trailing que la v1.17 (regla 5, 2 oct) les      |
 //| ponia. Su salida: TP del motor, cierre forzado -3% y el cierre     |
 //| ordenado por el Master. Exclusivo de Swing: el resto no cambia.    |
+//| PULSO RESISTENTE (v1.26, 25 nov 2026): un fallo pasajero del       |
+//| servidor (502/503/404/1003 de Cloudflare) se reintenta una vez a   |
+//| los 3 s en vez de esperar un minuto, y el aviso trae un trozo de   |
+//| la respuesta para saber quien la dio (API, proxy o Cloudflare).    |
 //| SWING SIN CIERRE FORZADO (v1.25, decision de Ricardo 25 nov 2026):|
 //| el -3% del capital era muy corto para Swing. Las posiciones de     |
 //| Swing (S)/(M) del motor SMC ya NO se cierran por perdida maxima:   |
@@ -92,7 +96,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.25"
+#property version   "1.26"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -423,7 +427,7 @@ void MasterPulso()
 {
    string estado = StringFormat(
       "{\"balance\":%.2f,\"equity\":%.2f,\"pnl_hoy\":%.2f,\"racha\":%d,\"riesgo_abierto_pct\":%.4f,\"posiciones\":%d,\"pendientes\":%d,\"riesgo_pct\":%.4f,"
-      + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f,\"version\":\"1.24\"}",
+      + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f,\"version\":\"1.26\"}",
       CapitalEfectivo(), AccountInfoDouble(ACCOUNT_EQUITY), PnlHoy(), RachaPerdidas(), RiesgoAbiertoPct(), CountPositions(), CountOrdenesPendientes(),
       EsSwingSM() ? InpRiskPercentSwing : InpRiskPercent,
       SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE), SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE),
@@ -439,6 +443,14 @@ void MasterPulso()
    StringToCharArray(payload, datos, 0, StringLen(payload));
    ResetLastError();
    int status = WebRequest("POST", InpMasterUrl, headers, 10000, datos, respuesta, headers_respuesta);
+   if(status == 404 || status == 429 || status >= 500)
+   {
+      // v1.26: fallo pasajero del servidor o del proxy -> un reintento a los 3 s (el pulso es idempotente: los acks se reenvian)
+      Sleep(3000);
+      ArrayFree(respuesta);
+      ResetLastError();
+      status = WebRequest("POST", InpMasterUrl, headers, 10000, datos, respuesta, headers_respuesta);
+   }
    string cuerpo = CharArrayToString(respuesta);
    if(status == -1)
    {
@@ -452,7 +464,10 @@ void MasterPulso()
    }
    if(status != 200)
    {
-      MasterAviso("MASTER: el servidor respondio HTTP " + IntegerToString(status) + " -- se reintenta en el siguiente pulso");
+      string resto = cuerpo;
+      StringReplace(resto, "\r", " ");
+      StringReplace(resto, "\n", " ");
+      MasterAviso("MASTER: el servidor respondio HTTP " + IntegerToString(status) + " (" + StringSubstr(resto, 0, 120) + ") -- se reintenta en el siguiente pulso");
       return;
    }
    SalirStandby();
