@@ -21,7 +21,7 @@ _A_COMPRA_VENTA = {"long": "compra", "short": "venta"}
 def setups_vigentes(snapshots: list[dict], precios: dict | None = None) -> dict:
     """snapshots: [{simbolo, temporalidad, respuesta, tendencia_actual, refrescado_en}] → reporte.
     precios: {simbolo: (ref_ts, ref_cierre)} (el de api.setups._precio_ref); sin él no se puede medir la distancia al precio."""
-    from master.despachador import MAX_DISTANCIA_R, MAX_EDAD_VELAS, MAX_ZONA_VELAS, motivo_descarte, vigentes as vigentes_motor
+    from master.despachador import MAX_DISTANCIA_PCT_SWING, MAX_DISTANCIA_R, MAX_EDAD_VELAS, MAX_ZONA_VELAS, motivo_descarte, vigentes as vigentes_motor
 
     precios = precios or {}
     vigentes, sin_setup, tendencias = [], 0, {}
@@ -62,7 +62,7 @@ def setups_vigentes(snapshots: list[dict], precios: dict | None = None) -> dict:
     refrescos = [s["refrescado_en"] for s in snapshots if s.get("refrescado_en")]
     return {
         "generado_en": datetime.now(timezone.utc),
-        "criterio": f"conocido hace <= {MAX_EDAD_VELAS} velas, zona no mas vieja que el tope de su temporalidad {MAX_ZONA_VELAS} y entrada a <= {MAX_DISTANCIA_R:g} veces su riesgo del precio actual (el mismo del despachador de robots)",
+        "criterio": f"conocido hace <= {MAX_EDAD_VELAS} velas, zona no mas vieja que el tope de su temporalidad {MAX_ZONA_VELAS} y entrada a <= {MAX_DISTANCIA_R:g} veces su riesgo del precio actual (en swing ademas <= {MAX_DISTANCIA_PCT_SWING:g}%) (el mismo del despachador de robots)",
         "combinaciones": len(snapshots),
         "con_setup_vigente": len(vigentes),
         "sin_setup": sin_setup,
