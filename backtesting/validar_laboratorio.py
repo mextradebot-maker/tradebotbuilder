@@ -218,6 +218,9 @@ def operaciones(datos: dict, variante: str) -> list[dict]:
 
                 est, R, _ = resolver_orden({"direccion": lado, "entrada": e, "stop": sl, "tp": tp, "temporalidad": temp},
                                            [tuple(x) for x in v[k + 1:]])
+                from cuenta_motor import MERCADO
+                if temp in MERCADO:
+                    e = v[k + 1][0]   # entrada a mercado (robot v1.27): el R y el riesgo se miden desde la apertura de la vela siguiente
                 if est == "llena":  # sigue abierta: a precio de mercado con la ultima vela
                     abierta, est = True, "gano" if (v[-1][3] - e) * (1 if lado == "long" else -1) > 0 else "perdio"
                     R = (v[-1][3] - e) * (1 if lado == "long" else -1) / abs(e - sl)

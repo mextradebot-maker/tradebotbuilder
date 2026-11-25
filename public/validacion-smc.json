@@ -57,9 +57,9 @@
    "temporalidad": "Intraday D",
    "setups": 173,
    "robot": {
-    "ops": 32,
-    "acierto": 0.5,
-    "r_op": 0.541
+    "ops": 173,
+    "acierto": 0.751,
+    "r_op": 0.129
    },
    "mercado": {
     "ops": 168,

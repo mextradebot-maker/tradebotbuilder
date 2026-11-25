@@ -181,8 +181,21 @@ def _lotes(est: dict, orden: dict, riesgo_pct: float) -> tuple[float, str]:
     return (lot.lotes, "") if lot.viable else (0.0, lot.motivo or "capital insuficiente para el lote minimo")
 
 
-def _publica(o: dict) -> dict:
-    return {k: o.get(k) for k in ("orden_id", "direccion", "entrada", "stop", "tp", "lotes", "ref_ts", "ref_cierre", "estrategia")}
+# Entrada A MERCADO (25 nov 2026): en Diario la orden limite se llenaba ~18 % y perdia los movimientos que no retroceden; a mercado, con el
+# mismo stop y TP, la simulacion da +25 R en 168 operaciones (limite: +17 R en 32), positivo en las dos mitades de los datos.
+# El robot ajusta los lotes para que el riesgo en $ sea el planeado aunque el precio ya se haya movido de la entrada del setup.
+ENTRADA_A_MERCADO = ("Intraday D",)
+
+
+def modo_entrada(estrategia, temporalidad) -> str:
+    """'mercado' | 'limite'. Swing Express y Vela de Medianoche tienen su propia mecanica; Swing (S)/(M) siguen en limite."""
+    return "mercado" if temporalidad in ENTRADA_A_MERCADO and estrategia in (None, "", "estructural") else "limite"
+
+
+def _publica(o: dict, temporalidad=None) -> dict:
+    pub = {k: o.get(k) for k in ("orden_id", "direccion", "entrada", "stop", "tp", "lotes", "ref_ts", "ref_cierre", "estrategia")}
+    pub["modo_entrada"] = modo_entrada(o.get("estrategia"), temporalidad or o.get("temporalidad"))
+    return pub
 
 
 def ordenar_cierre(repo, licencia_id: int, simbolo: str, temporalidad: str, motivo: str,
@@ -254,7 +267,7 @@ def pulso(repo, licencia_id: int, cuenta: int, simbolo: str, temporalidad: str, 
 
     if orden["estado"] == "entregada":   # ya calculada y entregada: se reentrega igual hasta que el robot confirme
         repo.guardar_cuenta(cuenta, pico, c.get("halt"))
-        return {"orden": _publica(orden), "cierre": None, "estado": "reentrega", "motivos": []}
+        return {"orden": _publica(orden, temporalidad), "cierre": None, "estado": "reentrega", "motivos": []}
 
     base = float(est.get("riesgo_pct") or PCT_MAX)
     es_swing_express = orden.get("estrategia") == "swing_express"
@@ -273,7 +286,7 @@ def pulso(repo, licencia_id: int, cuenta: int, simbolo: str, temporalidad: str, 
         repo.marcar(orden["orden_id"], "sin_lotes", motivo)
         return {"orden": None, "cierre": None, "estado": "sin_lotes", "motivos": [motivo]}
     orden = repo.marcar(orden["orden_id"], "entregada", None, lotes, ahora)
-    return {"orden": _publica(orden), "cierre": None, "estado": "entregada", "motivos": []}
+    return {"orden": _publica(orden, temporalidad), "cierre": None, "estado": "entregada", "motivos": []}
 
 
 # --------------------------------------------------------------------------- repos
@@ -1017,6 +1030,10 @@ def demo() -> None:
     assert repoD.robots[(32, "EURUSD", "Swing (S)")]["estrategia"] == "swing_express"
     assert estrategia_por_defecto("Diario", "swing_express") == "swing_express"   # lo explicito siempre manda
     assert estrategia_por_defecto("Intraday 1H", None) is None
+    assert modo_entrada("estructural", "Intraday D") == "mercado" and modo_entrada(None, "Intraday D") == "mercado"
+    assert modo_entrada("estructural", "Swing (M)") == "limite" and modo_entrada("swing_express", "Intraday D") == "limite"
+    assert modo_entrada("vela_medianoche", "Intraday D") == "limite" and modo_entrada("estructural", "Scalping 15m") == "limite"
+    assert _publica({"orden_id": "x", "estrategia": "estructural"}, "Intraday D")["modo_entrada"] == "mercado"
     print("master.despachador.demo() OK")
 
 

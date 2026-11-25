@@ -55,6 +55,13 @@
 //| retira la escalera/trailing que la v1.17 (regla 5, 2 oct) les      |
 //| ponia. Su salida: TP del motor, cierre forzado -3% y el cierre     |
 //| ordenado por el Master. Exclusivo de Swing: el resto no cambia.    |
+//| ENTRADA A MERCADO EN DIARIO (v1.27, 25 nov 2026): si el servidor   |
+//| manda modo_entrada="mercado" (hoy solo Diario) el robot entra al   |
+//| precio actual con el mismo stop y TP del setup, en vez de una orden|
+//| limite que casi nunca se llenaba. Los lotes se reducen para que el |
+//| riesgo en $ sea el planeado aunque el precio ya se alejara de la   |
+//| entrada del setup; si el stop o el TP ya quedaron del lado         |
+//| equivocado, la orden se rechaza. Swing (S)/(M) siguen en limite.   |
 //| PULSO RESISTENTE (v1.26, 25 nov 2026): un fallo pasajero del       |
 //| servidor (502/503/404/1003 de Cloudflare) se reintenta una vez a   |
 //| los 3 s en vez de esperar un minuto, y el aviso trae un trozo de   |
@@ -96,7 +103,7 @@
 //| ordenes pendientes y no opera hasta que el servidor lo reautorice.|
 //+------------------------------------------------------------------+
 #property copyright "MexTradeBot"
-#property version   "1.26"
+#property version   "1.27"
 #property strict
 
 #define MTB_ROBOT_ID "seguidor-smc"   // id del robot en la licencia -- fijo, no editable por el cliente
@@ -427,7 +434,7 @@ void MasterPulso()
 {
    string estado = StringFormat(
       "{\"balance\":%.2f,\"equity\":%.2f,\"pnl_hoy\":%.2f,\"racha\":%d,\"riesgo_abierto_pct\":%.4f,\"posiciones\":%d,\"pendientes\":%d,\"riesgo_pct\":%.4f,"
-      + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f,\"version\":\"1.26\"}",
+      + "\"tick_size\":%.10f,\"tick_value\":%.10f,\"vol_min\":%.4f,\"vol_max\":%.4f,\"vol_step\":%.4f,\"version\":\"1.27\"}",
       CapitalEfectivo(), AccountInfoDouble(ACCOUNT_EQUITY), PnlHoy(), RachaPerdidas(), RiesgoAbiertoPct(), CountPositions(), CountOrdenesPendientes(),
       EsSwingSM() ? InpRiskPercentSwing : InpRiskPercent,
       SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE), SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE),
@@ -503,6 +510,9 @@ void MasterPulso()
    ExtraerCampoStringDesde(cuerpo, "estrategia", pos, estrategia); // opcional -- "" si el servidor no lo manda (version vieja)
    bool es_swing_express = (estrategia == "swing_express");
    bool es_vela_medianoche = (estrategia == "vela_medianoche");
+   string modo_entrada = "";
+   ExtraerCampoStringDesde(cuerpo, "modo_entrada", pos, modo_entrada); // opcional -- "" con un servidor viejo => limite
+   bool es_mercado = (modo_entrada == "mercado") && !es_swing_express && !es_vela_medianoche;
    if(orden_id == g_master_orden_id) return;       // reentrega de una orden que ya procese
    g_master_orden_id = orden_id;
 
@@ -542,6 +552,38 @@ void MasterPulso()
    if(riesgo <= 0)
    {
       MasterAck(orden_id, "rechazada", "geometria invalida");
+      return;
+   }
+   if(es_mercado)
+   {
+      // v1.27: entrada a mercado con el stop y TP del setup; lotes ajustados al riesgo planeado
+      bool largo = (direccion == "long");
+      double px = SymbolInfoDouble(_Symbol, largo ? SYMBOL_ASK : SYMBOL_BID);
+      double riesgo_real = MathAbs(px - stop);
+      if(px <= 0 || (largo ? (stop >= px) : (stop <= px)) || (tp > 0 && (largo ? (tp <= px) : (tp >= px))))
+      {
+         MasterAck(orden_id, "rechazada", "el precio ya paso el stop o el TP del setup");
+         return;
+      }
+      double paso = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+      double vmin = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+      double lotes_m = MathMin(lotes, lotes * riesgo / riesgo_real);
+      if(paso > 0) lotes_m = MathFloor(lotes_m / paso + 1e-9) * paso;
+      if(lotes_m < vmin)
+      {
+         MasterAck(orden_id, "rechazada", "el precio esta demasiado lejos de la entrada: con el stop del setup el lote seria menor al minimo");
+         return;
+      }
+      double tp_m = (tp > 0) ? tp : (largo ? px + InpTakeProfitR * riesgo_real : px - InpTakeProfitR * riesgo_real);
+      double sl_m = EsSwingSM() ? 0.0 : stop;
+      if(ColocarOrdenMercadoConStop(largo ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, lotes_m, sl_m, tp_m))
+      {
+         g_ultima_entrada_operada = entrada_motor;
+         Print("MASTER: orden ", orden_id, " colocada (mercado) -- ", direccion, " ", _Symbol, " ", lotes_m, " lotes (servidor ", lotes, ")");
+         MasterAck(orden_id, "colocada", "");
+      }
+      else
+         MasterAck(orden_id, "rechazada", "el broker rechazo la orden");
       return;
    }
    bool tp_ok = (tp > 0) && ((direccion == "long") ? (tp > entrada) : (tp < entrada));
@@ -914,6 +956,36 @@ bool ColocarOrdenMercado(ENUM_ORDER_TYPE tipo, double lots)
    }
    g_ultimo_ticket = (long)result.order;
    Print("Orden a mercado colocada (Swing Express): ", EnumToString(tipo), " | Precio: ", request.price, " | Lotes: ", lots);
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| ORDEN A MERCADO CON SL/TP (v1.27, Diario)                          |
+//+------------------------------------------------------------------+
+bool ColocarOrdenMercadoConStop(ENUM_ORDER_TYPE tipo, double lots, double sl, double tp)
+{
+   MqlTradeRequest request = {};
+   MqlTradeResult  result  = {};
+
+   request.action        = TRADE_ACTION_DEAL;
+   request.symbol        = _Symbol;
+   request.volume        = lots;
+   request.type          = tipo;
+   request.price         = (tipo == ORDER_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   request.sl            = NormalizeDouble(sl, _Digits);
+   request.tp            = NormalizeDouble(tp, _Digits);
+   request.deviation     = 50;
+   request.magic         = InpMagicNumber;
+   request.comment       = InpComment;
+   request.type_filling  = FillingDelSimbolo(_Symbol);
+
+   if(!OrderSend(request, result))
+   {
+      Print("ERROR al colocar orden a mercado: ", GetLastError());
+      return false;
+   }
+   g_ultimo_ticket = (long)result.order;
+   Print("Orden a mercado colocada: ", EnumToString(tipo), " | Precio: ", request.price, " | SL: ", sl, " | TP: ", tp, " | Lotes: ", lots);
    return true;
 }
 

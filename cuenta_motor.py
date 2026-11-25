@@ -26,6 +26,7 @@ TEMPORALIDADES_VALIDAS = ("Intraday D", "Swing (S)", "Swing (M)")
 SWING = ("Swing (S)", "Swing (M)")
 ESCALERA = ((1.0, 0.0), (1.5, 0.5), (2.0, 1.0))  # (cuando el precio llega a +x R, el SL pasa a +y R); no aplica a Swing
 EXPIRA = 20          # velas
+MERCADO = ("Intraday D",)   # entrada A MERCADO (v1.27 del robot): entra en la apertura de la vela siguiente, con el stop y TP del setup
 COSTO_PCT = 0.015    # supuesto: spread + comision, % del precio por operacion
 ABIERTOS = ("pendiente", "llena")
 
@@ -41,6 +42,12 @@ def resolver_orden(o: dict, velas: list) -> tuple[str, float | None, int | None]
     antes que el TP, y la escalera solo sube despues de cerrar la vela (lo conservador)."""
     largo = o["direccion"] in ("compra", "long")
     e, sl, tp = o["entrada"], o["stop"], o["tp"]
+    if o.get("temporalidad") in MERCADO:
+        if not velas:
+            return "pendiente", None, None
+        e = velas[0][0]   # como el robot: a mercado, ahora; si el precio ya paso el stop o el TP, no entra
+        if not ((sl < e < tp) if largo else (tp < e < sl)):
+            return "expirada", 0.0, None
     riesgo = abs(e - sl)
     swing = o.get("temporalidad") in SWING
     sl_r = None if swing else -1.0   # donde esta el SL, en R respecto a la entrada (None = sin stop)
@@ -236,13 +243,20 @@ def demo() -> None:
     # Swing de venta: espejo
     sv = {"direccion": "venta", "entrada": 100.0, "stop": 110.0, "tp": 70.0, "temporalidad": "Swing (S)"}
     assert resolver_orden(sv, V((101, 95), (160, 99), (99, 69))) == ("gano", 3.0, 0)
-    # Diario: escalera de breakeven. A +1 R el SL pasa a la entrada: si luego vuelve, sale en 0 (empate), no en -1 R
+    # Diario: entra A MERCADO en la apertura de la primera vela (aqui 100); escalera de breakeven.
     di = {**sw, "temporalidad": "Intraday D"}
-    assert resolver_orden(di, V((104, 99), (110, 101), (105, 99.5))) == ("empate", 0.0, 0)
+    VM = lambda *x: [(a, h, l, 1) for a, h, l in x]  # velas (abre, max, min)
+    # a +1 R el SL pasa a la entrada: si luego vuelve, sale en 0 (empate), no en -1 R
+    assert resolver_orden(di, VM((100, 104, 99), (100, 110, 101), (100, 105, 99.5))) == ("empate", 0.0, 0)
     # a +2 R el SL pasa a +1 R: vuelve y sale ganando 1 R
-    assert resolver_orden(di, V((104, 99), (121, 101), (110, 109))) == ("gano", 1.0, 0)
-    # la vela del llenado no cuenta para la escalera (no se sabe en que orden paso): si en esa vela llego a +1 R y cae, pierde -1 R
-    assert resolver_orden(di, V((112, 99), (101, 89))) == ("perdio", -1.0, 0)
+    assert resolver_orden(di, VM((100, 104, 99), (100, 121, 101), (100, 110, 109))) == ("gano", 1.0, 0)
+    # la vela de entrada no cuenta para la escalera (no se sabe en que orden paso): si en esa vela llego a +1 R y cae, pierde -1 R
+    assert resolver_orden(di, VM((100, 112, 99), (100, 101, 89))) == ("perdio", -1.0, 0)
+    # a mercado no espera retroceso: entra en la apertura aunque la entrada del setup (100) no se toque nunca, y llega al TP
+    assert resolver_orden(di, VM((108, 131, 107))) == ("gano", abs(130 - 108) / abs(108 - 90), 0)
+    # si la apertura ya paso el stop o el TP del setup, no entra
+    assert resolver_orden(di, VM((135, 140, 134)))[0] == "expirada" and resolver_orden(di, VM((85, 95, 80)))[0] == "expirada"
+    assert resolver_orden(di, [])[0] == "pendiente"
 
     ahora = datetime(2026, 11, 25, tzinfo=timezone.utc)
     rp = MemRepo()
@@ -253,7 +267,7 @@ def demo() -> None:
     assert registrar(rp, setups, ahora) == 2, rp.f  # el intradia NUNCA entra
     assert registrar(rp, setups, ahora) == 0       # idempotente
     assert {x["simbolo"] for x in rp.f} == {"EURJPY", "CADJPY"} and rp.f[0]["entrada"] == 164.89  # entrada exacta del setup
-    pr = {"EURJPY": V((170, 164), (190, 168)), "CADJPY": V((112, 111))}  # EURJPY llena y llega al tp; CADJPY llena y sigue abierta
+    pr = {"EURJPY": V((170, 164), (190, 168)), "CADJPY": [(112, 113, 111, 112)]}  # EURJPY llena y llega al tp; CADJPY llena y sigue abierta
     assert resolver(rp, lambda s, t, d: pr[s], ahora) == 2
     res = resumen(rp)
     assert res["operaciones_cerradas"] == 1 and res["ganadas"] == 1 and res["r_bruto"] == round(abs(187.94 - 164.89) / abs(164.89 - 150.98), 2)

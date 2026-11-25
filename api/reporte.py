@@ -49,7 +49,7 @@ def setups_vigentes(snapshots: list[dict], precios: dict | None = None, vela_med
     operacion: lo que ocurre de verdad (_leer_operacion): despachador, robots activados y ordenes. None = no se pudo leer: el reporte dice
     "sin dato", nunca "no"."""
     from api.catalogo import AVISO_SIN_VENTAJA, SIN_VENTAJA
-    from master.despachador import MAX_DISTANCIA_PCT_SWING, MAX_DISTANCIA_R, MAX_EDAD_VELAS, MAX_ZONA_VELAS, motivo_descarte, vigentes as vigentes_motor
+    from master.despachador import MAX_DISTANCIA_PCT_SWING, MAX_DISTANCIA_R, MAX_EDAD_VELAS, MAX_ZONA_VELAS, modo_entrada, motivo_descarte, vigentes as vigentes_motor
 
     precios = precios or {}
     vigentes, sin_setup, tendencias = [], 0, {}
@@ -77,6 +77,7 @@ def setups_vigentes(snapshots: list[dict], precios: dict | None = None, vela_med
         vigentes.append({
             "robots_activos": None if rb is None else rb["activos"],  # None = sin dato; 0 = nadie lo opera: el setup NO se convierte en orden
             "robots_vivos": None if rb is None else rb["vivos"],
+            "modo_entrada": modo_entrada(None, s["temporalidad"]),  # "mercado" (Diario) | "limite"
             "aplica": aplica,  # False = intradia: sin ventaja demostrada; el mensaje debe decirlo, no presentarlo como oportunidad
             "aviso": None if aplica else AVISO_SIN_VENTAJA,
             "simbolo": s["simbolo"],
