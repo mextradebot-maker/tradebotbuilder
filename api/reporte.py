@@ -41,10 +41,13 @@ def estrategias_del_dia(snapshots: list[dict], vigentes: list[dict], vela_median
     return sal
 
 
-def setups_vigentes(snapshots: list[dict], precios: dict | None = None, vela_medianoche: list[dict] | None = None) -> dict:
+def setups_vigentes(snapshots: list[dict], precios: dict | None = None, vela_medianoche: list[dict] | None = None,
+                    operacion: dict | None = None) -> dict:
     """snapshots: [{simbolo, temporalidad, respuesta, tendencia_actual, refrescado_en}] → reporte.
     precios: {simbolo: (ref_ts, ref_cierre)} (el de api.setups._precio_ref); sin él no se puede medir la distancia al precio.
-    vela_medianoche: candidatos de motor_smc.vela_medianoche.candidatos() (None = se omite esa estrategia)."""
+    vela_medianoche: candidatos de motor_smc.vela_medianoche.candidatos() (None = se omite esa estrategia).
+    operacion: lo que ocurre de verdad (_leer_operacion): despachador, robots activados y ordenes. None = no se pudo leer: el reporte dice
+    "sin dato", nunca "no"."""
     from api.catalogo import AVISO_SIN_VENTAJA, SIN_VENTAJA
     from master.despachador import MAX_DISTANCIA_PCT_SWING, MAX_DISTANCIA_R, MAX_EDAD_VELAS, MAX_ZONA_VELAS, motivo_descarte, vigentes as vigentes_motor
 
@@ -70,7 +73,10 @@ def setups_vigentes(snapshots: list[dict], precios: dict | None = None, vela_med
         hace = velas - 1 - int(st.get("indice_conocido", st["indice_confirmacion"]))
         sin_precio += ref_cierre is None
         aplica = s["temporalidad"] not in SIN_VENTAJA
+        rb = ((operacion or {}).get("robots") or {}).get((s["simbolo"], s["temporalidad"]), {"activos": 0, "vivos": 0}) if operacion else None
         vigentes.append({
+            "robots_activos": None if rb is None else rb["activos"],  # None = sin dato; 0 = nadie lo opera: el setup NO se convierte en orden
+            "robots_vivos": None if rb is None else rb["vivos"],
             "aplica": aplica,  # False = intradia: sin ventaja demostrada; el mensaje debe decirlo, no presentarlo como oportunidad
             "aviso": None if aplica else AVISO_SIN_VENTAJA,
             "simbolo": s["simbolo"],
@@ -99,6 +105,11 @@ def setups_vigentes(snapshots: list[dict], precios: dict | None = None, vela_med
         "vigentes_sin_precio_actual": sin_precio,  # sin precio de referencia no se pudo medir la distancia
         "snapshot_mas_viejo": min(refrescos) if refrescos else None,
         "vigentes": sorted(vigentes, key=lambda x: (x["velas_desde_confirmacion"], x["simbolo"])),
+        "operacion": None if operacion is None else {
+            "despachador_encendido": operacion["master_activo"],
+            "robots_activos": operacion["robots_total"],
+            "ordenes_24h": operacion["ordenes_24h"],
+        },
         "estrategias": estrategias_del_dia(snapshots, sorted(vigentes, key=lambda x: (x["velas_desde_confirmacion"], x["simbolo"])), vela_medianoche),
         "conteo_por_temporalidad": _conteos(tendencias),  # Claude redacta, no cuenta (contaba mal)
         "tendencias": tendencias,
@@ -112,6 +123,31 @@ def _conteos(tendencias: dict) -> dict:
             c.setdefault(temp, {"compra": 0, "venta": 0, "sin_definir": 0})
             c[temp][d if d in ("compra", "venta") else "sin_definir"] += 1
     return c
+
+
+def _leer_operacion() -> dict | None:
+    """Lo que el despachador hace de verdad: encendido o no, robots activados (y vivos) por activo y temporalidad, ordenes de 24 h.
+    Mismo criterio que master.despachador.RepoPg.robots_activados. None si no se puede leer (el reporte lo dice como "sin dato")."""
+    try:
+        from persistencia.conexion import get_conn
+
+        with get_conn() as conn:
+            rob = conn.execute(
+                """SELECT m.simbolo, m.temporalidad, count(*), count(*) FILTER (WHERE m.visto_en > now() - interval '60 seconds')
+                   FROM master_robots m JOIN licencias l ON l.id = m.licencia_id
+                   WHERE m.activo AND l.revocada_en IS NULL AND (l.expira_en IS NULL OR l.expira_en > now())
+                     AND m.estrategia NOT IN ('swing_express', 'vela_medianoche')
+                   GROUP BY m.simbolo, m.temporalidad""").fetchall()
+            ords = conn.execute(
+                """SELECT simbolo, temporalidad, direccion, estado FROM master_ordenes
+                   WHERE creada_en > now() - interval '24 hours' AND estrategia NOT IN ('swing_express', 'vela_medianoche')
+                   ORDER BY creada_en DESC LIMIT 30""").fetchall()
+    except Exception:
+        return None
+    return {"master_activo": os.environ.get("MASTER_ACTIVO") == "1",
+            "robots": {(r[0], r[1]): {"activos": int(r[2]), "vivos": int(r[3])} for r in rob},
+            "robots_total": sum(int(r[2]) for r in rob),
+            "ordenes_24h": [{"simbolo": o[0], "temporalidad": o[1], "direccion": o[2], "estado": o[3]} for o in ords]}
 
 
 def _leer_snapshots() -> list[dict]:
@@ -145,7 +181,16 @@ def procesar_reporte(headers: dict) -> tuple[int, dict]:
             vm = candidatos()
         except Exception:
             vm = None
-        return 200, setups_vigentes(snaps, {sim: _precio_ref(sim) for sim in {s["simbolo"] for s in snaps}}, vm)
+        rep = setups_vigentes(snaps, {sim: _precio_ref(sim) for sim in {s["simbolo"] for s in snaps}}, vm, _leer_operacion())
+        rep["cuenta_motor"] = None  # None = la cuenta del motor no esta encendida (MOTOR_CUENTA=1)
+        if os.environ.get("MOTOR_CUENTA") == "1":
+            try:  # el motor "opera" exactamente lo que este reporte presenta como vigente (cuenta_motor.py)
+                import cuenta_motor
+
+                rep["cuenta_motor"] = cuenta_motor.correr(rep["estrategias"]["estructural"]["setups"])
+            except Exception as e:
+                rep["cuenta_motor"] = {"error": type(e).__name__}
+        return 200, rep
     except Exception as e:  # BD caída
         return 503, {"error": f"snapshots no disponibles: {type(e).__name__}"}
 
@@ -196,6 +241,18 @@ def demo() -> None:
     assert [a["simbolo"] for a in es["swing_express"]["activos"]] == ["BTCUSD", "XAUUSD"] and es["swing_express"]["activos"][1]["temporalidades"] == ["Swing (M)", "Swing (S)"], es
     assert es["vela_medianoche"]["n"] == 1 and es["vela_medianoche"]["candidatos"][0]["nivel_pdh"] == 2100.5, es
     assert "vela_medianoche" not in setups_vigentes(snaps_e, None, None)["estrategias"]  # sin dato: se omite, no se inventa
+    # reporte honesto: cada setup dice si algun robot lo opera; sin dato no se afirma nada
+    op = {"master_activo": False, "robots": {("EURJPY", "Swing (M)"): {"activos": 1, "vivos": 0}}, "robots_total": 1,
+          "ordenes_24h": [{"simbolo": "XAUUSD", "temporalidad": "Swing (S)", "direccion": "compra", "estado": "pendiente"}]}
+    sn = [snap("EURJPY", "Swing (M)", 400, [{**st(395, "long", 164.0, 150.0), "indice_conocido": 396, "tp": 190.0}]),
+          snap("CADJPY", "Intraday D", 400, [{**st(395, "short", 111.9, 113.4), "indice_conocido": 396, "tp": 110.0}], "venta")]
+    pp = {"EURJPY": (1, 165.0), "CADJPY": (1, 111.6)}
+    ro = setups_vigentes(sn, pp, None, op)
+    rb = {v["simbolo"]: (v["robots_activos"], v["robots_vivos"]) for v in ro["vigentes"]}
+    assert rb == {"EURJPY": (1, 0), "CADJPY": (0, 0)}, rb  # CADJPY: ningun robot -> no se convierte en orden
+    assert ro["operacion"]["despachador_encendido"] is False and ro["operacion"]["robots_activos"] == 1 and len(ro["operacion"]["ordenes_24h"]) == 1
+    rs = setups_vigentes(sn, pp, None, None)
+    assert rs["operacion"] is None and all(v["robots_activos"] is None for v in rs["vigentes"])  # sin dato: None, no 0
     # MISMA regla que el robot: una zona vieja de oro (entrada 1905, precio 3883) NO es vigente aunque tenga < 20 velas
     oro_m = {**st(52, "long", 1905.4, 1750.9), "indice_conocido": 79}
     rep = setups_vigentes([snap("XAUUSD", "Swing (M)", 83, [oro_m]), snap("EURGBP", "Scalping 15m", 400, [{**st(395, "long", 0.8700, 0.8690), "indice_conocido": 396}])],
