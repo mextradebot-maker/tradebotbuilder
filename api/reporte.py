@@ -53,7 +53,7 @@ def setups_vigentes(snapshots: list[dict], precios: dict | None = None, vela_med
 
     precios = precios or {}
     vigentes, sin_setup, tendencias = [], 0, {}
-    descartados = {"resuelto": 0, "edad": 0, "zona_vieja": 0, "distancia": 0}
+    descartados = {"resuelto": 0, "solo_compras": 0, "edad": 0, "zona_vieja": 0, "distancia": 0}
     sin_precio = 0
     for s in snapshots:
         r = s.get("respuesta") or {}
@@ -249,6 +249,9 @@ def demo() -> None:
     assert [a["simbolo"] for a in es["swing_express"]["activos"]] == ["BTCUSD", "XAUUSD"] and es["swing_express"]["activos"][1]["temporalidades"] == ["Swing (M)", "Swing (S)"], es
     assert es["vela_medianoche"]["n"] == 1 and es["vela_medianoche"]["candidatos"][0]["nivel_pdh"] == 2100.5, es
     assert "vela_medianoche" not in setups_vigentes(snaps_e, None, None)["estrategias"]  # sin dato: se omite, no se inventa
+    # Swing solo compra: una venta de Swing no se presenta (el robot nunca la tomaria)
+    sw = setups_vigentes([snap("USDCHF", "Swing (M)", 400, [{**st(395, "short", 0.89, 0.93), "indice_conocido": 396, "tp": 0.76}], "venta")], {"USDCHF": (1, 0.8361)})
+    assert sw["con_setup_vigente"] == 0 and sw["descartados"]["solo_compras"] == 1, sw
     # reporte honesto: cada setup dice si algun robot lo opera; sin dato no se afirma nada
     op = {"master_activo": False, "robots": {("EURJPY", "Swing (M)"): {"activos": 1, "vivos": 0}}, "robots_total": 1,
           "ordenes_24h": [{"simbolo": "XAUUSD", "temporalidad": "Swing (S)", "direccion": "compra", "estado": "pendiente"}],

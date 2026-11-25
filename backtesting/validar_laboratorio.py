@@ -113,8 +113,8 @@ def filas(datos: dict) -> list[dict]:
                 continue
             k = k0 - off
             lado, e, sl, tp = s["direccion"], s["entrada"], s["stop"], s["tp"]
-            if abs(e - sl) == 0 or k >= len(v) - 1:
-                continue
+            if abs(e - sl) == 0 or k >= len(v) - 1 or (temp in ("Swing (S)", "Swing (M)") and lado == "short"):
+                continue  # Swing solo compra
             medio = (v[k][3] + e) / 2
             sirve = sl < medio < tp if lado == "long" else tp < medio < sl
             out.append({"sim": sim, "temp": temp, "motor": s.get("resultado"), "tipo": s.get("tipo"), "lado": lado,
@@ -210,9 +210,20 @@ def operaciones(datos: dict, variante: str) -> list[dict]:
                 continue
             k = k0 - off
             lado, e, sl, tp = s["direccion"], s["entrada"], s["stop"], s["tp"]
-            if abs(e - sl) == 0 or k >= len(v) - 1:
-                continue
-            if variante == "limite":
+            if abs(e - sl) == 0 or k >= len(v) - 1 or (temp in ("Swing (S)", "Swing (M)") and lado == "short"):
+                continue  # Swing solo compra
+            abierta = False
+            if variante == "robot":
+                from cuenta_motor import resolver_orden
+
+                est, R, _ = resolver_orden({"direccion": lado, "entrada": e, "stop": sl, "tp": tp, "temporalidad": temp},
+                                           [tuple(x) for x in v[k + 1:]])
+                if est == "llena":  # sigue abierta: a precio de mercado con la ultima vela
+                    abierta, est = True, "gano" if (v[-1][3] - e) * (1 if lado == "long" else -1) > 0 else "perdio"
+                    R = (v[-1][3] - e) * (1 if lado == "long" else -1) / abs(e - sl)
+                elif est == "empate":
+                    est = "perdio"  # R = 0: cuenta como operacion cerrada sin ganancia
+            elif variante == "limite":
                 est, R = sim_limite(v, k, lado, e, sl, tp)
             elif variante == "mercado":
                 est, R = sim_mercado(v, k, lado, sl, tp)
@@ -221,7 +232,8 @@ def operaciones(datos: dict, variante: str) -> list[dict]:
                 est, R = sim_limite(v, k, lado, medio, sl, tp) if (sl < medio < tp if lado == "long" else tp < medio < sl) else ("invalido", 0.0)
             if est in ("gano", "perdio"):
                 riesgo_pct = abs(e - sl) / e * 100
-                ops.append({"temp": temp, "sim": sim, "dias_atras": DIAS[temp] * (n - 1 - k0) / n, "R": R - COSTO_PCT / riesgo_pct})
+                ops.append({"temp": temp, "sim": sim, "dias_atras": DIAS[temp] * (n - 1 - k0) / n, "R": R - COSTO_PCT / riesgo_pct,
+                            "abierta": abierta})
     return ops
 
 
@@ -239,7 +251,8 @@ def metricas(ops: list[dict], anios: dict) -> dict:
         peor = max(peor, racha)
     por_anio = sum(sum(o["R"] for o in ops if o["temp"] == t) / a for t, a in anios.items())
     ops_anio = sum(sum(1 for o in ops if o["temp"] == t) / a for t, a in anios.items())
-    return {"n": len(ops), "win": 100 * sum(o["R"] > 0 for o in ops) / len(ops), "R_op": sum(o["R"] for o in ops) / len(ops),
+    return {"n": len(ops), "abiertas": sum(1 for o in ops if o.get("abierta")),
+            "win": 100 * sum(o["R"] > 0 for o in ops) / len(ops), "R_op": sum(o["R"] for o in ops) / len(ops),
             "R_anio": por_anio, "ops_anio": ops_anio, "dd": dd, "racha": peor}
 
 
@@ -248,6 +261,53 @@ def linea(nombre: str, m: dict) -> str:
         return f"  {nombre:34} sin operaciones"
     return (f"  {nombre:34} {m['ops_anio']:5.0f} ops/ano  win {m['win']:3.0f}%  R/op {m['R_op']:+.3f}  "
             f"R/ANO {m['R_anio']:+6.1f}  caida maxima {m['dd']:4.1f}R  peor racha {m['racha']:.0f} perdidas")
+
+
+def swing_exposicion(datos: dict) -> None:
+    """Swing no lleva stop ni cierre forzado: lo que importa es CUANTO drawdown flotante aguanta antes de llegar al TP (o al fin de los
+    datos). Peor excursion adversa en R del setup y en % del precio de entrada, por posicion llenada."""
+    filas_ = []
+    for clave, d in datos.items():
+        sim, temp = clave.split("|")
+        if temp not in ("Swing (S)", "Swing (M)") or "velas" not in d:
+            continue
+        v, off = d["velas"], d["n"] - len(d["velas"])
+        for s in d["setups"]:
+            k0 = s.get("indice_conocido")
+            if k0 is None or k0 - off < 0 or not s.get("tp") or s["entrada"] == s["stop"]:
+                continue
+            k, e, sl, tp, largo = k0 - off, s["entrada"], s["stop"], s["tp"], s["direccion"] == "long"
+            if k >= len(v) - 1 or not largo:  # Swing solo compra
+                continue
+            lleno, peor, fin = False, 0.0, "abierta"
+            for j in range(k + 1, len(v)):
+                _, h, l, _ = v[j]
+                if not lleno:
+                    if j > k + 20:
+                        break
+                    if (l <= e) if largo else (h >= e):
+                        lleno = True
+                    elif (h >= tp) if largo else (l <= tp):
+                        break
+                    else:
+                        continue
+                peor = max(peor, (e - l) if largo else (h - e))
+                if (h >= tp) if largo else (l <= tp):
+                    fin = "tp"
+                    break
+            if lleno:
+                filas_.append({"sim": sim, "temp": temp, "fin": fin, "mae_r": peor / abs(e - sl), "mae_pct": peor / e * 100,
+                               "ultimo_r": ((v[-1][3] - e) if largo else (e - v[-1][3])) / abs(e - sl)})
+    print(f"  posiciones de Swing llenadas: {len(filas_)}  (llegaron al TP: {sum(f['fin'] == 'tp' for f in filas_)}, siguen abiertas: {sum(f['fin'] == 'abierta' for f in filas_)})")
+    for etiqueta, grupo in (("llegaron al TP", [f for f in filas_ if f["fin"] == "tp"]), ("siguen abiertas", [f for f in filas_ if f["fin"] == "abierta"])):
+        if grupo:
+            mr = sorted(f["mae_r"] for f in grupo)
+            mp = sorted(f["mae_pct"] for f in grupo)
+            q = lambda xs, p_: xs[int(p_ * (len(xs) - 1))]
+            print(f"  {etiqueta:16} n={len(grupo):2}  peor drawdown flotante: mediana {q(mr, .5):4.1f} R / {q(mp, .5):4.1f} %   p90 {q(mr, .9):4.1f} R / {q(mp, .9):4.1f} %   max {mr[-1]:4.1f} R / {mp[-1]:4.1f} %")
+    ab = [f for f in filas_ if f["fin"] == "abierta"]
+    if ab:
+        print("  las que siguen abiertas, hoy: " + ", ".join(f"{f['sim']} {f['temp'][-2]} {f['ultimo_r']:+.1f}R" for f in ab))
 
 
 def compara_enfoque(datos: dict) -> None:
@@ -274,6 +334,15 @@ def compara_enfoque(datos: dict) -> None:
         print(linea("  mitad reciente, TODAS", metricas(rec, mitad)))
         print(linea("  mitad reciente, solo lo elegido", metricas([o for o in rec if o["temp"] in elegidas], {t: mitad[t] for t in elegidas})))
         print(linea("  mitad reciente, solo Diario+Swing", metricas([o for o in rec if o["temp"] in FOCO], {t: mitad[t] for t in FOCO})))
+    print("\n== COMO OPERAN LOS ROBOTS (Swing sin stop ni cierre forzado, solo TP; Diario con escalera de breakeven; abiertas a precio de mercado)")
+    ops = operaciones(datos, "robot")
+    print(linea("TODAS las temporalidades", metricas(ops, anios)))
+    print(linea("Diario + Swing S/M", metricas([o for o in ops if o["temp"] in FOCO], {t: anios[t] for t in FOCO})))
+    for t in FOCO:
+        m = metricas([o for o in ops if o["temp"] == t], {t: anios[t]})
+        print(linea(f"  {t}", m) + (f"  ({m['abiertas']} abiertas)" if m["n"] else ""))
+    print("\n== SWING: DRAWDOWN QUE AGUANTA (sin stop ni cierre forzado)")
+    swing_exposicion(datos)
     print("\n== POR TEMPORALIDAD (entrada limite, neto): ops/ano y R/ano")
     ops = operaciones(datos, "limite")
     for t in DIAS:
@@ -286,7 +355,7 @@ def resumen_publico(datos: dict, fecha: str) -> dict:
     con la entrada actual (limite) y a mercado. Se guarda en public/validacion-smc.json (python -m backtesting.validar_laboratorio publica)."""
     x = filas(datos)
     por = {}
-    for var in ("limite", "mercado"):
+    for var in ("robot", "mercado"):
         for o in operaciones(datos, var):
             por.setdefault((o["temp"], var), []).append(o["R"])
     salida = []
@@ -295,12 +364,13 @@ def resumen_publico(datos: dict, fecha: str) -> dict:
             r = por.get((t, var), [])
             return {"ops": len(r), "acierto": round(sum(1 for v in r if v > 0) / len(r), 3) if r else None,
                     "r_op": round(sum(r) / len(r), 3) if r else None}
-        lim, mer = b("limite"), b("mercado")
+        lim, mer = b("robot"), b("mercado")
         valida = t in FOCO
-        salida.append({"temporalidad": t, "setups": sum(1 for r in x if r["temp"] == t), "limite": lim, "mercado": mer, "valida": valida,
+        salida.append({"temporalidad": t, "setups": sum(1 for r in x if r["temp"] == t), "robot": lim, "mercado": mer, "valida": valida,
                        "muestra_limitada": valida and min(lim["ops"], mer["ops"]) < 30})
     return {"fecha": fecha, "estrategia": "SMC / Estructural (motor v2)", "fuente": "velas XM, 34 activos, setups validos del motor",
-            "costo_pct": COSTO_PCT, "filas": salida}
+            "costo_pct": COSTO_PCT, "salida": "como opera el robot: Swing sin stop (solo TP), Diario con escalera de breakeven; "
+            "posiciones abiertas a precio de mercado", "filas": salida}
 
 
 if __name__ == "__main__":

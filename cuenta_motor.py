@@ -6,7 +6,15 @@ Reglas (las de la estrategia, no se tocan):
   - La orden vive EXPIRA velas de su temporalidad (igual que el robot, InpVelasExpiracion): si el precio no toca la entrada, expira.
   - Si el precio llega al TP antes de tocar la entrada, se cancela (la oportunidad paso). Si toca la entrada y luego el stop y el tp en la
     misma vela, cuenta el stop primero (lo conservador).
-Resultado en R (1 R = distancia entrada-stop); se guarda bruto y el resumen descuenta un costo supuesto por operacion.
+Resultado en R (1 R = distancia entrada-stop del setup); se guarda bruto y el resumen descuenta un costo supuesto por operacion.
+
+La SALIDA es la del robot (MexTradeBot_SeguidorSMC.mq5), no un stop fijo:
+  - Swing (S)/(M): SIN stop loss y SIN cierre forzado (decision de Ricardo, 25 nov 2026: el -3 % del capital es muy corto para swing;
+    se espera que aguante el drawdown). Solo sale por el TP del motor. La orden queda "llena" mientras el precio no lo alcance.
+    OJO: el EA actual todavia trae InpPerdidaMaxPct = 3 para todas las temporalidades; cambiarlo en el robot esta pendiente.
+  - Diario (y el resto): stop del motor + escalera de breakeven: a +1 R el SL pasa a la entrada, a +1.5 R a +0.5 R, a +2 R a +1 R.
+    (El trailing por estructura desde +2 R no se simula: solo mejoraria salidas ya protegidas.)
+La cuenta de referencia es Ultra Low Micro (lotes minimos chicos): aqui todo va en R, sin lotes.
 
 Se registra y resuelve una vez por reporte (cada vez que se pide /api/v1/reporte-setups con MOTOR_CUENTA=1 o ?cuenta_motor=1): para velas diarias,
 semanales y mensuales una vez al dia basta. Es idempotente: repetir no duplica ordenes (clave unica por setup).
@@ -15,6 +23,8 @@ semanales y mensuales una vez al dia basta. Es idempotente: repetir no duplica o
 from datetime import datetime, timedelta, timezone
 
 TEMPORALIDADES_VALIDAS = ("Intraday D", "Swing (S)", "Swing (M)")
+SWING = ("Swing (S)", "Swing (M)")
+ESCALERA = ((1.0, 0.0), (1.5, 0.5), (2.0, 1.0))  # (cuando el precio llega a +x R, el SL pasa a +y R); no aplica a Swing
 EXPIRA = 20          # velas
 COSTO_PCT = 0.015    # supuesto: spread + comision, % del precio por operacion
 ABIERTOS = ("pendiente", "llena")
@@ -26,10 +36,16 @@ def clave(s: dict) -> str:
 
 def resolver_orden(o: dict, velas: list) -> tuple[str, float | None, int | None]:
     """Sigue UNA orden con las velas cerradas posteriores a su creacion: velas = [(abre, max, min, cierra)].
-    Devuelve (estado, r, indice_de_llenado). Estados: pendiente | llena | gano | perdio | cancelada_tp | expirada."""
+    Devuelve (estado, r, indice_de_llenado). Estados: pendiente | llena | gano | perdio | empate | cancelada_tp | expirada.
+    Salida como el robot (ver arriba): Swing sin stop (solo TP); el resto con escalera de breakeven. En una misma vela el stop va
+    antes que el TP, y la escalera solo sube despues de cerrar la vela (lo conservador)."""
     largo = o["direccion"] in ("compra", "long")
     e, sl, tp = o["entrada"], o["stop"], o["tp"]
     riesgo = abs(e - sl)
+    swing = o.get("temporalidad") in SWING
+    sl_r = None if swing else -1.0   # donde esta el SL, en R respecto a la entrada (None = sin stop)
+    mejor = 0.0                      # mejor ganancia flotante vista, en R
+    sgn = 1 if largo else -1
     estado, llena_en = "pendiente", None
     for j, (_, h, l, _) in enumerate(velas):
         if estado == "pendiente":
@@ -41,10 +57,17 @@ def resolver_orden(o: dict, velas: list) -> tuple[str, float | None, int | None]
                 return "cancelada_tp", 0.0, None
             else:
                 continue
-        if (l <= sl) if largo else (h >= sl):
-            return "perdio", -1.0, llena_en
+        if sl_r is not None:
+            nivel_sl = e + sgn * sl_r * riesgo
+            if (l <= nivel_sl) if largo else (h >= nivel_sl):
+                return ("gano" if sl_r > 0 else "perdio" if sl_r < 0 else "empate"), sl_r, llena_en
         if (h >= tp) if largo else (l <= tp):
             return "gano", abs(tp - e) / riesgo, llena_en
+        if sl_r is not None and j > (llena_en or 0):  # desde la vela siguiente a la del llenado: escalera de breakeven
+            mejor = max(mejor, ((h - e) if largo else (e - l)) / riesgo)
+            for a, b in ESCALERA:
+                if mejor >= a and sl_r < b:
+                    sl_r = b
     if estado == "pendiente" and len(velas) >= EXPIRA:
         return "expirada", 0.0, None
     return estado, None, llena_en
@@ -58,6 +81,8 @@ def registrar(repo, setups: list[dict], ahora: datetime) -> int:
             continue
         if s.get("direccion") not in ("compra", "venta") or not s.get("entrada") or not s.get("stop") or not s.get("tp"):
             continue
+        if s["temporalidad"] in SWING and s["direccion"] == "venta":
+            continue  # Swing solo compra
         e, sl = float(s["entrada"]), float(s["stop"])
         if e == sl:
             continue
@@ -78,21 +103,22 @@ def resolver(repo, velas_desde, ahora: datetime) -> int:
             continue  # sin velas hoy: se reintenta en el siguiente reporte
         estado, r, llena = resolver_orden(o, velas)
         if estado != o["estado"]:
-            repo.actualizar(o["id"], estado, r, ahora if estado in ("gano", "perdio", "cancelada_tp", "expirada") else None,
-                            ahora if estado in ("llena", "gano", "perdio") and o["estado"] == "pendiente" else None)
+            repo.actualizar(o["id"], estado, r, ahora if estado in ("gano", "perdio", "empate", "cancelada_tp", "expirada") else None,
+                            ahora if estado in ("llena", "gano", "perdio", "empate") and o["estado"] == "pendiente" else None)
             cambios += 1
     return cambios
 
 
 def resumen(repo) -> dict:
     filas = repo.todas()
-    cerradas = [f for f in filas if f["estado"] in ("gano", "perdio")]
+    cerradas = [f for f in filas if f["estado"] in ("gano", "perdio", "empate")]
     neto = [f["r"] - COSTO_PCT / f["riesgo_pct"] for f in cerradas if f["r"] is not None]
     por = {}
     for f in filas:
         por[f["estado"]] = por.get(f["estado"], 0) + 1
     return {"ordenes": len(filas), "por_estado": por, "operaciones_cerradas": len(cerradas),
             "ganadas": sum(1 for f in cerradas if f["estado"] == "gano"), "perdidas": sum(1 for f in cerradas if f["estado"] == "perdio"),
+            "empates": sum(1 for f in cerradas if f["estado"] == "empate"),
             "r_bruto": round(sum(f["r"] for f in cerradas if f["r"] is not None), 2), "r_neto": round(sum(neto), 2),
             "costo_supuesto_pct": COSTO_PCT,
             "abiertas": [{"simbolo": f["simbolo"], "temporalidad": f["temporalidad"], "direccion": f["direccion"], "estado": f["estado"]}
@@ -201,11 +227,29 @@ def demo() -> None:
     v = {"direccion": "venta", "entrada": 100.0, "stop": 110.0, "tp": 70.0}
     assert resolver_orden(v, V((101, 95), (105, 69))) == ("gano", 3.0, 0)
 
+    # --- salida como el robot ---
+    sw = {"direccion": "compra", "entrada": 100.0, "stop": 90.0, "tp": 130.0, "temporalidad": "Swing (M)"}
+    # Swing: sin stop y sin cierre forzado. Aguanta caidas de -5 R y sigue abierta
+    assert resolver_orden(sw, V((104, 99), (101, 50), (110, 40)))[0] == "llena"
+    # ... y llega a su TP aunque haya pasado por -5 R (un stop de 1 R lo habria sacado)
+    assert resolver_orden(sw, V((104, 99), (101, 50), (131, 90))) == ("gano", 3.0, 0)
+    # Swing de venta: espejo
+    sv = {"direccion": "venta", "entrada": 100.0, "stop": 110.0, "tp": 70.0, "temporalidad": "Swing (S)"}
+    assert resolver_orden(sv, V((101, 95), (160, 99), (99, 69))) == ("gano", 3.0, 0)
+    # Diario: escalera de breakeven. A +1 R el SL pasa a la entrada: si luego vuelve, sale en 0 (empate), no en -1 R
+    di = {**sw, "temporalidad": "Intraday D"}
+    assert resolver_orden(di, V((104, 99), (110, 101), (105, 99.5))) == ("empate", 0.0, 0)
+    # a +2 R el SL pasa a +1 R: vuelve y sale ganando 1 R
+    assert resolver_orden(di, V((104, 99), (121, 101), (110, 109))) == ("gano", 1.0, 0)
+    # la vela del llenado no cuenta para la escalera (no se sabe en que orden paso): si en esa vela llego a +1 R y cae, pierde -1 R
+    assert resolver_orden(di, V((112, 99), (101, 89))) == ("perdio", -1.0, 0)
+
     ahora = datetime(2026, 11, 25, tzinfo=timezone.utc)
     rp = MemRepo()
     setups = [{"simbolo": "EURJPY", "temporalidad": "Swing (M)", "direccion": "compra", "entrada": 164.89, "stop": 150.98, "tp": 187.94, "aplica": True},
               {"simbolo": "EURGBP", "temporalidad": "Scalping 15m", "direccion": "venta", "entrada": 0.8371, "stop": 0.8378, "tp": 0.8351, "aplica": False},
               {"simbolo": "CADJPY", "temporalidad": "Intraday D", "direccion": "venta", "entrada": 111.97, "stop": 113.41, "tp": 110.15}]
+    assert registrar(MemRepo(), [{"simbolo": "USDCHF", "temporalidad": "Swing (M)", "direccion": "venta", "entrada": 0.89, "stop": 0.93, "tp": 0.76}], ahora) == 0
     assert registrar(rp, setups, ahora) == 2, rp.f  # el intradia NUNCA entra
     assert registrar(rp, setups, ahora) == 0       # idempotente
     assert {x["simbolo"] for x in rp.f} == {"EURJPY", "CADJPY"} and rp.f[0]["entrada"] == 164.89  # entrada exacta del setup
