@@ -10,7 +10,7 @@ SWING = {"Swing (S)", "Swing (M)"}  # swing solo opera compras
 # Validacion nov 2026 con velas XM (1,089 setups, backtesting/validar_laboratorio.py): el intradia pierde con cualquier tipo de entrada
 # (R neto -0.1 a -0.3 por operacion); solo Diario y Swing muestran ventaja. 30m no esta en el catalogo: se trata igual que el resto del intradia.
 SIN_VENTAJA = {"Scalping 15m", "Scalping 30m", "Intraday 1H", "Intraday 4H"}
-AVISO_SIN_VENTAJA = "Aviso: en las pruebas con velas de XM, esta estrategia no mostro ventaja en 15 min, 30 min, 1 h ni 4 h (resultado negativo despues de costos). Lo medido solo respalda Diario y Swing. Resultados pasados no garantizan resultados futuros."
+AVISO_SIN_VENTAJA = "Estrategia no valida para esta temporalidad (SMC / Estructural): en las pruebas con velas de XM no mostro ventaja en 15 min, 30 min, 1 h ni 4 h (resultado negativo despues de costos). Lo medido solo respalda Diario y Swing. Resultados pasados no garantizan resultados futuros."
 
 # Nombre del simbolo en el MT5 de XM. SOLO valores verificados; el resto None hasta exportar
 # la lista de simbolos del MT5 del VPS (pendiente de Ricardo).
@@ -74,7 +74,7 @@ def fila(simbolo, temporalidad, tendencia, refrescado_en, bt_snapshot, bt_largo,
         desc = "Sin setups suficientes en el historico para medir este activo en esta temporalidad."
     aplica = temporalidad not in SIN_VENTAJA
     if not aplica:  # nunca "RECOMENDABLE": una cifra buena en una combinacion suelta es azar entre 204 combinaciones
-        viable, veredicto = False, "SIN VENTAJA"
+        viable, veredicto = False, "NO VALIDA"
     return {
         "aplica": aplica, "aviso": None if aplica else AVISO_SIN_VENTAJA,
         "simbolo": simbolo, "simbolo_xm": SIMBOLO_XM.get(simbolo), "temporalidad": temporalidad,
@@ -138,7 +138,7 @@ def demo() -> None:
     assert f["EURUSD"]["veredicto"] == "INSUFICIENTE" and not f["EURUSD"]["viable"]
     assert f["XAUUSD"]["viable"] and f["XAUUSD"]["n_setups"] == 40 and f["XAUUSD"]["actualizado_en"] == "t2" and f["XAUUSD"]["backtest_en"] == "t3"
     assert f["XAUUSD"]["rank"] == 1 and filas[0]["simbolo"] == "XAUUSD"
-    assert f["EURGBP"]["viable"] is False and f["EURGBP"]["veredicto"] == "SIN VENTAJA" and f["EURGBP"]["aplica"] is False  # +0.78R en 15m: no se recomienda
+    assert f["EURGBP"]["viable"] is False and f["EURGBP"]["veredicto"] == "NO VALIDA" and f["EURGBP"]["aplica"] is False  # +0.78R en 15m: no se recomienda
     assert f["EURGBP"]["aviso"] == AVISO_SIN_VENTAJA and f["XAUUSD"]["aplica"] is True and f["XAUUSD"]["aviso"] is None
     assert "rank" not in f["EURGBP"] and f["EURGBP"]["n_setups"] == 41  # las cifras se muestran, solo no se recomienda
     assert f["GBPUSD"]["direccion"] == "compra" and not f["GBPUSD"]["viable"]  # swing bajista: no se recomienda

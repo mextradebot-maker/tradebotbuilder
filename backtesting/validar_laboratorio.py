@@ -281,6 +281,28 @@ def compara_enfoque(datos: dict) -> None:
         print(linea(f"  {t}", m))
 
 
+def resumen_publico(datos: dict, fecha: str) -> dict:
+    """Lo que muestra el panel en 'Mis validaciones': por temporalidad, setups analizados y resultado simulado (neto de costo)
+    con la entrada actual (limite) y a mercado. Se guarda en public/validacion-smc.json (python -m backtesting.validar_laboratorio publica)."""
+    x = filas(datos)
+    por = {}
+    for var in ("limite", "mercado"):
+        for o in operaciones(datos, var):
+            por.setdefault((o["temp"], var), []).append(o["R"])
+    salida = []
+    for t in TEMPS:
+        def b(var):
+            r = por.get((t, var), [])
+            return {"ops": len(r), "acierto": round(sum(1 for v in r if v > 0) / len(r), 3) if r else None,
+                    "r_op": round(sum(r) / len(r), 3) if r else None}
+        lim, mer = b("limite"), b("mercado")
+        valida = t in FOCO
+        salida.append({"temporalidad": t, "setups": sum(1 for r in x if r["temp"] == t), "limite": lim, "mercado": mer, "valida": valida,
+                       "muestra_limitada": valida and min(lim["ops"], mer["ops"]) < 30})
+    return {"fecha": fecha, "estrategia": "SMC / Estructural (motor v2)", "fuente": "velas XM, 34 activos, setups validos del motor",
+            "costo_pct": COSTO_PCT, "filas": salida}
+
+
 if __name__ == "__main__":
     modo = sys.argv[1] if len(sys.argv) > 1 else "todo"
     if modo == "demo":
@@ -291,3 +313,8 @@ if __name__ == "__main__":
             analiza(datos)
         if modo in ("enfoque", "todo"):
             compara_enfoque(datos)
+        if modo == "publica":
+            import datetime
+            destino = os.path.join(os.path.dirname(__file__), "..", "public", "validacion-smc.json")
+            json.dump(resumen_publico(datos, datetime.date.today().isoformat()), open(destino, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+            print("escrito", os.path.normpath(destino))
